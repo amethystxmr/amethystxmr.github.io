@@ -206,12 +206,16 @@ export function decodePolyseed(moneroPolyseed: string) {
   return module.decodePolyseed(moneroPolyseed);
 }
 
-async function initFilesystem() {
-  module.FS.mkdir("/data");
-  module.FS.mount(module.IDBFS, {}, "/data");
+export async function loadFilesystem() {
   await new Promise<void>((resolve, reject) =>
     module.FS.syncfs(true, (err) => (err ? reject(err) : resolve())),
   );
+}
+
+async function initFilesystem() {
+  module.FS.mkdir("/data");
+  module.FS.mount(module.IDBFS, {}, "/data");
+  loadFilesystem();
   module.FS.chdir("/data");
 }
 

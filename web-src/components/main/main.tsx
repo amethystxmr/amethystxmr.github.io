@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo } from "react";
 import {
+  loadFilesystem,
   max64,
   MoneroWasmWallet,
   PaymentDetailsTransformed,
