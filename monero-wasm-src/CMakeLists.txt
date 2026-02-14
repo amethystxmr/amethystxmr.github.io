@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.10)
+
 project(ProjectName)
 
 set(CMAKE_C_STANDARD 11)
@@ -236,5 +238,4 @@ add_subdirectory(
 add_subdirectory(
     ${CMAKE_SOURCE_DIR}/monero-wasm-wallet
 )
-
 
