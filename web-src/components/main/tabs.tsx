@@ -12,9 +12,15 @@ type NiceTabsProps = {
   tabs: TabItem[];
   initialKey?: string;
   className?: string;
+  onTabChange?: (key: string) => void;
 };
 
-export function NiceTabs({ tabs, initialKey, className }: NiceTabsProps) {
+export function NiceTabs({
+  tabs,
+  initialKey,
+  className,
+  onTabChange,
+}: NiceTabsProps) {
   const uid = useId();
   const firstEnabledKey = useMemo(
     () => tabs.find((t) => !t.disabled)?.key ?? tabs[0]?.key ?? "",
@@ -22,6 +28,11 @@ export function NiceTabs({ tabs, initialKey, className }: NiceTabsProps) {
   );
 
   const [activeKey, setActiveKey] = useState<string>(initialKey ?? firstEnabledKey);
+
+  const setActiveTab = (key: string) => {
+    setActiveKey(key);
+    onTabChange?.(key);
+  };
 
   const activeIndex = Math.max(
     0,
@@ -37,7 +48,7 @@ export function NiceTabs({ tabs, initialKey, className }: NiceTabsProps) {
     for (let tries = 0; tries < tabs.length; tries++) {
       i = (i + delta + tabs.length) % tabs.length;
       if (!tabs[i].disabled) {
-        setActiveKey(tabs[i].key);
+        setActiveTab(tabs[i].key);
         return;
       }
     }
@@ -53,12 +64,12 @@ export function NiceTabs({ tabs, initialKey, className }: NiceTabsProps) {
     } else if (e.key === "Home") {
       e.preventDefault();
       const idx = tabs.findIndex((t) => !t.disabled);
-      if (idx >= 0) setActiveKey(tabs[idx].key);
+      if (idx >= 0) setActiveTab(tabs[idx].key);
     } else if (e.key === "End") {
       e.preventDefault();
       for (let idx = tabs.length - 1; idx >= 0; idx--) {
         if (!tabs[idx].disabled) {
-          setActiveKey(tabs[idx].key);
+          setActiveTab(tabs[idx].key);
           break;
         }
       }
@@ -89,7 +100,7 @@ export function NiceTabs({ tabs, initialKey, className }: NiceTabsProps) {
               aria-controls={panelId}
               tabIndex={selected ? 0 : -1}
               disabled={t.disabled}
-              onClick={() => !t.disabled && setActiveKey(t.key)}
+              onClick={() => !t.disabled && setActiveTab(t.key)}
               className={[
                 "cursor-pointer",
                 "relative min-w-[calc(50%-0.25rem)] flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition sm:min-w-0",

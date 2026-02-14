@@ -199,6 +199,13 @@ export function setMaxConcurrency(threads: number) {
   module.set_max_concurrency(clamped);
 }
 
+export function decodePolyseed(moneroPolyseed: string) {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.decodePolyseed(moneroPolyseed);
+}
+
 async function initFilesystem() {
   module.FS.mkdir("/data");
   module.FS.mount(module.IDBFS, {}, "/data");
