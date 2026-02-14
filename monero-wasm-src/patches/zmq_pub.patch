@@ -1,0 +1,35 @@
+diff --git a/src/rpc/zmq_pub.cpp b/src/rpc/zmq_pub.cpp
+index cc9705d35..49280f281 100644
+--- a/src/rpc/zmq_pub.cpp
++++ b/src/rpc/zmq_pub.cpp
+@@ -253,7 +253,8 @@ namespace
+ 
+     const auto lower = std::lower_bound(contexts.begin(), contexts.end(), value);
+     const auto upper = std::upper_bound(lower, contexts.end(), value, not_prefix);
+-    return {lower, std::size_t(upper - lower)};
++    return { lower == upper ? nullptr : std::addressof(*lower),
++         std::size_t(upper - lower) };
+   }
+ 
+   template<std::size_t N, typename T>
+@@ -401,14 +402,14 @@ bool zmq_pub::sub_request(boost::string_ref message)
+       switch (tag)
+       {
+       case 0:
+-        remove_subscriptions(chain_subs_, chain_range, chain_contexts.begin());
+-        remove_subscriptions(miner_subs_, miner_range, miner_contexts.begin());
+-        remove_subscriptions(txpool_subs_, txpool_range, txpool_contexts.begin());
++        remove_subscriptions(chain_subs_, chain_range, chain_contexts.data());
++        remove_subscriptions(miner_subs_, miner_range, miner_contexts.data());
++        remove_subscriptions(txpool_subs_, txpool_range, txpool_contexts.data());
+         return true;
+       case 1:
+-        add_subscriptions(chain_subs_, chain_range, chain_contexts.begin());
+-        add_subscriptions(miner_subs_, miner_range, miner_contexts.begin());
+-        add_subscriptions(txpool_subs_, txpool_range, txpool_contexts.begin());
++        add_subscriptions(chain_subs_, chain_range, chain_contexts.data());
++        add_subscriptions(miner_subs_, miner_range, miner_contexts.data());
++        add_subscriptions(txpool_subs_, txpool_range, txpool_contexts.data());
+         return true;
+       default:
+         break;

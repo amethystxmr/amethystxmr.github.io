@@ -1,0 +1,27 @@
+diff --git a/contrib/epee/include/string_tools.h b/contrib/epee/include/string_tools.h
+index a8f50554d..a0b83a3ff 100644
+--- a/contrib/epee/include/string_tools.h
++++ b/contrib/epee/include/string_tools.h
+@@ -32,6 +32,8 @@
+ 
+ #include <boost/utility/string_ref.hpp>
+ #include <boost/algorithm/string.hpp> 
++#include <boost/uuid/uuid.hpp>
++#include <boost/algorithm/hex.hpp>
+ #include <sstream>
+ #include <string>
+ #include <cstdint>
+@@ -85,6 +87,13 @@ namespace string_tools
+   std::string pad_string(std::string s, size_t n, char c = ' ', bool prepend = false);
+   
+   //----------------------------------------------------------------------------
++  inline std::string pod_to_hex(const boost::uuids::uuid& u)
++  {
++    std::string out;
++    out.reserve(32);
++    boost::algorithm::hex(u.begin(), u.end(), std::back_inserter(out));
++    return out;
++  }
+   template<class t_pod_type>
+   std::string pod_to_hex(const t_pod_type& s)
+   {

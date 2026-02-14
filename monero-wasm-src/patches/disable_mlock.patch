@@ -1,0 +1,13 @@
+diff --git a/contrib/epee/src/mlocker.cpp b/contrib/epee/src/mlocker.cpp
+index 1af08fdfb..0d2b32492 100644
+--- a/contrib/epee/src/mlocker.cpp
++++ b/contrib/epee/src/mlocker.cpp
+@@ -28,7 +28,7 @@
+ // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ #if defined __GNUC__ && !defined _WIN32
+-#define HAVE_MLOCK 1
++// #define HAVE_MLOCK 1
+ #endif
+ 
+ #include <unistd.h>

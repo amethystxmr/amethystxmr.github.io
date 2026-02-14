@@ -1,0 +1,21 @@
+diff --git a/contrib/epee/src/http_auth.cpp b/contrib/epee/src/http_auth.cpp
+index ec430c8cb..72df96612 100644
+--- a/contrib/epee/src/http_auth.cpp
++++ b/contrib/epee/src/http_auth.cpp
+@@ -110,6 +110,16 @@ namespace
+ 
+     struct update
+     {
++      template<std::size_t N>
++      void operator()(const std::array<char, N>& arg) const
++      {
++        EVP_DigestUpdate(
++          ctx,
++          reinterpret_cast<const std::uint8_t*>(arg.data()),
++          arg.size()
++        );
++      }
++
+       template<typename T>
+       void operator()(const T& arg) const
+       {
