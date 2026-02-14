@@ -33,7 +33,7 @@ if(EMSCRIPTEN)
         -sUSE_PTHREADS=1
         -sNO_DISABLE_EXCEPTION_CATCHING
     )
-    
+
     add_link_options(
         ${EMSCRIPTEN_DEBUG_OPTIONS}
         ${EMSCRIPTEN_DEBUG_OPTIONS_LINKER}
@@ -43,8 +43,8 @@ if(EMSCRIPTEN)
         -sUSE_PTHREADS=1
         # -sPROXY_TO_PTHREAD=1
         -sWEBSOCKET_URL=ws://localhost:4444
-        -sPTHREAD_POOL_SIZE=4
-        -sPTHREAD_POOL_SIZE_STRICT=0
+        "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)"
+        -sPTHREAD_POOL_SIZE_STRICT=1
         -sALLOW_MEMORY_GROWTH=1
         -sEXPORT_ES6=1
         -sEXPORT_NAME=MoneroWasmWallet

@@ -19,6 +19,7 @@ import {
   createWallet,
   decodePolyseed,
   deleteWalletFiles,
+  getMaxConcurrency,
   getRecommendedMaxConcurrency,
   listWalletNames,
   MoneroWasmWallet,
@@ -1056,7 +1057,10 @@ function OptionsView({ onBack }: { onBack: () => void }) {
               if (!Number.isFinite(parsed) || parsed < 1) {
                 return;
               }
-              const clamped = Math.max(1, Math.trunc(parsed));
+              const clamped = Math.min(
+                getMaxConcurrency(),
+                Math.max(1, Math.trunc(parsed)),
+              );
               options.setValue("cpuThreads", clamped);
               setMaxConcurrency(clamped);
               refresh((x) => x + 1);

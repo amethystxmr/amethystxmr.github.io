@@ -181,6 +181,11 @@ export async function initModule() {
   return module;
 }
 
+export function getMaxConcurrency() {
+  // Note: it always should be the same as in sPTHREAD_POOL_SIZE
+  return navigator.hardwareConcurrency || 2;
+}
+
 export function getRecommendedMaxConcurrency() {
   const cpuCount =
     typeof navigator !== "undefined" &&
@@ -195,7 +200,7 @@ export function setMaxConcurrency(threads: number) {
     throw new Error("Module not initialized");
   }
   const sanitized = Number.isFinite(threads) ? Math.trunc(threads) : 1;
-  const clamped = Math.max(1, sanitized);
+  const clamped = Math.min(getMaxConcurrency(), Math.max(1, sanitized));
   module.set_max_concurrency(clamped);
 }
 
