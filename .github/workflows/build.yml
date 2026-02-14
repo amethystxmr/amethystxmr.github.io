@@ -41,3 +41,34 @@ jobs:
     uses: ./.github/workflows/web-frontend.yml
     with:
       build_type: ${{ needs.resolve_build_type.outputs.build_type }}
+
+  wait_for_pages_deploy:
+    needs:
+      - web_frontend
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Wait for deployed githash.txt
+        env:
+          TARGET_HASH: ${{ github.sha }}
+          GITHUB_PAGES_HASH_URL: https://${{ github.event.repository.name }}/githash.txt
+        run: |
+          echo "Waiting for $GITHUB_PAGES_HASH_URL to become $TARGET_HASH"
+
+          ATTEMPTS=60
+          SLEEP_SECONDS=10
+
+          for i in $(seq 1 "$ATTEMPTS"); do
+            CURRENT_HASH="$(curl -fsSL "$GITHUB_PAGES_HASH_URL" | tr -d '\r\n' || true)"
+            if [ "$CURRENT_HASH" = "$TARGET_HASH" ]; then
+              echo "GitHub Pages updated to target hash: $CURRENT_HASH"
+              exit 0
+            fi
+
+            echo "Attempt $i/$ATTEMPTS: got '$CURRENT_HASH', waiting..."
+            sleep "$SLEEP_SECONDS"
+          done
+
+          echo "Timed out waiting for GitHub Pages hash to match target hash ($TARGET_HASH)."
+          exit 1
