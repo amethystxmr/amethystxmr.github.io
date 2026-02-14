@@ -647,13 +647,19 @@ function CreateNewWalletView({
       wallet = createWallet();
       await wallet.init();
 
-      const generatedSecret32 = await wallet.generate(
-        fileName,
-        password,
-        new Uint8Array(32).fill(0),
-        false,
-        false,
-      );
+      const generatedSecret32 = await withFsLock(async () => {
+        if (!wallet) {
+          throw new Error("Wallet was unexpectedly undefined");
+        }
+        const r = await wallet.generate(
+          fileName,
+          password,
+          new Uint8Array(32).fill(0),
+          false,
+          false,
+        );
+        return r;
+      });
       if (!generatedSecret32 || generatedSecret32.length !== 32) {
         throw new Error("Generated secret is invalid");
       }

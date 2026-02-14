@@ -81,7 +81,10 @@ export function formatWalletTimestamp(
   }).format(date);
 }
 
-export async function withOriginLock(name: string, fn: () => Promise<void>) {
+export async function withOriginLock<T>(
+  name: string,
+  fn: () => Promise<T>,
+): Promise<T> {
   if (navigator.locks?.request) {
     return navigator.locks.request(
       `origin:${name}`,
@@ -92,14 +95,15 @@ export async function withOriginLock(name: string, fn: () => Promise<void>) {
     );
   }
   // Do nothing if locks are not supported, just run the function
-  await fn();
+  return await fn();
 }
 
-export async function withFsLock(fn: () => Promise<void>) {
+export async function withFsLock<T>(fn: () => Promise<T>): Promise<T> {
   return withOriginLock("fs-lock", async () => {
     await loadFilesystem();
-    await fn();
+    const result = await fn();
     await saveFilesystem();
+    return result;
   });
 }
 
