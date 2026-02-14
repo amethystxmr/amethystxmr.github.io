@@ -1,8 +1,18 @@
 #!/bin/bash
 set -e 
- 
-mkdir -p built-wasm
-mkdir -p built-wasm-emcache
+
+BUILD_TYPE="${1:-Debug}"
+case "$BUILD_TYPE" in
+  Debug|Release)
+    ;;
+  *)
+    echo "Error: unknown build type '$BUILD_TYPE'"
+    echo "Usage: $0 [Debug|Release]"
+    exit 1
+    ;;
+esac
+
+BUILD_WASM_DIR="built-wasm-$BUILD_TYPE"
 
 EMSDK_DIR=$HOME/emsdk
 
@@ -19,23 +29,21 @@ if [ ! -d "$EMSDK_DIR" ]; then
     --rm \
     -v $(pwd):$(pwd) \
     -u $(id -u):$(id -g) \
-    -w $(pwd)/built-wasm \
+    -e BUILD_TYPE="$BUILD_TYPE" \
+    -w $(pwd) \
     emscripten/emsdk \
     sh -c "./build-wasm-cmds.sh" || error-beep
     
 else
   echo "====== Bulding using local emsdk ======"
   source $EMSDK_DIR/emsdk_env.sh
-  ./build-wasm-cmds.sh || error-beep
+  BUILD_TYPE="$BUILD_TYPE" ./build-wasm-cmds.sh || error-beep
 fi
        
-# -DCMAKE_BUILD_TYPE=Debug
-# -DCMAKE_BUILD_TYPE=Release
-
 echo ""
 echo ""
 
-cp -v built-wasm/bin/monero-wasm-wallet.* ../monero-wasm-module/
+cp -v "$BUILD_WASM_DIR"/bin/monero-wasm-wallet.* ../monero-wasm-module/
 
 echo ""
 echo ""

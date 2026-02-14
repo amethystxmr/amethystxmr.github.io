@@ -1,11 +1,14 @@
-
 if(EMSCRIPTEN)
-    set(BUILD_DEPENDS_FOLDER "built-wasm-depends")
+    if(NOT DEFINED BUILD_DEPENDS_FOLDER OR BUILD_DEPENDS_FOLDER STREQUAL "")
+        message(FATAL_ERROR "BUILD_DEPENDS_FOLDER must be provided")
+    endif()
     set(CMAKE_CMD emcmake cmake)
     set(CONFIGURE_CMD emconfigure ./configure)
     set(MAKE_CMD emmake make)
 else()
-    set(BUILD_DEPENDS_FOLDER "built-native-depends")
+    if(NOT DEFINED BUILD_DEPENDS_FOLDER OR BUILD_DEPENDS_FOLDER STREQUAL "")
+        message(FATAL_ERROR "BUILD_DEPENDS_FOLDER must be provided")
+    endif()
     set(CMAKE_CMD cmake)
     set(CONFIGURE_CMD ./configure)
     set(MAKE_CMD make)
@@ -403,5 +406,3 @@ include_directories(SYSTEM "${OPENSSL_INSTALL_DIR}/include")
 find_package(OpenSSL REQUIRED)
 
 set(OPENSSL_LIBRARIES "OpenSSL::SSL;OpenSSL::Crypto")
-
-
