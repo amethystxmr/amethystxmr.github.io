@@ -206,6 +206,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         }
         await saveWalletIntoFs(wallet);
         console.info("Refresh saved");
+
         if (cancelled) {
           return;
         }
@@ -229,6 +230,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           console.log("Mempool payments:", transformedMempoolPayments);
           setMempoolPayments(transformedMempoolPayments);
         }
+
+        return refreshStatus;
       } catch (e) {
         console.error("Error during refresh:", e);
         setRefreshError((e as Error).message || "Unknown error");
@@ -265,7 +268,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     };
 
     (async () => {
-      // Initial refresh on startup
+      let lastTimeRefreshStartedAt: Date | null = null;
+      let lastTimeRefreshedBlocks: bigint | null = null;
       while (!cancelled) {
         console.info(
           `================= Starting refresh cycle (initial=${isInitialSync}) =================`,
@@ -282,16 +286,38 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           continue;
         }
 
-        if (!isInitialSync) {
-          await interruptableDelay(60_000)();
-          if (cancelled) {
-            return;
-          }
+        if (cancelled) {
+          return;
         }
 
-        console.info(`Refreshing wallet...`);
+        if (!isInitialSync) {
+          await interruptableDelay(60_000)();
+        }
 
-        await doRefresh();
+        if (cancelled) {
+          return;
+        }
+
+        if (
+          isInitialSync &&
+          lastTimeRefreshStartedAt &&
+          lastTimeRefreshedBlocks
+        ) {
+          const secondsSinceLastRefresh =
+            (new Date().getTime() - lastTimeRefreshStartedAt.getTime()) / 1000;
+          const secondsPerBlock =
+            secondsSinceLastRefresh / Number(lastTimeRefreshedBlocks);
+          console.info(
+            `Estimated seconds per block on initial sync: ${secondsPerBlock.toFixed(2)}`,
+          );
+          setSecondsPerBlockOnInitialSync(secondsPerBlock);
+        } else {
+          setSecondsPerBlockOnInitialSync(null);
+        }
+        lastTimeRefreshStartedAt = new Date();
+        console.info(`Refreshing wallet...`);
+        const refreshStatus = await doRefresh();
+        lastTimeRefreshedBlocks = refreshStatus?.blocksFetched ?? null;
       }
     })().catch((e) => {
       if (cancelled) {
@@ -324,6 +350,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     | null
   >(null);
 
+  const [secondsPerBlockOnInitialSync, setSecondsPerBlockOnInitialSync] =
+    React.useState<number | null>(null);
+
   const progressBarCompact =
     daemonHeight === null || walletBlockchainCurrentHeight === null ? (
       <ProgressBar
@@ -342,7 +371,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         }
         text={
           daemonHeight > walletBlockchainCurrentHeight
-            ? `${daemonHeight - walletBlockchainCurrentHeight} blocks left`
+            ? `${daemonHeight - walletBlockchainCurrentHeight} blocks left` +
+              (secondsPerBlockOnInitialSync
+                ? showEstimatedTime(
+                    secondsPerBlockOnInitialSync,
+                    daemonHeight - walletBlockchainCurrentHeight,
+                  )
+                : "")
             : "Refreshing..."
         }
       />
@@ -580,5 +615,21 @@ function SynchronizedWithTimer({
     return <ProgressBar size={size} state="ready" text="Synchronized" />;
   } else {
     return <ProgressBar size={size} state="error" text="Refresh needed" />;
+  }
+}
+
+function showEstimatedTime(
+  secondsPerBlock: number,
+  blocksLeft: bigint,
+): string {
+  const secondsLeft = secondsPerBlock * Number(blocksLeft);
+  if (secondsLeft < 60) {
+    return ` (~${Math.ceil(secondsLeft)}s)`;
+  } else if (secondsLeft < 3600) {
+    return ` (~${Math.ceil(secondsLeft / 60)}m)`;
+  } else if (secondsLeft < 3600 * 24) {
+    return ` (~${Math.ceil(secondsLeft / 3600)}h)`;
+  } else {
+    return ` (~${Math.ceil(secondsLeft / (3600 * 24))}d)`;
   }
 }
