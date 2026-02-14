@@ -11,5 +11,9 @@ git submodule update --init --recursive
     sudo apt-get install qttools5-dev-tools
     cd monero/translations
     cmake -B build -DLRELEASE_PATH=/usr/bin
-    cd build && make && ./generate_translations_header
+    cd build
+    make
+    ./generate_translations_header
+    pwd
+    ls -la
 )
