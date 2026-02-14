@@ -39,9 +39,6 @@ jobs:
           echo "EM_COMPILER_WRAPPER=ccache" >> "$GITHUB_ENV"
           mkdir -p "${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}"
 
-      - name: Force HTTPS for GitHub remotes
-        run: git config --global url."https://github.com/".insteadOf git@github.com:
-
       - name: Restore build cache
         uses: actions/cache@v4
         with:
