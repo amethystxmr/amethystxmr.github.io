@@ -20,10 +20,12 @@ if(EMSCRIPTEN)
         message(STATUS "======================== Debug build ========================")
         set(EMSCRIPTEN_DEBUG_OPTIONS -g -O0)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER -gseparate-dwarf -gsource-map)
+        set(EMSCRIPTEN_PTHREAD_POOL_SIZE "-sPTHREAD_POOL_SIZE=4")
     else()
         message(STATUS "======================== Release build ========================")
         set(EMSCRIPTEN_DEBUG_OPTIONS -O3)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER)
+        set(EMSCRIPTEN_PTHREAD_POOL_SIZE "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)")
     endif()
 
 
@@ -43,7 +45,7 @@ if(EMSCRIPTEN)
         -sUSE_PTHREADS=1
         # -sPROXY_TO_PTHREAD=1
         -sWEBSOCKET_URL=ws://localhost:4444
-        "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)"
+        "${EMSCRIPTEN_PTHREAD_POOL_SIZE}"
         -sPTHREAD_POOL_SIZE_STRICT=1
         -sALLOW_MEMORY_GROWTH=1
         -sEXPORT_ES6=1
