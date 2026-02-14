@@ -6,7 +6,7 @@
 
 ```bash
 ./init.sh
-
+./build.sh
 
 ```
 
