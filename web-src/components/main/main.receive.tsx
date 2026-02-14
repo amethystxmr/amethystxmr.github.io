@@ -279,15 +279,6 @@ export function ReceiveAddresses({
 
               <div className="flex gap-2">
                 <Button
-                  onClick={handleCreate}
-                  disabled={isAdding}
-                  variant="primary"
-                  className="rounded-lg py-2 text-sm font-semibold"
-                >
-                  {isAdding ? "Generating..." : "+ Create"}
-                </Button>
-
-                <Button
                   onClick={() => {
                     setIsCreating(false);
                     setNewLabel("");
@@ -297,6 +288,15 @@ export function ReceiveAddresses({
                   className="rounded-lg py-2 text-sm font-semibold"
                 >
                   × Cancel
+                </Button>
+
+                <Button
+                  onClick={handleCreate}
+                  disabled={isAdding}
+                  variant="primary"
+                  className="rounded-lg py-2 text-sm font-semibold"
+                >
+                  {isAdding ? "Generating..." : "+ Create"}
                 </Button>
               </div>
             </SurfaceCard>

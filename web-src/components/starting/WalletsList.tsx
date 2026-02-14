@@ -565,19 +565,19 @@ function RestoreView({
         <ButtonsHolder>
           <Button
             className="w-full"
-            variant="primary"
-            onClick={() => doRestore(seedType)}
-            disabled={restoring}
-          >
-            {restoring ? "Restoring..." : "↺ Restore wallet"}
-          </Button>
-          <Button
-            className="w-full"
             variant="soft"
             onClick={() => onDone(null)}
             disabled={restoring}
           >
             ✖ Cancel
+          </Button>
+          <Button
+            className="w-full"
+            variant="primary"
+            onClick={() => doRestore(seedType)}
+            disabled={restoring}
+          >
+            {restoring ? "Restoring..." : "↺ Restore wallet"}
           </Button>
         </ButtonsHolder>
       </SectionPanel>
