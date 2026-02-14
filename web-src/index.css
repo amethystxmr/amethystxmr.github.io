@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@tailwind utilities;
+
+@theme {
+  --font-sans: "Inter Variable", sans-serif;
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    @apply font-sans bg-[#281549] text-white;
+    overflow-x: hidden;
+  }
+
+  body {
+    @apply m-0;
+    overflow-x: hidden;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-none
+      p-4
+      bg-white/5
+      backdrop-blur-sm;
+  }
+
+  @media (min-width: 640px) {
+    .card {
+      @apply rounded-2xl p-6;
+    }
+  }
+
+  .card {
+    box-shadow:
+      0 12px 32px rgba(0, 0, 0, 0.45),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+      inset 0 0 18px rgba(255, 255, 255, 0.08);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 4px rgb(255 255 255);
+  }
+
+  .scrollbar-glass {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(147, 113, 214, 0.75) rgba(255, 255, 255, 0.08);
+  }
+
+  .scrollbar-glass::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-glass::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 9999px;
+  }
+
+  .scrollbar-glass::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(175, 139, 245, 0.85), rgba(116, 85, 196, 0.85));
+    border-radius: 9999px;
+    border: 2px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .scrollbar-glass::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, rgba(190, 154, 255, 0.95), rgba(126, 95, 210, 0.95));
+  }
+
+  @media (max-width: 639px) {
+    .scrollbar-hidden-mobile {
+      scrollbar-width: none;
+    }
+
+    .scrollbar-hidden-mobile::-webkit-scrollbar {
+      display: none;
+    }
+  }
+}
