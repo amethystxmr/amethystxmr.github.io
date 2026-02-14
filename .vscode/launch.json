@@ -1,0 +1,29 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++: debug project",
+      "type": "cppdbg",
+      "request": "launch",
+      // TODO Change the path
+      "program": "${workspaceFolder}/monero-wasm-src/monero/build/Linux/_HEAD_detached_at_74dd968cd_/debug/bin/monero-wallet-cli",
+      "stopAtEntry": false,
+      "cwd": ".",
+      "environment": [],
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      // "preLaunchTask": "MyPreLaunchTask",
+      "setupCommands": [
+        {
+          "description": "Disable element truncation for GDB printing",
+          "text": "set print elements 0",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
+}

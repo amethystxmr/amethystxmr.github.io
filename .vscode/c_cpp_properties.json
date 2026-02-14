@@ -1,0 +1,15 @@
+{
+  "configurations": [
+    {
+      "name": "Linux",
+      "defines": [],
+      // TODO: Use $HOME env variable instead of hardcoding the path to emscripten
+      "compilerPath": "/home/vasilii/emsdk/upstream/emscripten/em++",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-clang-x64",
+      "compileCommands": "${workspaceFolder}/monero-wasm-src/built-wasm-Debug/compile_commands.json"
+    }
+  ],
+  "version": 4
+}
