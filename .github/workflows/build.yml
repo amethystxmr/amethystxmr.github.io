@@ -34,6 +34,10 @@ jobs:
     needs:
       - resolve_build_type
       - wasm_build
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/web-frontend.yml
     with:
       build_type: ${{ needs.resolve_build_type.outputs.build_type }}
