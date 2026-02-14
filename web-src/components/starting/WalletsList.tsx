@@ -460,6 +460,7 @@ function RestoreView({
           <Label>Wallet name</Label>
           <Input
             value={fileName}
+            disabled={restoring}
             onChange={(e) => setFileName(e.target.value)}
           />
         </FormRow>
@@ -482,6 +483,7 @@ function RestoreView({
                     <TextArea
                       rows={4}
                       value={moneroSeed}
+                      disabled={restoring}
                       onChange={(e) => setMoneroSeed(e.target.value)}
                     ></TextArea>
                   </FormRow>
@@ -492,11 +494,12 @@ function RestoreView({
                       <Input
                         value={!loadingHeight ? startingHeight : "Loading..."}
                         onChange={(e) => setStartingHeight(e.target.value)}
-                        readOnly={loadingHeight}
-                        disabled={loadingHeight}
+                        readOnly={loadingHeight || restoring}
+                        disabled={loadingHeight || restoring}
                       />
                       <Input
                         type="date"
+                        disabled={restoring}
                         onChange={(e) => onDateChange(e.target.value)}
                       />
                     </div>
@@ -517,6 +520,7 @@ function RestoreView({
                     <TextArea
                       rows={4}
                       value={cakeSeed}
+                      disabled={restoring}
                       onChange={(e) => setCakeSeed(e.target.value)}
                     ></TextArea>
                     <div className="mt-1 text-[11px] text-white/50">
@@ -536,6 +540,7 @@ function RestoreView({
             type="password"
             autoComplete="off"
             value={password}
+            disabled={restoring}
             onChange={(e) => setPassword(e.target.value)}
           />
         </FormRow>
@@ -546,6 +551,7 @@ function RestoreView({
             type="password"
             autoComplete="off"
             value={passwordConfirm}
+            disabled={restoring}
             onChange={(e) => setPasswordConfirm(e.target.value)}
           />
           {passwordConfirm && password !== passwordConfirm && (
