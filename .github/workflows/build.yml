@@ -25,7 +25,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ccache
 
-      - name: Setup emsdk (local)
+      - name: Setup emsdk (local) # TODO: Fix version
         run: |
           if [ ! -d "$HOME/emsdk" ]; then
             git clone https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
@@ -38,6 +38,9 @@ jobs:
           echo "CCACHE_DIR=${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}" >> "$GITHUB_ENV"
           echo "EM_COMPILER_WRAPPER=ccache" >> "$GITHUB_ENV"
           mkdir -p "${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}"
+
+      - name: Force HTTPS for GitHub remotes
+        run: git config --global url."https://github.com/".insteadOf git@github.com:
 
       - name: Restore build cache
         uses: actions/cache@v4
