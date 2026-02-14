@@ -26,7 +26,7 @@ export declare class MoneroWasmWallet {
     maxBlocks: bigint,
   ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
   set_on_new_block_callback: (
-    callback: ((height: bigint) => void) | null,
+    callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) => void;
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_address(): string;

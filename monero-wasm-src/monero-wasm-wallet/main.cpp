@@ -24,15 +24,16 @@ public:
     // Full wallet callbacks
     void on_new_block(uint64_t height, const cryptonote::block &block) override
     {
+        auto timestamp = block.timestamp;
         mainThreadQueue.proxyAsync(
             mainThread,
-            [this, height]()
+            [this, height, timestamp]()
             {
                 if (m_on_new_block_callback.isNull() || m_on_new_block_callback.isUndefined())
                 {
                     return;
                 }
-                m_on_new_block_callback(height);
+                m_on_new_block_callback(height, timestamp);
             });
     }
     /*
