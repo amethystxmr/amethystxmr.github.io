@@ -128,17 +128,7 @@ export function WalletsList() {
           const wallet = view.wallet;
           backToList();
           options.setValue("lastWalletName", null);
-          wallet
-            .close_wallet()
-            .catch((e) => {
-              console.error("Error closing wallet after failed restore:", e);
-            })
-            .then(() => {
-              return wallet.delete();
-            })
-            .catch((e) => {
-              console.error("Error deleting wallet after failed restore:", e);
-            });
+          closeWallet(wallet);
         }}
       />
     );
@@ -288,6 +278,20 @@ export function WalletsList() {
   }
 }
 
+function closeWallet(wallet: MoneroWasmWallet): void {
+  wallet
+    .close_wallet()
+    .catch((e) => {
+      console.error("Error closing wallet:", e);
+    })
+    .then(() => {
+      return wallet.delete();
+    })
+    .catch((e) => {
+      console.error("Error deleting wallet:", e);
+    });
+}
+
 function RestoreView({
   onDone,
 }: {
@@ -361,17 +365,7 @@ function RestoreView({
       void alert(
         `Error restoring wallet: ${(e as Error).message || "Unknown error"}`,
       );
-      wallet
-        .close_wallet()
-        .catch((e) => {
-          console.error("Error closing wallet after failed restore:", e);
-        })
-        .then(() => {
-          return wallet.delete();
-        })
-        .catch((e) => {
-          console.error("Error deleting wallet after failed restore:", e);
-        });
+      closeWallet(wallet);
       setRestoring(false);
     });
   };
@@ -437,16 +431,7 @@ function RestoreView({
                   })
                   .then(() => {
                     setLoadingHeight(false);
-                    return tempWallet.close_wallet();
-                  })
-                  .catch((e) => {
-                    console.error("Error closing temporary wallet:", e);
-                  })
-                  .then(() => {
-                    return tempWallet.delete();
-                  })
-                  .catch((e) => {
-                    console.error("Error deleting temporary wallet:", e);
+                    closeWallet(tempWallet);
                   });
               }}
             />
@@ -592,20 +577,9 @@ function CreateNewWalletView({
       void alert(
         `Error creating wallet: ${(e as Error).message || "Unknown error"}`,
       );
-      wallet
-        ?.close_wallet()
-        .catch((closeErr) => {
-          console.error("Error closing wallet after failed create:", closeErr);
-        })
-        .then(() => {
-          wallet?.delete();
-        })
-        .catch((deleteErr) => {
-          console.error(
-            "Error deleting wallet after failed create:",
-            deleteErr,
-          );
-        });
+      if (wallet) {
+        closeWallet(wallet);
+      }
       setState({ type: "entering-data", fileName, password, passwordConfirm });
     });
   };
@@ -617,20 +591,7 @@ function CreateNewWalletView({
       );
     }
     onDone(null);
-    state.wallet
-      .close_wallet()
-      .catch((e) => {
-        console.error("Error closing wallet after create flow cancel:", e);
-      })
-      .then(() => {
-        state.wallet.delete();
-      })
-      .catch((e) => {
-        console.error(
-          "Error deleting wallet instance after create flow cancel:",
-          e,
-        );
-      });
+    closeWallet(state.wallet);
   };
 
   React.useEffect(() => {
@@ -824,17 +785,7 @@ function OpenWalletView({
       onDone(wallet);
       setBusy(null);
     })().catch((e) => {
-      wallet
-        .close_wallet()
-        .catch((e) => {
-          console.error("Error closing wallet after failed restore:", e);
-        })
-        .then(() => {
-          return wallet.delete();
-        })
-        .catch((e) => {
-          console.error("Error deleting wallet after failed restore:", e);
-        });
+      closeWallet(wallet);
 
       if (!isInitial) {
         console.error("Error opening wallet:", e);
