@@ -406,7 +406,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               </div>
               */}
               <h1 className="text-glow text-2xl leading-tight font-bold sm:text-3xl">
-                Amethyst XMR Wallet
+                Amethyst XMR
               </h1>
               <div className="mt-2 inline-flex max-w-full items-center rounded-lg bg-white/8 px-3 py-1 text-sm text-white/75 ring-1 ring-white/10">
                 <span className="truncate">{walletFileName}</span>
