@@ -1,3 +1,4 @@
+// @ts-ignore Generated wasm JS module has no TypeScript declarations.
 import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
 
 type IDBFS = unknown & { readonly __nominal: unique symbol };
