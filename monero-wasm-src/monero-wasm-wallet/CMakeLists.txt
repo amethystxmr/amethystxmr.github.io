@@ -2,6 +2,18 @@ project(MoneroWasmWallet)
 
 set(monero_wasm_wallet_headers)
 
+if(CMAKE_VERSION VERSION_LESS 3.11)
+    message(FATAL_ERROR "polyseed integration requires CMake 3.11+ (FetchContent)")
+endif()
+
+include(FetchContent)
+FetchContent_Declare(
+    polyseed
+    GIT_REPOSITORY https://github.com/MrCyjaneK/polyseed.git
+    GIT_TAG bd79f5014c331273357277ed8a3d756fb61b9fa1
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(polyseed)
 
 set(monero_wasm_wallet_sources
     main.cpp)
@@ -20,6 +32,7 @@ monero_add_executable(monero-wasm-wallet
 
 target_link_libraries(monero-wasm-wallet
     PRIVATE
+    polyseed
     wallet
     rpc_base
     cryptonote_core
