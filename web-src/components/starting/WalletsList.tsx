@@ -531,7 +531,6 @@ function RestoreView({
                     ></TextArea>
                     <div className="mt-1 text-[11px] text-white/50">
                       Starting height is derived automatically from the seed
-                      birthday.
                     </div>
                   </FormRow>
                 </div>
