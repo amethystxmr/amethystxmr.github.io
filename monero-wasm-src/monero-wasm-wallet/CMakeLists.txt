@@ -16,7 +16,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(polyseed)
 
 set(monero_wasm_wallet_sources
-    main.cpp)
+    main.cpp
+    polyseed.cpp
+)
 
 monero_find_all_headers(monero_wasm_wallet_private_headers "${CMAKE_CURRENT_SOURCE_DIR}")
 
@@ -55,5 +57,5 @@ target_link_libraries(monero-wasm-wallet
 install(TARGETS monero-wasm-wallet DESTINATION bin)
 
 set_target_properties(monero-wasm-wallet PROPERTIES
-  SUFFIX ".mjs"
+    SUFFIX ".mjs"
 )
