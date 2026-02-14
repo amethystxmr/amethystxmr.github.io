@@ -11,48 +11,13 @@ on:
       - reopened
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      BUILD_TYPE: ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }}
+  wasm_build:
+    uses: ./.github/workflows/wasm-build.yml
+    with:
+      build_type: ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }}
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install ccache
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ccache
-
-      - name: Setup emsdk (local) # TODO: Fix version
-        run: |
-          if [ ! -d "$HOME/emsdk" ]; then
-            git clone https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
-          fi
-          "$HOME/emsdk/emsdk" install latest
-          "$HOME/emsdk/emsdk" activate latest
-
-      - name: Configure ccache
-        run: |
-          echo "CCACHE_DIR=${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}" >> "$GITHUB_ENV"
-          echo "EM_COMPILER_WRAPPER=ccache" >> "$GITHUB_ENV"
-          mkdir -p "${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}"
-
-      - name: Restore build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            monero-wasm-src/built-*
-          key: ${{ runner.os }}-wasm-${{ env.BUILD_TYPE }}
-
-      - name: Init
-        working-directory: monero-wasm-src
-        run: ./init.sh
-
-      - name: Build
-        working-directory: monero-wasm-src
-        run: ./build.sh "$BUILD_TYPE"
-
-      - name: Show build artifacts
-        run: ls -lah monero-wasm-module
+  web_frontend:
+    needs: wasm_build
+    uses: ./.github/workflows/web-frontend.yml
+    with:
+      build_type: ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }}

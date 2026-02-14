@@ -1,0 +1,29 @@
+name: Web Frontend
+
+on:
+  workflow_call:
+    inputs:
+      build_type:
+        required: true
+        type: string
+
+jobs:
+  web_frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download wasm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: monero-wasm-module-${{ inputs.build_type }}
+          path: monero-wasm-module
+
+      - name: Show downloaded wasm module
+        run: ls -lah monero-wasm-module
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Check npm version
+        run: npm --version
