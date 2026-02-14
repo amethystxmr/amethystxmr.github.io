@@ -81,17 +81,37 @@ static size_t utf8_nfc(const char *str, polyseed_str norm)
     size_t size = std::min(s.size(), (size_t)POLYSEED_STR_SIZE - 1);
     s.copy(norm, size);
     norm[size] = '\0';
-    sodium_memzero(&s[0], s.size());
+    if (!s.empty())
+    {
+        sodium_memzero(&s[0], s.size());
+    }
     return size;
 }
 
 static size_t utf8_nfkd(const char *str, polyseed_str norm)
 {
     auto s = boost::locale::normalize(str, boost::locale::norm_type::norm_nfkd, locale);
+    // polyseed expects the normalized separator to be ASCII space.
+    // Ensure U+3000 IDEOGRAPHIC SPACE is mapped to ' '.
+    for (size_t i = 0; i + 2 < s.size();)
+    {
+        if ((unsigned char)s[i] == 0xE3 &&
+            (unsigned char)s[i + 1] == 0x80 &&
+            (unsigned char)s[i + 2] == 0x80)
+        {
+            s.replace(i, 3, " ");
+            ++i;
+            continue;
+        }
+        ++i;
+    }
     size_t size = std::min(s.size(), (size_t)POLYSEED_STR_SIZE - 1);
     s.copy(norm, size);
     norm[size] = '\0';
-    sodium_memzero(&s[0], s.size());
+    if (!s.empty())
+    {
+        sodium_memzero(&s[0], s.size());
+    }
     return size;
 }
 
