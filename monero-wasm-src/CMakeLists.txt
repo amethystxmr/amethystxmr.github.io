@@ -125,6 +125,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/monero/external
 )
 
+add_custom_target(generate_translations_header)
 include_directories(${CMAKE_SOURCE_DIR}/monero/translations/build)
 
 include(${CMAKE_SOURCE_DIR}/monero/cmake/Version.cmake)
@@ -238,4 +239,3 @@ add_subdirectory(
 add_subdirectory(
     ${CMAKE_SOURCE_DIR}/monero-wasm-wallet
 )
-
