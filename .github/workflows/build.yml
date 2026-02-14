@@ -45,8 +45,6 @@ jobs:
           path: |
             monero-wasm-src/built-*
           key: ${{ runner.os }}-wasm-${{ env.BUILD_TYPE }}
-          restore-keys: |
-            ${{ runner.os }}-wasm-${{ env.BUILD_TYPE }}
 
       - name: Init
         working-directory: monero-wasm-src
