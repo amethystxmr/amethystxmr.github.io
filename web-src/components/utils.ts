@@ -1,3 +1,9 @@
+import {
+  loadFilesystem,
+  MoneroWasmWallet,
+  saveFilesystem,
+} from "../../monero-wasm-module/walletApi";
+
 export function balanceToString(balance: bigint): string {
   // 1000000000n = 0.001
   // 0765432100n = 0.0007654321
@@ -8,7 +14,10 @@ export function balanceToString(balance: bigint): string {
   const integerPart = digits.slice(0, -scale);
   const fractionalPart = digits.slice(-scale).replace(/0+$/, ""); // trim trailing zeros
 
-  const result = fractionalPart.length > 0 ? `${integerPart}.${fractionalPart}` : integerPart;
+  const result =
+    fractionalPart.length > 0
+      ? `${integerPart}.${fractionalPart}`
+      : integerPart;
   return result;
 }
 
@@ -70,4 +79,32 @@ export function formatWalletTimestamp(
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+export async function withOriginLock(name: string, fn: () => Promise<void>) {
+  if (navigator.locks?.request) {
+    return navigator.locks.request(
+      `origin:${name}`,
+      { mode: "exclusive" },
+      async () => {
+        return await fn();
+      },
+    );
+  }
+  // Do nothing if locks are not supported, just run the function
+  await fn();
+}
+
+export async function withFsLock(fn: () => Promise<void>) {
+  return withOriginLock("fs-lock", async () => {
+    await loadFilesystem();
+    await fn();
+    await saveFilesystem();
+  });
+}
+
+export async function saveWalletIntoFs(wallet: MoneroWasmWallet) {
+  return withFsLock(async () => {
+    await wallet.store();
+  });
 }

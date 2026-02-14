@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo } from "react";
 import {
-  loadFilesystem,
   max64,
   MoneroWasmWallet,
   PaymentDetailsTransformed,
-  saveFilesystem,
   transformPayments,
 } from "../../../monero-wasm-module/walletApi";
 import { ProgressBar } from "../ui";
@@ -12,7 +10,7 @@ import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
 import { NiceTabs } from "./tabs";
 import { ReceiveAddresses } from "./main.receive";
-import { balanceToString, toFiat } from "../utils";
+import { balanceToString, saveWalletIntoFs, toFiat } from "../utils";
 import { TransactionsTab } from "./main.transactions";
 import { SendTab } from "./main.send";
 import { OtherTab } from "./main.other";
@@ -206,8 +204,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         if (cancelled) {
           return;
         }
-        await wallet.store();
-        await saveFilesystem();
+        await saveWalletIntoFs(wallet);
         console.info("Refresh saved");
         if (cancelled) {
           return;
@@ -465,8 +462,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   price={price}
                   onAddSubaddressAdd={async (newLabel) => {
                     await wallet.add_subaddress(0, newLabel);
-                    await wallet.store();
-                    await saveFilesystem();
+                    await saveWalletIntoFs(wallet);
                     updateSecondaryAddresses();
                   }}
                 />

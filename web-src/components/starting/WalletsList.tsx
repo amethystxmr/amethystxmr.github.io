@@ -22,13 +22,13 @@ import {
   getRecommendedMaxConcurrency,
   listWalletNames,
   MoneroWasmWallet,
-  saveFilesystem,
   setMaxConcurrency,
 } from "../../../monero-wasm-module/walletApi";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { getDefaultOptions, options } from "../options";
 import { NiceTabs } from "../main/tabs";
+import { saveWalletIntoFs, withFsLock } from "../utils";
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
@@ -106,8 +106,10 @@ export function WalletsList() {
     }
     try {
       setRemoveState({ type: "removing", walletName: removeState.walletName });
-      deleteWalletFiles(removeState.walletName);
-      await saveFilesystem();
+
+      await withFsLock(async () => {
+        deleteWalletFiles(removeState.walletName);
+      });
       if (options.getValue("lastWalletName") === removeState.walletName) {
         options.setValue("lastWalletName", null);
       }
@@ -411,8 +413,7 @@ function RestoreView({
       }
       await wallet.generate(fileName, password, secret32, true, false);
       wallet.set_refresh_from_block_height(restoreHeight);
-      await wallet.store();
-      await saveFilesystem();
+      await saveWalletIntoFs(wallet);
       console.info("Wallet restored and saved");
       setRestoring(false);
       onDone(wallet);
@@ -657,8 +658,7 @@ function CreateNewWalletView({
 
       const seed = await wallet.get_seed("English", "");
 
-      await wallet.store();
-      await saveFilesystem();
+      await saveWalletIntoFs(wallet);
       console.info("Wallet created and saved");
       setState({
         type: "showing-seed",

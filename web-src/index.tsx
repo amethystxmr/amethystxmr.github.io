@@ -1,13 +1,6 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
-import {
-  createWallet,
-  initModule,
-  listWalletNames,
-  MoneroWasmWallet,
-  saveFilesystem,
-} from "../monero-wasm-module/walletApi";
-import { WalletMain } from "./components/main";
+import { initModule } from "../monero-wasm-module/walletApi";
 import { WalletsList } from "./components/starting";
 import { AlertProvider } from "./components/ui";
 
@@ -55,9 +48,7 @@ function registerCrossOriginIsolationWorkaround() {
   }
 
   const path = window.location.pathname;
-  const dirPath = path.endsWith("/")
-    ? path
-    : path.replace(/\/[^/]*$/, "/");
+  const dirPath = path.endsWith("/") ? path : path.replace(/\/[^/]*$/, "/");
   const swUrl = `${window.location.origin}${dirPath}coi-serviceworker.js`;
   navigator.serviceWorker
     .register(swUrl)
@@ -71,6 +62,9 @@ function registerCrossOriginIsolationWorkaround() {
       });
     })
     .catch((err) => {
-      console.error("Failed to register cross-origin isolation workaround:", err);
+      console.error(
+        "Failed to register cross-origin isolation workaround:",
+        err,
+      );
     });
 }
