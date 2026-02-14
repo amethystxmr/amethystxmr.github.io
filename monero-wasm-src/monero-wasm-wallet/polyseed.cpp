@@ -148,9 +148,33 @@ public:
 
 static polyseed_initializer initializer;
 
-void keke()
+void keke(std::string moneroPolyseed)
 {
-    printf("KEKE\n");
+    polyseed_data *seed2;
+    const polyseed_lang *lang;
+    auto result = polyseed_decode(moneroPolyseed.c_str(), POLYSEED_MONERO, &lang, &seed2);
+    if (result != POLYSEED_OK)
+    {
+        std::string error = "Error: " + std::to_string(result);
+        throw std::runtime_error(error);
+    }
+    auto langStr = polyseed_get_lang_name_en(lang);
+    printf("Language: %s\n", langStr);
+    if (polyseed_is_encrypted(seed2))
+    {
+        throw std::runtime_error("Seed is encrypted, not supported");
+    };
+    uint8_t key2[32];
+    polyseed_keygen(seed2, POLYSEED_MONERO, sizeof(key2), key2);
+    printf("Private key: ");
+    for (unsigned i = 0; i < sizeof(key2); ++i)
+        printf("%02x", key2[i] & 0xff);
+    printf("\n");
+
+    auto birthday = polyseed_get_birthday(seed2);
+    printf("Birthday: %u\n", birthday);
+
+    polyseed_free(seed2);
 }
 
 EMSCRIPTEN_BINDINGS(monero_wasm_wallet_polyseed)
