@@ -411,7 +411,12 @@ function RestoreView({
       if (!secret32 || secret32.length !== 32) {
         throw new Error("Invalid seed phrase provided");
       }
-      await wallet.generate(fileName, password, secret32, true, false);
+      await withFsLock(async () => {
+        if (!wallet) {
+          throw new Error("Wallet was unexpectedly undefined");
+        }
+        await wallet.generate(fileName, password, secret32, true, false);
+      });
       wallet.set_refresh_from_block_height(restoreHeight);
       await saveWalletIntoFs(wallet);
       console.info("Wallet restored and saved");
