@@ -17,6 +17,7 @@ import {
 } from "../ui";
 import {
   createWallet,
+  decodePolyseed,
   deleteWalletFiles,
   getRecommendedMaxConcurrency,
   listWalletNames,
@@ -27,6 +28,7 @@ import {
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { getDefaultOptions, options } from "../options";
+import { NiceTabs } from "../main/tabs";
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
@@ -128,17 +130,7 @@ export function WalletsList() {
           const wallet = view.wallet;
           backToList();
           options.setValue("lastWalletName", null);
-          wallet
-            .close_wallet()
-            .catch((e) => {
-              console.error("Error closing wallet after failed restore:", e);
-            })
-            .then(() => {
-              return wallet.delete();
-            })
-            .catch((e) => {
-              console.error("Error deleting wallet after failed restore:", e);
-            });
+          closeWallet(wallet);
         }}
       />
     );
@@ -288,6 +280,34 @@ export function WalletsList() {
   }
 }
 
+function closeWallet(wallet: MoneroWasmWallet): void {
+  wallet
+    .close_wallet()
+    .catch((e) => {
+      console.error("Error closing wallet:", e);
+    })
+    .then(() => {
+      return wallet.delete();
+    })
+    .catch((e) => {
+      console.error("Error deleting wallet:", e);
+    });
+}
+
+async function getBlockchainHeightByDateUsingTempWallet(
+  year: number,
+  month: number,
+  day: number,
+): Promise<bigint> {
+  const tempWallet = createWallet();
+  try {
+    await tempWallet.init();
+    return await tempWallet.get_blockchain_height_by_date(year, month, day);
+  } finally {
+    closeWallet(tempWallet);
+  }
+}
+
 function RestoreView({
   onDone,
 }: {
@@ -295,26 +315,24 @@ function RestoreView({
 }) {
   const alert = useAlert();
   const [fileName, setFileName] = React.useState("kek");
-  // 467y3cWwEMRikyE3LedE1xhdB41d31ZHn3EQrsvxrvvmYu3zcT32JtRguFeAvmhmquRpVEWHYExTd4d5x9RDPQRzGVxDT1z
-  // 8BWN39sXMo8WpyXVhSuUucSG8o17Q8nRVNw3VnWBSqXY6GV33zu1MEYSn1WgkdVxRc9yAZQT84gtdCytg1NRFcjPHcFXmpC
-  const [seed, setSeed] = React.useState(
+  const [moneroSeed, setMoneroSeed] = React.useState(
     `verification italics saved under upper fetches answers masterful general ` +
       `sickness ounce narrate joining cuddled faxed pledge touchy zippers turnip ` +
       `nephew renting dedicated fibula gecko verification`,
   );
+  const [cakeSeed, setCakeSeed] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
 
   const [startingHeight, setStartingHeight] = React.useState("3603563");
   const [loadingHeight, setLoadingHeight] = React.useState(false);
+  const [seedType, setSeedType] = React.useState<"monero-25" | "cake-16">(
+    "monero-25",
+  );
 
   const [restoring, setRestoring] = React.useState(false);
 
-  const doRestore = () => {
-    if (loadingHeight) {
-      void alert("Please wait until starting height is loaded");
-      return;
-    }
+  const doRestore = (seedType: "monero-25" | "cake-16") => {
     if (!fileName) {
       void alert("Please enter wallet name");
       return;
@@ -323,34 +341,76 @@ function RestoreView({
       void alert(`Wallet with name ${fileName} already exists`);
       return;
     }
-    if (!seed) {
-      void alert("Please enter seed");
-      return;
-    }
     if (password !== passwordConfirm) {
       void alert("Password confirmation does not match");
       return;
     }
-    let startHeightBigInt;
-    try {
-      startHeightBigInt = BigInt(startingHeight);
-    } catch {
-      void alert("Invalid starting height");
-      return;
+
+    if (seedType === "monero-25") {
+      if (loadingHeight) {
+        void alert("Please wait until starting height is loaded");
+        return;
+      }
+      if (!moneroSeed) {
+        void alert("Please enter seed");
+        return;
+      }
+    } else {
+      if (!cakeSeed) {
+        void alert("Please enter seed");
+        return;
+      }
     }
 
     setRestoring(true);
-    let wallet: MoneroWasmWallet;
+    let wallet: MoneroWasmWallet | undefined;
     (async () => {
+      let restoreHeight: bigint;
+      let polyseedPrivateKey: Uint8Array | null = null;
+
+      if (seedType === "monero-25") {
+        try {
+          restoreHeight = BigInt(startingHeight);
+        } catch {
+          throw new Error("Invalid starting height");
+        }
+      } else {
+        const decoded = decodePolyseed(cakeSeed);
+        if (!decoded.privateKey || decoded.privateKey.length !== 32) {
+          throw new Error("Invalid Cake seed: decoded private key is invalid");
+        }
+        polyseedPrivateKey = decoded.privateKey;
+
+        const birthdaySeconds = Number(decoded.birthday);
+        if (!Number.isFinite(birthdaySeconds)) {
+          throw new Error("Invalid Cake seed: birthday is invalid");
+        }
+        const birthdayDate = new Date(birthdaySeconds * 1000);
+        if (isNaN(birthdayDate.getTime())) {
+          throw new Error("Invalid Cake seed: birthday date is invalid");
+        }
+        const year = birthdayDate.getUTCFullYear();
+        const month = birthdayDate.getUTCMonth() + 1;
+        const day = birthdayDate.getUTCDate();
+        restoreHeight = await getBlockchainHeightByDateUsingTempWallet(
+          year,
+          month,
+          day,
+        );
+        setStartingHeight(restoreHeight.toString());
+      }
+
       wallet = createWallet();
       await wallet.init();
-      const secret32 = wallet.words_to_bytes(seed, "English");
-      // console.info("Restoring wallet with secret bytes:", secret32, [...secret32!]);
+      const secret32 =
+        seedType === "monero-25"
+          ? wallet.words_to_bytes(moneroSeed, "English")
+          : polyseedPrivateKey;
       if (!secret32 || secret32.length !== 32) {
         throw new Error("Invalid seed phrase provided");
       }
       await wallet.generate(fileName, password, secret32, true, false);
-      wallet.set_refresh_from_block_height(startHeightBigInt);
+      wallet.set_refresh_from_block_height(restoreHeight);
       await wallet.store();
       await saveFilesystem();
       console.info("Wallet restored and saved");
@@ -361,19 +421,35 @@ function RestoreView({
       void alert(
         `Error restoring wallet: ${(e as Error).message || "Unknown error"}`,
       );
-      wallet
-        .close_wallet()
-        .catch((e) => {
-          console.error("Error closing wallet after failed restore:", e);
-        })
-        .then(() => {
-          return wallet.delete();
-        })
-        .catch((e) => {
-          console.error("Error deleting wallet after failed restore:", e);
-        });
+      if (wallet) {
+        closeWallet(wallet);
+      }
       setRestoring(false);
     });
+  };
+
+  const onDateChange = (value: string) => {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) {
+      return;
+    }
+    const { year, month, day } = {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+    };
+    setLoadingHeight(true);
+    getBlockchainHeightByDateUsingTempWallet(year, month, day)
+      .then((height) => {
+        setStartingHeight(height.toString());
+      })
+      .catch((e) => {
+        console.error("Error getting blockchain height by date:", e);
+        setStartingHeight("error");
+      })
+      .then(() => {
+        setLoadingHeight(false);
+      });
   };
 
   return (
@@ -384,77 +460,79 @@ function RestoreView({
           <Label>Wallet name</Label>
           <Input
             value={fileName}
+            disabled={restoring}
             onChange={(e) => setFileName(e.target.value)}
           />
         </FormRow>
 
-        <FormRow>
-          <Label>Seed phrase</Label>
-          <TextArea
-            rows={4}
-            value={seed}
-            onChange={(e) => setSeed(e.target.value)}
-          ></TextArea>
-        </FormRow>
+        <NiceTabs
+          initialKey="monero-25"
+          onTabChange={(key) => {
+            if (key === "monero-25" || key === "cake-16") {
+              setSeedType(key);
+            }
+          }}
+          tabs={[
+            {
+              key: "monero-25",
+              label: "Monero 25 words",
+              content: (
+                <div className="space-y-4">
+                  <FormRow>
+                    <Label>Seed phrase</Label>
+                    <TextArea
+                      rows={4}
+                      value={moneroSeed}
+                      disabled={restoring}
+                      onChange={(e) => setMoneroSeed(e.target.value)}
+                    ></TextArea>
+                  </FormRow>
 
-        <FormRow>
-          <Label>Starting height</Label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              value={!loadingHeight ? startingHeight : "Loading..."}
-              onChange={(e) => setStartingHeight(e.target.value)}
-              readOnly={loadingHeight}
-              disabled={loadingHeight}
-            />
-            <Input
-              type="date"
-              onChange={(e) => {
-                const d = new Date(e.target.value);
-                if (isNaN(d.getTime())) {
-                  return;
-                }
-                const { year, month, day } = {
-                  year: d.getUTCFullYear(),
-                  month: d.getUTCMonth() + 1,
-                  day: d.getUTCDate(),
-                };
-                setLoadingHeight(true);
-                const tempWallet = createWallet();
-                tempWallet
-                  .init()
-                  .then(() =>
-                    tempWallet.get_blockchain_height_by_date(year, month, day),
-                  )
-                  .then((height) => {
-                    setStartingHeight(height.toString());
-                  })
-                  .catch((e) => {
-                    console.error(
-                      "Error getting blockchain height by date:",
-                      e,
-                    );
-                    setStartingHeight("error");
-                  })
-                  .then(() => {
-                    setLoadingHeight(false);
-                    return tempWallet.close_wallet();
-                  })
-                  .catch((e) => {
-                    console.error("Error closing temporary wallet:", e);
-                  })
-                  .then(() => {
-                    return tempWallet.delete();
-                  })
-                  .catch((e) => {
-                    console.error("Error deleting temporary wallet:", e);
-                  });
-              }}
-            />
-          </div>
-          <div className="mt-1 text-[11px] text-white/50">
-            Or pick a date to auto-fill block height.
-          </div>
-        </FormRow>
+                  <FormRow>
+                    <Label>Starting height</Label>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Input
+                        value={!loadingHeight ? startingHeight : "Loading..."}
+                        onChange={(e) => setStartingHeight(e.target.value)}
+                        readOnly={loadingHeight || restoring}
+                        disabled={loadingHeight || restoring}
+                      />
+                      <Input
+                        type="date"
+                        disabled={restoring}
+                        onChange={(e) => onDateChange(e.target.value)}
+                      />
+                    </div>
+                    <div className="mt-1 text-[11px] text-white/50">
+                      Or pick a date to auto-fill block height.
+                    </div>
+                  </FormRow>
+                </div>
+              ),
+            },
+            {
+              key: "cake-16",
+              label: "Cake 16 words",
+              content: (
+                <div className="space-y-4">
+                  <FormRow>
+                    <Label>Seed phrase</Label>
+                    <TextArea
+                      rows={4}
+                      value={cakeSeed}
+                      disabled={restoring}
+                      onChange={(e) => setCakeSeed(e.target.value)}
+                    ></TextArea>
+                    <div className="mt-1 text-[11px] text-white/50">
+                      Starting height is derived automatically from the seed
+                      birthday.
+                    </div>
+                  </FormRow>
+                </div>
+              ),
+            },
+          ]}
+        />
 
         <FormRow>
           <Label>Password (optional)</Label>
@@ -462,6 +540,7 @@ function RestoreView({
             type="password"
             autoComplete="off"
             value={password}
+            disabled={restoring}
             onChange={(e) => setPassword(e.target.value)}
           />
         </FormRow>
@@ -472,6 +551,7 @@ function RestoreView({
             type="password"
             autoComplete="off"
             value={passwordConfirm}
+            disabled={restoring}
             onChange={(e) => setPasswordConfirm(e.target.value)}
           />
           {passwordConfirm && password !== passwordConfirm && (
@@ -485,7 +565,7 @@ function RestoreView({
           <Button
             className="w-full"
             variant="primary"
-            onClick={doRestore}
+            onClick={() => doRestore(seedType)}
             disabled={restoring}
           >
             {restoring ? "Restoring..." : "↺ Restore wallet"}
@@ -592,20 +672,9 @@ function CreateNewWalletView({
       void alert(
         `Error creating wallet: ${(e as Error).message || "Unknown error"}`,
       );
-      wallet
-        ?.close_wallet()
-        .catch((closeErr) => {
-          console.error("Error closing wallet after failed create:", closeErr);
-        })
-        .then(() => {
-          wallet?.delete();
-        })
-        .catch((deleteErr) => {
-          console.error(
-            "Error deleting wallet after failed create:",
-            deleteErr,
-          );
-        });
+      if (wallet) {
+        closeWallet(wallet);
+      }
       setState({ type: "entering-data", fileName, password, passwordConfirm });
     });
   };
@@ -617,20 +686,7 @@ function CreateNewWalletView({
       );
     }
     onDone(null);
-    state.wallet
-      .close_wallet()
-      .catch((e) => {
-        console.error("Error closing wallet after create flow cancel:", e);
-      })
-      .then(() => {
-        state.wallet.delete();
-      })
-      .catch((e) => {
-        console.error(
-          "Error deleting wallet instance after create flow cancel:",
-          e,
-        );
-      });
+    closeWallet(state.wallet);
   };
 
   React.useEffect(() => {
@@ -824,17 +880,7 @@ function OpenWalletView({
       onDone(wallet);
       setBusy(null);
     })().catch((e) => {
-      wallet
-        .close_wallet()
-        .catch((e) => {
-          console.error("Error closing wallet after failed restore:", e);
-        })
-        .then(() => {
-          return wallet.delete();
-        })
-        .catch((e) => {
-          console.error("Error deleting wallet after failed restore:", e);
-        });
+      closeWallet(wallet);
 
       if (!isInitial) {
         console.error("Error opening wallet:", e);
