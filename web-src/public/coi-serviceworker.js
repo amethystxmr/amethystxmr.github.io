@@ -1,15 +1,15 @@
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener("activate", (event) =>
+  event.waitUntil(self.clients.claim()),
+);
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.cache === "only-if-cached" && request.mode !== "same-origin") {
     return;
   }
   const requestUrl = new URL(request.url);
-  const isHtmlEntryPath =
-    requestUrl.origin === self.location.origin &&
-    (requestUrl.pathname === "/" || requestUrl.pathname === "/index.html");
-  if (!isHtmlEntryPath) {
+  const needsIsolationHeaders = requestUrl.origin === self.location.origin;
+  if (!needsIsolationHeaders) {
     return;
   }
   event.respondWith(
