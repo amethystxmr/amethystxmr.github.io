@@ -11,13 +11,29 @@ on:
       - reopened
 
 jobs:
+  resolve_build_type:
+    runs-on: ubuntu-latest
+    outputs:
+      build_type: ${{ steps.resolve.outputs.build_type }}
+    steps:
+      - id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "build_type=Debug" >> "$GITHUB_OUTPUT"
+          else
+            echo "build_type=Release" >> "$GITHUB_OUTPUT"
+          fi
+
   wasm_build:
+    needs: resolve_build_type
     uses: ./.github/workflows/wasm-build.yml
     with:
-      build_type: ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }}
+      build_type: ${{ needs.resolve_build_type.outputs.build_type }}
 
   web_frontend:
-    needs: wasm_build
+    needs:
+      - resolve_build_type
+      - wasm_build
     uses: ./.github/workflows/web-frontend.yml
     with:
-      build_type: ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }}
+      build_type: ${{ needs.resolve_build_type.outputs.build_type }}
