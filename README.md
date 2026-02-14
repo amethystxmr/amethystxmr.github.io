@@ -14,4 +14,9 @@ cd monero-wasm-src
 
 ## Building web
 
-todo
+```
+npm run build
+
+# or for local development
+npm run dev
+```
