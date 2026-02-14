@@ -932,6 +932,14 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       ? navigator.hardwareConcurrency
       : null;
   const daemonAddress = options.getValue("daemonAddress");
+  const buildInfoText = React.useMemo(() => {
+    if (import.meta.env.DEV) {
+      return "Development mode via Vite dev server.";
+    }
+    const ts = import.meta.env.VITE_BUILD_TIMESTAMP || "unknown time";
+    const hash = import.meta.env.VITE_GIT_HASH || "unknown";
+    return `Built ${ts}, git ${hash}.`;
+  }, []);
 
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
@@ -1028,6 +1036,9 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       </SectionPanel>
 
       <div className="mt-1">
+        <div className="mb-2 text-center text-[10px] text-white/45">
+          {buildInfoText}
+        </div>
         <ButtonsHolder>
           <Button className="w-full" variant="soft" onClick={onBack}>
             ← Back
