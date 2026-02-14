@@ -215,7 +215,7 @@ export async function loadFilesystem() {
 async function initFilesystem() {
   module.FS.mkdir("/data");
   module.FS.mount(module.IDBFS, {}, "/data");
-  loadFilesystem();
+  await loadFilesystem();
   module.FS.chdir("/data");
 }
 
