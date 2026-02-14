@@ -30,7 +30,9 @@ jobs:
             ~/emsdk
             ~/.emscripten_cache
             monero-wasm-src/built-*
-          key: ${{ runner.os }}-wasm-${{ env.BUILD_TYPE }}
+          key: ${{ runner.os }}-wasm-${{ env.BUILD_TYPE }}-${{ hashFiles('monero-wasm-src/ContribDepends.cmake', 'monero-wasm-src/build.sh', 'monero-wasm-src/build-wasm-cmds.sh', 'monero-wasm-src/CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm-${{ env.BUILD_TYPE }}-
 
       - name: Setup emsdk (local) # TODO: Fix version
         run: |

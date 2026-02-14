@@ -287,6 +287,13 @@ file(MAKE_DIRECTORY "${SODIUM_SRC_DIR}")
 file(MAKE_DIRECTORY "${SODIUM_INSTALL_DIR}/include")
 file(MAKE_DIRECTORY "${SODIUM_INSTALL_DIR}/lib")
 
+if(EMSCRIPTEN)
+    # Force autotools cross-compile mode, otherwise configure may try to run wasm test binaries.
+    set(SODIUM_HOST_ARG --host=wasm32-unknown-emscripten)
+else()
+    set(SODIUM_HOST_ARG)
+endif()
+
 ExternalProject_Add(libsodium_ep
     URL "file://${SODIUM_ARCHIVE}"
     SOURCE_DIR "${SODIUM_SRC_DIR}"
@@ -295,6 +302,7 @@ ExternalProject_Add(libsodium_ep
     # Autotools doesn't like spaces/newlines in env; keep it simple
     CONFIGURE_COMMAND
     ${CONFIGURE_CMD}
+    ${SODIUM_HOST_ARG}
     --prefix=${SODIUM_INSTALL_DIR}
     --disable-shared
     --enable-static
