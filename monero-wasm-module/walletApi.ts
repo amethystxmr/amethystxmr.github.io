@@ -161,6 +161,7 @@ export async function initModule() {
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
   setMaxConcurrency(getRecommendedMaxConcurrency());
+  (window as any).module = module;
 
   window.globalHttpConfig = {
     mapUrl: () => {
