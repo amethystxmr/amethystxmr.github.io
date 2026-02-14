@@ -136,6 +136,11 @@ interface Module {
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
   set_max_concurrency(threads: number): void;
+  decodePolyseed(moneroPolyseed: string): {
+    birthday: bigint;
+    privateKey: Uint8Array;
+    langStr: string;
+  };
 }
 
 let module: Module;

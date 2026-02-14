@@ -12,6 +12,7 @@
 
 #include <sodium/crypto_auth_hmacsha256.h>
 #include <sodium/utils.h>
+#include "memwipe.h"
 
 static inline void
 store32_be(uint8_t dst[4], uint32_t w)
@@ -148,37 +149,75 @@ public:
 
 static polyseed_initializer initializer;
 
-void keke(std::string moneroPolyseed)
+static const char *polyseedStatusToHumanText(polyseed_status status)
+{
+    switch (status)
+    {
+    case POLYSEED_OK:
+        return "Success";
+    case POLYSEED_ERR_NUM_WORDS:
+        return "Wrong number of words in the phrase";
+    case POLYSEED_ERR_LANG:
+        return "Unknown language or unsupported words";
+    case POLYSEED_ERR_CHECKSUM:
+        return "Checksum mismatch";
+    case POLYSEED_ERR_UNSUPPORTED:
+        return "Unsupported seed features";
+    case POLYSEED_ERR_FORMAT:
+        return "Invalid seed format";
+    case POLYSEED_ERR_MEMORY:
+        return "Memory allocation failure";
+    case POLYSEED_ERR_MULT_LANG:
+        return "Phrase matches more than one language";
+    default:
+        return "Unknown polyseed error";
+    }
+}
+
+emscripten::val decodePolyseed(std::string moneroPolyseed)
 {
     polyseed_data *seed2;
     const polyseed_lang *lang;
     auto result = polyseed_decode(moneroPolyseed.c_str(), POLYSEED_MONERO, &lang, &seed2);
     if (result != POLYSEED_OK)
     {
-        std::string error = "Error: " + std::to_string(result);
-        throw std::runtime_error(error);
+        throw std::runtime_error(std::string(polyseedStatusToHumanText(result)));
     }
     auto langStr = polyseed_get_lang_name_en(lang);
-    printf("Language: %s\n", langStr);
+    // printf("Language: %s\n", langStr);
     if (polyseed_is_encrypted(seed2))
     {
+        polyseed_free(seed2);
         throw std::runtime_error("Seed is encrypted, not supported");
     };
     uint8_t key2[32];
     polyseed_keygen(seed2, POLYSEED_MONERO, sizeof(key2), key2);
-    printf("Private key: ");
-    for (unsigned i = 0; i < sizeof(key2); ++i)
-        printf("%02x", key2[i] & 0xff);
-    printf("\n");
+    // printf("Private key: ");
+    // for (unsigned i = 0; i < sizeof(key2); ++i)
+    // printf("%02x", key2[i] & 0xff);
+    // printf("\n");
 
     auto birthday = polyseed_get_birthday(seed2);
-    printf("Birthday: %u\n", birthday);
+    // printf("Birthday: %u\n", birthday);
 
+    auto privateKey = emscripten::val::global("Uint8Array").new_(32);
+    for (size_t i = 0; i < sizeof(key2); ++i)
+    {
+        privateKey.set(i, key2[i]);
+    }
+
+    emscripten::val out = emscripten::val::object();
+    out.set("birthday", emscripten::val(birthday));
+    out.set("privateKey", privateKey);
+    out.set("langStr", emscripten::val(langStr));
+
+    memwipe(key2, sizeof(key2));
     polyseed_free(seed2);
+    return out;
 }
 
 EMSCRIPTEN_BINDINGS(monero_wasm_wallet_polyseed)
 {
     emscripten::function(
-        "keke", &keke);
+        "decodePolyseed", &decodePolyseed);
 }
