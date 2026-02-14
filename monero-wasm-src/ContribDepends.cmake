@@ -113,7 +113,8 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 set(BOOST_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/boost-install")
 file(MAKE_DIRECTORY "${BOOST_INSTALL_DIR}")
-if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a")
+if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
+   NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_locale.a")
     message(STATUS " =========== Building Boost...")
     set(BOOST_SRC_DIR "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}")
 
@@ -156,6 +157,7 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a")
         --with-thread \
         --with-date_time \
         --with-serialization \
+        --with-locale \
         --prefix='${BOOST_INSTALL_DIR}' \
         install"
         WORKING_DIRECTORY "${BOOST_SRC_DIR}"
@@ -178,7 +180,7 @@ message(STATUS "BOOST_ROOT='${BOOST_ROOT}'")
 message(STATUS "Boost_INCLUDE_DIR='${Boost_INCLUDE_DIR}'")
 message(STATUS "Boost_LIBRARY_DIR='${Boost_LIBRARY_DIR}'")
 
-find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono serialization program_options)
+find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono serialization program_options locale)
 
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 

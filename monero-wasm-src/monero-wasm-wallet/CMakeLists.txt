@@ -31,6 +31,11 @@ monero_add_executable(monero-wasm-wallet
     ${monero_wasm_wallet_private_headers}
 )
 
+target_include_directories(monero-wasm-wallet
+    PRIVATE
+    ${polyseed_SOURCE_DIR}/include
+)
+
 
 target_link_libraries(monero-wasm-wallet
     PRIVATE
