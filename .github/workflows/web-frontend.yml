@@ -10,6 +10,10 @@ on:
 jobs:
   web_frontend:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     steps:
       - name: Download wasm artifact
         uses: actions/download-artifact@v4
@@ -33,3 +37,14 @@ jobs:
 
       - name: Build web frontend
         run: npm run build
+
+      - name: Upload Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: built-web
+
+      - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        id: deploy
+        uses: actions/deploy-pages@v4
