@@ -34,7 +34,6 @@ jobs:
           "$HOME/emsdk/emsdk" activate latest
 
       - name: Configure ccache
-        if: false
         run: |
           echo "CCACHE_DIR=${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}" >> "$GITHUB_ENV"
           echo "EM_COMPILER_WRAPPER=ccache" >> "$GITHUB_ENV"
