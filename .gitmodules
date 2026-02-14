@@ -1,3 +1,4 @@
 [submodule "monero-wasm-src/monero"]
 	path = monero-wasm-src/monero
 	url = https://github.com/monero-project/monero.git
+	ignore = dirty
