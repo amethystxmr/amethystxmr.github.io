@@ -23,6 +23,9 @@ error-beep() {
     return 1
 }
 
+echo "====== Building monero-wasm (build type: $BUILD_TYPE) ======"
+
+
 if [ ! -d "$EMSDK_DIR" ]; then
   echo "====== Building using emscripten docker image ======"
   docker run \
