@@ -6,6 +6,7 @@ export { InputWithAction } from "./InputWithAction";
 export { TextArea } from "./TextArea";
 export { ErrorMessage } from "./ErrorMessage";
 export { Button } from "./Button";
+export { ButtonRadioRow } from "./ButtonRadioRow";
 export { ButtonsHolder } from "./ButtonsHolder";
 export { FormRow } from "./FormRow";
 export { SectionPanel } from "./SectionPanel";
