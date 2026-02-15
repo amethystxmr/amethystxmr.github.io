@@ -193,6 +193,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     const doRefresh = async () => {
       setRefreshing(true);
       setRefreshError(null);
+      const multisigStatus = await wallet.get_multisig_status();
+      if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
+        // No refreshing while multisig is not ready
+        setRefreshing(false);
+        return;
+      }
+
       try {
         const refreshStatus = await wallet.refresh(
           false,
