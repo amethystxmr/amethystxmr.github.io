@@ -78,7 +78,6 @@ export declare class MoneroWasmWallet {
   ): Promise<string>;
   /**
    * Note: this also saves files.
-   * If kex_msgs is empty it returns current kex message
    */
   exchange_multisig_keys(password: string, kex_msgs: string): Promise<string>;
   verify_password(password: string): Promise<boolean>;
