@@ -3,10 +3,8 @@
 #include <emscripten/bind.h>
 #include "emscripten/proxying.h"
 
-
 #include <emscripten/val.h>
 #include <optional>
-
 
 struct PromiseTriple
 {
@@ -36,22 +34,22 @@ PromiseTriple makePromise()
 
     return {promise, holder["_resolve"], holder["_reject"]};
 }
-emscripten::val jsError(std::string text){
-   return emscripten::val::global("Error").new_(text);
+emscripten::val jsError(std::string text)
+{
+    return emscripten::val::global("Error").new_(text);
 }
-
 
 template <class ResultT, class WorkFn, class PackFn>
 emscripten::val runAsyncPromise(
-    emscripten::ProxyingQueue& queue,
-    pthread_t& workerThread,
-    WorkFn&& work,
-    PackFn&& packToJs)
+    emscripten::ProxyingQueue &queue,
+    pthread_t &workerThread,
+    WorkFn &&work,
+    PackFn &&packToJs)
 {
     auto p = makePromise();
 
     auto result = std::make_shared<ResultT>();
-    auto error  = std::make_shared<std::optional<std::string>>();
+    auto error = std::make_shared<std::optional<std::string>>();
 
     queue.proxyCallback(
         workerThread,
@@ -62,7 +60,7 @@ emscripten::val runAsyncPromise(
                 // work must fill *result (or assign) and may throw
                 work(*result);
             }
-            catch (const std::exception& e)
+            catch (const std::exception &e)
             {
                 *error = e.what();
             }
@@ -86,4 +84,20 @@ emscripten::val runAsyncPromise(
         });
 
     return p.promise;
+}
+
+template <class ResultT, class WorkFn>
+emscripten::val runAsyncPromise(
+    emscripten::ProxyingQueue &queue,
+    pthread_t &workerThread,
+    WorkFn &&work)
+{
+    return runAsyncPromise<ResultT>(
+        queue,
+        workerThread,
+        std::forward<WorkFn>(work),
+        [](ResultT &r) -> emscripten::val
+        {
+            return emscripten::val(r);
+        });
 }
