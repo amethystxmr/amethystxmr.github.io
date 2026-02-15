@@ -762,6 +762,25 @@ public:
             });
     }
 
+    auto exchange_multisig_keys(const std::string &password_str, const std::string &kex_msgs_str)
+    {
+        using R = std::string;
+        epee::wipeable_string password(password_str);
+        return runAsyncPromise<R>(
+            walletQueue,
+            walletThread,
+            [this, password, kex_msgs_str](R &r)
+            {
+                if (!m_wallet.get_multisig_status().multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is not multisig");
+                };
+                std::vector<std::string> kex_msgs;
+                boost::split(kex_msgs, kex_msgs_str, boost::is_any_of(" "), boost::token_compress_on);
+                r = m_wallet.exchange_multisig_keys(password, kex_msgs);
+            });
+    }
+
     emscripten::val prepare_multisig()
     {
         return runAsyncPromise<std::string>(
@@ -837,6 +856,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
         .function("prepare_multisig", &MoneroWasmWallet::prepare_multisig)
         .function("make_multisig", &MoneroWasmWallet::make_multisig)
+        .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)
         .constructor();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
