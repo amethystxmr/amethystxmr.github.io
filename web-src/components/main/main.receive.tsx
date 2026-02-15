@@ -1,16 +1,25 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { balanceToString, shortenAddress, stringToBalance, toFiat } from "../utils";
+import { PaymentDetailsTransformed } from "../../../monero-wasm-module/walletApi";
+import {
+  balanceToString,
+  shortenAddress,
+  stringToBalance,
+  toFiat,
+} from "../utils";
 import { Button, Input, SurfaceCard } from "../ui";
 
 type AddressItem = {
   address: string; // full Monero address
   label?: string; // optional
+  indexMinor: number;
 };
 
 type ReceiveAddressesProps = {
   primaryAddress: string; // starts with "4"
   secondaryAddresses?: AddressItem[]; // 0..many
+  payments: PaymentDetailsTransformed[] | null;
+  mempoolPayments: PaymentDetailsTransformed[] | null;
   onAddSubaddressAdd: (newLabel: string) => Promise<void>;
   price: number | null;
 };
@@ -52,6 +61,8 @@ function AddressRow({
   hasQrAmountError,
   qrAmount,
   price,
+  totalReceivedAtomic,
+  incomingTxCount,
 }: {
   title: string;
   address: string;
@@ -65,6 +76,8 @@ function AddressRow({
   hasQrAmountError: boolean;
   qrAmount?: bigint;
   price: number | null;
+  totalReceivedAtomic: bigint;
+  incomingTxCount: number;
 }) {
   const [copied, setCopied] = useState<"idle" | "ok" | "fail">("idle");
 
@@ -74,6 +87,8 @@ function AddressRow({
     setCopied(ok ? "ok" : "fail");
     window.setTimeout(() => setCopied("idle"), 1200);
   }
+  const hasIncomingStats = totalReceivedAtomic > 0n || incomingTxCount > 0;
+  const txWord = incomingTxCount === 1 ? "tx" : "txes";
 
   return (
     <SurfaceCard>
@@ -93,6 +108,15 @@ function AddressRow({
               <span className="text-white/70">{label}</span>
             </div>
           )}
+
+          {hasIncomingStats ? (
+            <div className="mt-1 text-[11px] text-white/55">
+              Received {balanceToString(totalReceivedAtomic)} XMR in{" "}
+              {incomingTxCount} {txWord}
+            </div>
+          ) : (
+            <div className="mt-1 text-[11px] text-white/50">Unused yet</div>
+          )}
         </div>
 
         <div className="flex shrink-0 gap-2">
@@ -110,7 +134,11 @@ function AddressRow({
             variant="primary"
             className="!flex-none rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            {copied === "ok" ? "Copied" : copied === "fail" ? "Copy failed" : "Copy"}
+            {copied === "ok"
+              ? "Copied"
+              : copied === "fail"
+                ? "Copy failed"
+                : "Copy"}
           </Button>
         </div>
       </div>
@@ -142,10 +170,13 @@ function AddressRow({
             <QRCodeSVG value={qrValue} size={240} />
           </div>
           <div className="text-[11px] text-white/55">
-            Scan to copy address{qrAmount ? ` and amount (${balanceToString(qrAmount)} XMR)` : ""}
+            Scan to copy address
+            {qrAmount ? ` and amount (${balanceToString(qrAmount)} XMR)` : ""}
           </div>
           <div className="w-[240px] space-y-1.5 text-center">
-            <div className="text-xs font-semibold text-white/75">Optional amount in QR (XMR)</div>
+            <div className="text-xs font-semibold text-white/75">
+              Optional amount in QR (XMR)
+            </div>
             <Input
               value={qrAmountInput}
               onChange={(e) => onQrAmountInputChange(e.target.value)}
@@ -158,7 +189,9 @@ function AddressRow({
                 Invalid amount. Use numeric value with up to 12 decimals.
               </div>
             ) : (
-              <div className="text-[11px] text-white/50">{formatFiatHint(qrAmount, price)}</div>
+              <div className="text-[11px] text-white/50">
+                {formatFiatHint(qrAmount, price)}
+              </div>
             )}
           </div>
         </div>
@@ -170,16 +203,40 @@ function AddressRow({
 export function ReceiveAddresses({
   primaryAddress,
   secondaryAddresses,
+  payments,
+  mempoolPayments,
   onAddSubaddressAdd,
   price,
 }: ReceiveAddressesProps) {
   const rows = useMemo(() => {
     const cleanedSecondary = secondaryAddresses
       ?.filter((a) => a?.address?.trim())
-      ?.map((a) => ({ address: a.address.trim(), label: a.label }));
+      ?.map((a) => ({
+        address: a.address.trim(),
+        label: a.label,
+        indexMinor: a.indexMinor,
+      }));
 
     return cleanedSecondary;
   }, [secondaryAddresses]);
+
+  const incomingStatsByIndexMinor = useMemo(() => {
+    const stats = new Map<number, { amount: bigint; txCount: number }>();
+    const all = [...(payments || []), ...(mempoolPayments || [])];
+
+    for (const p of all) {
+      if (p.type !== "block" && p.type !== "in" && p.type !== "mempool") {
+        continue;
+      }
+      const indexMinor = p.index_minor;
+      const current = stats.get(indexMinor) || { amount: 0n, txCount: 0 };
+      current.amount += p.amount;
+      current.txCount += 1;
+      stats.set(indexMinor, current);
+    }
+
+    return stats;
+  }, [mempoolPayments, payments]);
 
   const [isAdding, setIsAdding] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -187,7 +244,8 @@ export function ReceiveAddresses({
   const [activeQrAddress, setActiveQrAddress] = useState<string | null>(null);
   const [qrAmountInput, setQrAmountInput] = useState("");
   const qrAmountAtomic = parseMoneroAmountAtomic(qrAmountInput);
-  const hasQrAmountError = qrAmountInput.trim().length > 0 && qrAmountAtomic === undefined;
+  const hasQrAmountError =
+    qrAmountInput.trim().length > 0 && qrAmountAtomic === undefined;
   const handleCreate = useCallback(() => {
     setIsAdding(true);
     onAddSubaddressAdd(newLabel)
@@ -211,9 +269,13 @@ export function ReceiveAddresses({
           title="Primary address"
           address={primaryAddress}
           label={shortenAddress(primaryAddress)}
+          totalReceivedAtomic={incomingStatsByIndexMinor.get(0)?.amount || 0n}
+          incomingTxCount={incomingStatsByIndexMinor.get(0)?.txCount || 0}
           isQrOpen={activeQrAddress === primaryAddress}
           onToggleQr={() =>
-            setActiveQrAddress((current) => (current === primaryAddress ? null : primaryAddress))
+            setActiveQrAddress((current) =>
+              current === primaryAddress ? null : primaryAddress,
+            )
           }
           qrValue={buildMoneroQrValue(primaryAddress, qrAmountAtomic)}
           qrAmountInput={qrAmountInput}
@@ -234,12 +296,24 @@ export function ReceiveAddresses({
               {rows.map((a, i) => (
                 <AddressRow
                   key={`${a.address}-${i}`}
-                  title={a.label || `Subaddress #${i + 1}`}
+                  title={
+                    a.label
+                      ? `${a.label} (#${a.indexMinor})`
+                      : `Subaddress #${a.indexMinor}`
+                  }
                   address={a.address}
                   label={shortenAddress(a.address)}
+                  totalReceivedAtomic={
+                    incomingStatsByIndexMinor.get(a.indexMinor)?.amount || 0n
+                  }
+                  incomingTxCount={
+                    incomingStatsByIndexMinor.get(a.indexMinor)?.txCount || 0
+                  }
                   isQrOpen={activeQrAddress === a.address}
                   onToggleQr={() =>
-                    setActiveQrAddress((current) => (current === a.address ? null : a.address))
+                    setActiveQrAddress((current) =>
+                      current === a.address ? null : a.address,
+                    )
                   }
                   qrValue={buildMoneroQrValue(a.address, qrAmountAtomic)}
                   qrAmountInput={qrAmountInput}
@@ -268,7 +342,9 @@ export function ReceiveAddresses({
             </Button>
           ) : (
             <SurfaceCard className="space-y-3">
-              <div className="text-sm font-semibold text-white/90">New subaddress</div>
+              <div className="text-sm font-semibold text-white/90">
+                New subaddress
+              </div>
 
               <Input
                 value={newLabel}
@@ -326,7 +402,10 @@ function parseMoneroAmountAtomic(value: string): bigint | undefined {
   }
 }
 
-function formatFiatHint(amount: bigint | undefined, price: number | null): string {
+function formatFiatHint(
+  amount: bigint | undefined,
+  price: number | null,
+): string {
   if (!amount) {
     return "";
   }

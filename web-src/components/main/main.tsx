@@ -72,7 +72,7 @@ export function WalletMain({
       // start from 1 because 0 is primary
       const address = wallet.get_subaddress_as_str(0, i);
       const label = wallet.get_subaddress_label(0, i);
-      accounts.push({ address, label });
+      accounts.push({ address, label, indexMinor: i });
     }
     setSecondaryAddresses(accounts);
   }, [wallet]);
@@ -346,6 +346,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     | {
         address: string;
         label: string;
+        indexMinor: number;
       }[]
     | null
   >(null);
@@ -494,6 +495,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 <ReceiveAddresses
                   primaryAddress={primaryAddress}
                   secondaryAddresses={secondaryAddresses || undefined}
+                  payments={payments}
+                  mempoolPayments={mempoolPayments}
                   price={price}
                   onAddSubaddressAdd={async (newLabel) => {
                     await wallet.add_subaddress(0, newLabel);
