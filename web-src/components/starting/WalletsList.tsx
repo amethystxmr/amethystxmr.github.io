@@ -420,7 +420,7 @@ function RestoreView({
       });
       wallet.set_refresh_from_block_height(restoreHeight);
       await saveWalletIntoFs(wallet);
-      await persistNavigatorStorage(alert);
+      await persistNavigatorStorage();
       console.info("Wallet restored and saved");
       setRestoring(false);
       onDone(wallet);
@@ -671,7 +671,7 @@ function CreateNewWalletView({
       const seed = await wallet.get_seed("English", "");
 
       await saveWalletIntoFs(wallet);
-      await persistNavigatorStorage(alert);
+      await persistNavigatorStorage();
       console.info("Wallet created and saved");
       setState({
         type: "showing-seed",
@@ -887,6 +887,7 @@ function OpenWalletView({
     setBusy(isInitial ? "initial" : "user");
     let wallet: MoneroWasmWallet;
     (async () => {
+      await persistNavigatorStorage();
       wallet = createWallet();
       await wallet.init();
       await wallet.load(fileName, password);
@@ -1111,9 +1112,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   );
 }
 
-async function persistNavigatorStorage(
-  _alert: ReturnType<typeof useAlert>,
-): Promise<boolean> {
+async function persistNavigatorStorage(): Promise<boolean> {
   if (
     typeof navigator === "undefined" ||
     !navigator.storage ||
