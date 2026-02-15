@@ -63,6 +63,8 @@ function MultisigTabWrap({ children }: React.PropsWithChildren) {
   return <div className="mt-2 space-y-3 lg:mt-0 lg:h-full">{children}</div>;
 }
 
+const LAST_KEX_MESSAGE_ATTRIBUTE = "amethystxmr_last_kex_message";
+
 export function MultisigTab({
   wallet,
   onRefresh,
@@ -271,9 +273,15 @@ export function MultisigTab({
         return;
       }
 
-      const r = await withFsLock(() =>
-        wallet.make_multisig(password, messages.join(" "), state.threshold),
-      );
+      const r = await withFsLock(async () => {
+        const nextKexMessage = await wallet.make_multisig(
+          password,
+          messages.join(" "),
+          state.threshold,
+        );
+        await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
+        return nextKexMessage;
+      });
       console.log("make_multisig result:", r);
 
       onRefresh();

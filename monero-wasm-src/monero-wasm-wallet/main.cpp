@@ -798,7 +798,7 @@ public:
                     throw std::runtime_error("Wallet must be empty to create multisig");
                 };
                 std::vector<std::string> kex_msgs;
-                if (!kex_msgs_str.empty())
+                if (!initial_kex_msgs.empty())
                 {
                     boost::split(kex_msgs, initial_kex_msgs, boost::is_any_of(" "), boost::token_compress_on);
                 }
