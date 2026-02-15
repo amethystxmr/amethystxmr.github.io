@@ -123,10 +123,11 @@ export function downloadBlob(
   link.href = url;
   link.download = fileName;
   document.body.appendChild(link);
+  link.style.display = "none";
   link.click();
-  link.remove();
 
   setTimeout(() => {
+    link.remove();
     URL.revokeObjectURL(url);
   }, revokeDelayMs);
 }
