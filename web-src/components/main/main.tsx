@@ -426,6 +426,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     wallet,
     price: price,
   });
+  const isShouldHideMultisigTab =
+    !!payments &&
+    !!mempoolPayments &&
+    (payments.length > 0 || mempoolPayments.length > 0);
 
   return (
     <div className="space-y-5 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
@@ -525,11 +529,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 />
               ),
             },
-            ...(payments &&
-            mempoolPayments &&
-            (payments.length > 0 || mempoolPayments.length > 0)
-              ? []
-              : [
+            ...(!isShouldHideMultisigTab
+              ? [
                   {
                     key: "multisig",
                     label: "Multisig",
@@ -539,10 +540,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                         onRefresh={stopWaitingOrScheduleNoWait}
                         payments={payments}
                         mempoolPayments={mempoolPayments}
+                        walletHeight={walletBlockchainCurrentHeight}
+                        daemonHeight={daemonHeight}
                       />
                     ),
                   },
-                ]),
+                ]
+              : []),
             {
               key: "other",
               label: "Other",
