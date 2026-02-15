@@ -1112,7 +1112,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 }
 
 async function persistNavigatorStorage(
-  alert: ReturnType<typeof useAlert>,
+  _alert: ReturnType<typeof useAlert>,
 ): Promise<void> {
   if (
     typeof navigator === "undefined" ||
@@ -1128,14 +1128,9 @@ async function persistNavigatorStorage(
     }
     const persisted = await navigator.storage.persist();
     if (!persisted) {
-      await alert(
-        "Warning: Storage persistence was not granted. Your wallet data may be lost, keep your seed phrase safe",
-      );
+      console.warn("Storage persistence was not granted");
     }
   } catch (e) {
     console.error("Error while trying to persist storage:", e);
-    await alert(
-      "Warning: An error occurred while trying to persist storage. Your wallet data may be lost, keep your seed phrase safe",
-    );
   }
 }
