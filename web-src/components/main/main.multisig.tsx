@@ -11,6 +11,7 @@ import {
   SurfaceCard,
   TextArea,
   useAlert,
+  usePasswordPrompt,
 } from "../ui";
 
 type MultisigUiState =
@@ -65,6 +66,20 @@ export function MultisigTab({
   const [state, setState] = React.useState<MultisigUiState>({
     type: "loading",
   });
+  const { promptForWalletPassword, passwordPromptDialog } = usePasswordPrompt();
+  const requestValidWalletPassword = React.useCallback(async () => {
+    let message = "Enter wallet password";
+    while (true) {
+      const password = await promptForWalletPassword(message);
+      if (password === null) {
+        return null;
+      }
+      if (await wallet.verify_password(password)) {
+        return password;
+      }
+      message = "Incorrect wallet password. Try again.";
+    }
+  }, [promptForWalletPassword, wallet]);
   const isPropsLoading =
     payments === null ||
     mempoolPayments === null ||
@@ -78,7 +93,6 @@ export function MultisigTab({
     payments !== null &&
     mempoolPayments !== null &&
     (payments.length > 0 || mempoolPayments.length > 0);
-
   React.useEffect(() => {
     let cancelled = false;
 
@@ -158,19 +172,7 @@ export function MultisigTab({
         throw new Error(`Expected ${state.participants} messages`);
       }
 
-      let password: string | null = "";
-      while (true) {
-        if (password === null) {
-          break;
-        }
-        if (await wallet.verify_password(password)) {
-          break;
-        }
-
-        // TODO: prompt for password with proper UI similar to remove confirm
-        // return null if user cancels
-        await "TODO";
-      }
+      const password = await requestValidWalletPassword();
       if (password === null) {
         setState({ ...state, making: false });
         return;
@@ -191,7 +193,7 @@ export function MultisigTab({
       setState({ ...state, making: false });
       await alert(message);
     }
-  }, [alert, onRefresh, state]);
+  }, [alert, onRefresh, requestValidWalletPassword, state]);
 
   const handleExchangeMultisigKeys = React.useCallback(async () => {
     if (state.type !== "roundN" || state.exchanging) {
@@ -248,8 +250,9 @@ export function MultisigTab({
   }
   if (state.type === "round1") {
     return (
-      <MultisigTabWrap>
-        <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+      <>
+        <MultisigTabWrap>
+          <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
           <div className="space-y-1">
             <Label>Your round 1 message</Label>
             <TextArea
@@ -361,14 +364,17 @@ export function MultisigTab({
               ? `Making ${state.threshold}/${state.participants} multisig...`
               : `Make ${state.threshold}/${state.participants} multisig`}
           </Button>
-        </SurfaceCard>
-      </MultisigTabWrap>
+          </SurfaceCard>
+        </MultisigTabWrap>
+        {passwordPromptDialog}
+      </>
     );
   }
   if (state.type === "roundN") {
     return (
-      <MultisigTabWrap>
-        <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+      <>
+        <MultisigTabWrap>
+          <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
           <div className="text-sm font-semibold text-white/85">
             Setting up {state.status.threshold}/{state.status.total} multisig
           </div>
@@ -397,8 +403,10 @@ export function MultisigTab({
           >
             {state.exchanging ? "Exchanging keys..." : "Exchange multisig keys"}
           </Button>
-        </SurfaceCard>
-      </MultisigTabWrap>
+          </SurfaceCard>
+        </MultisigTabWrap>
+        {passwordPromptDialog}
+      </>
     );
   }
   if (state.type === "ready") {
@@ -413,7 +421,6 @@ export function MultisigTab({
       </MultisigTabWrap>
     );
   }
-
   return (
     <MultisigTabWrap>
       <SurfaceCard className="space-y-2">

@@ -4,11 +4,10 @@ import { ButtonsHolder } from "./ButtonsHolder";
 import { Input } from "./Input";
 import { OverlayDialog } from "./OverlayDialog";
 
-export function ConfirmByTextDialog({
+export function PasswordPromptDialog({
   open,
   title,
-  description,
-  expectedText,
+  message,
   confirmText = "Confirm",
   cancelText = "Cancel",
   busy = false,
@@ -17,13 +16,12 @@ export function ConfirmByTextDialog({
 }: {
   open: boolean;
   title: string;
-  description: React.ReactNode;
-  expectedText: string;
+  message: React.ReactNode;
   confirmText?: string;
   cancelText?: string;
   busy?: boolean;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (value: string) => void;
 }) {
   const [value, setValue] = React.useState("");
 
@@ -37,33 +35,33 @@ export function ConfirmByTextDialog({
     return null;
   }
 
-  const canConfirm = value.trim() === expectedText;
-
   return (
     <OverlayDialog onClose={() => !busy && onCancel()}>
       <form
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
-          if (canConfirm && !busy) {
-            onConfirm();
+          if (!busy) {
+            onConfirm(value);
           }
         }}
       >
         <div className="text-base font-semibold text-white">{title}</div>
-        <div className="text-sm text-white/75">{description}</div>
+        <div className="text-sm text-white/75">{message}</div>
         <Input
+          type="password"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder={expectedText}
-          autoComplete="off"
+          placeholder="Wallet password"
+          autoComplete="current-password"
+          autoFocus
           disabled={busy}
         />
         <ButtonsHolder>
           <Button type="button" variant="soft" disabled={busy} onClick={onCancel}>
             {cancelText}
           </Button>
-          <Button type="submit" variant="primary" disabled={!canConfirm || busy}>
+          <Button type="submit" variant="primary" disabled={busy}>
             {busy ? "Working..." : confirmText}
           </Button>
         </ButtonsHolder>

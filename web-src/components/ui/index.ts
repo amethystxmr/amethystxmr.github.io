@@ -20,4 +20,6 @@ export { OverlayDialog } from "./OverlayDialog";
 export { AlertDialog } from "./AlertDialog";
 export { AlertProvider, useAlert } from "./AlertProvider";
 export { ConfirmByTextDialog } from "./ConfirmByTextDialog";
+export { PasswordPromptDialog } from "./PasswordPromptDialog";
+export { usePasswordPrompt } from "./usePasswordPrompt";
 export { ProgressBar } from "./ProgressBar";
