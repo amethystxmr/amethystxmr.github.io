@@ -420,6 +420,7 @@ function RestoreView({
       });
       wallet.set_refresh_from_block_height(restoreHeight);
       await saveWalletIntoFs(wallet);
+      await persistNavigatorStorage(alert);
       console.info("Wallet restored and saved");
       setRestoring(false);
       onDone(wallet);
@@ -670,6 +671,7 @@ function CreateNewWalletView({
       const seed = await wallet.get_seed("English", "");
 
       await saveWalletIntoFs(wallet);
+      await persistNavigatorStorage(alert);
       console.info("Wallet created and saved");
       setState({
         type: "showing-seed",
@@ -1107,4 +1109,34 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       </div>
     </div>
   );
+}
+
+async function persistNavigatorStorage(
+  alert: ReturnType<typeof useAlert>,
+): Promise<void> {
+  if (
+    typeof navigator === "undefined" ||
+    !navigator.storage ||
+    !navigator.storage.persist
+  ) {
+    return;
+  }
+  try {
+    const isPersisted = await navigator.storage.persisted();
+    if (isPersisted) {
+      return;
+    }
+    const persisted = await navigator.storage.persist();
+    if (!persisted) {
+      console.warn("Failed to persist storage");
+      await alert(
+        "Warning: Failed to persist storage. Your wallet data may be lost if you clear browser data or in case of browser issues.",
+      );
+    }
+  } catch (e) {
+    console.error("Error while trying to persist storage:", e);
+    await alert(
+      "Warning: An error occurred while trying to persist storage. Your wallet data may be lost if you clear browser data or in case of browser issues.",
+    );
+  }
 }
