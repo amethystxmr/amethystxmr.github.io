@@ -1174,16 +1174,30 @@ function ManageWalletsView({
 
         setWalletNames(listWalletNames());
 
-        const formatWalletList = (wallets: string[]) => {
+        const formatWalletSection = (
+          title: string,
+          wallets: string[],
+          emptyText: string,
+        ) => {
           if (wallets.length === 0) {
-            return "none";
+            return `${title} (0):\n${emptyText}`;
           }
-          return wallets.map((name) => `- ${name}`).join("\n");
+          return `${title} (${wallets.length}):\n${wallets
+            .map((name) => `- ${name}`)
+            .join("\n")}`;
         };
-        const importedText = formatWalletList(importSummary.imported);
-        const skippedText = formatWalletList(importSummary.skippedExisting);
+        const importedText = formatWalletSection(
+          "Imported",
+          importSummary.imported,
+          "No wallets were imported.",
+        );
+        const skippedText = formatWalletSection(
+          "Skipped (already exists)",
+          importSummary.skippedExisting,
+          "No wallets were skipped.",
+        );
         await alert(
-          `Import completed.\n\nImported (${importSummary.imported.length}):\n${importedText}\n\nSkipped (already exists) (${importSummary.skippedExisting.length}):\n${skippedText}`,
+          `Import completed.\n\n${importedText}\n\n${skippedText}`,
         );
       } catch (e) {
         console.error("Failed to import wallets:", e);
