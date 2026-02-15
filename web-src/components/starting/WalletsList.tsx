@@ -1168,8 +1168,8 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
             const otherFiles: { name: string; data: Uint8Array }[] = [];
             if (walletFileData) {
               otherFiles.push({
-                name: keyFileNameName,
-                data: keysFileData,
+                name: walletName,
+                data: walletFileData,
               });
             }
             for (const [
