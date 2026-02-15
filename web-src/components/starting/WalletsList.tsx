@@ -1128,15 +1128,14 @@ async function persistNavigatorStorage(
     }
     const persisted = await navigator.storage.persist();
     if (!persisted) {
-      console.warn("Failed to persist storage");
       await alert(
-        "Warning: Failed to persist storage. Your wallet data may be lost if you clear browser data or in case of browser issues.",
+        "Warning: Storage persistence was not granted. Your wallet data may be lost, keep your seed phrase safe",
       );
     }
   } catch (e) {
     console.error("Error while trying to persist storage:", e);
     await alert(
-      "Warning: An error occurred while trying to persist storage. Your wallet data may be lost if you clear browser data or in case of browser issues.",
+      "Warning: An error occurred while trying to persist storage. Your wallet data may be lost, keep your seed phrase safe",
     );
   }
 }
