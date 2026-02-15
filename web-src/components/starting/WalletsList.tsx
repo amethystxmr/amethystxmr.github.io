@@ -1113,24 +1113,27 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
 async function persistNavigatorStorage(
   _alert: ReturnType<typeof useAlert>,
-): Promise<void> {
+): Promise<boolean> {
   if (
     typeof navigator === "undefined" ||
     !navigator.storage ||
     !navigator.storage.persist
   ) {
-    return;
+    return false;
   }
   try {
     const isPersisted = await navigator.storage.persisted();
     if (isPersisted) {
-      return;
+      return true;
     }
     const persisted = await navigator.storage.persist();
     if (!persisted) {
       console.warn("Storage persistence was not granted");
+      return false;
     }
+    return true;
   } catch (e) {
     console.error("Error while trying to persist storage:", e);
+    return false;
   }
 }
