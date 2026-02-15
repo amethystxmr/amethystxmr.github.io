@@ -44,7 +44,8 @@ type MultisigUiState =
   | {
       type: "multisig setup in progress";
       status: multisig_account_status;
-      myLastKexMessage: string | null | Error;
+      myLastKexMessage: string | Error;
+      myLastKexRound: string | Error;
       othersKexMessages: string;
       exchanging: boolean;
     }
@@ -64,6 +65,7 @@ function MultisigTabWrap({ children }: React.PropsWithChildren) {
 }
 
 const LAST_KEX_MESSAGE_ATTRIBUTE = "amethystxmr_last_kex_message";
+const LAST_MULTISIG_KEX_ROUND_ATTRIBUTE = "amethystxmr_last_multisig_kex_round";
 
 export function MultisigTab({
   wallet,
@@ -81,7 +83,6 @@ export function MultisigTab({
   daemonHeight: bigint | null;
 }) {
   const alert = useAlert();
-  const [reloadToken, setReloadToken] = React.useState(0);
   const [state, setState] = React.useState<MultisigUiState>({
     type: "loading",
   });
@@ -218,17 +219,46 @@ export function MultisigTab({
         }
 
         if (!status.is_ready) {
-          setState({
-            type: "multisig setup in progress",
-            myLastKexMessage: null,
-            status,
-            othersKexMessages: "",
-            exchanging: false,
-          });
-          return;
-        }
+          Promise.all([
+            wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE).catch((e) => {
+              console.error("Failed to get last kex message:", e);
+              if (e instanceof Error) {
+                return e;
+              }
+              return new Error("Unknown error");
+            }),
+            wallet
+              .get_attribute(LAST_MULTISIG_KEX_ROUND_ATTRIBUTE)
+              .catch((e) => {
+                console.error("Failed to get last multisig kex round:", e);
+                if (e instanceof Error) {
+                  return e;
+                }
+                return new Error("Unknown error");
+              }),
+          ])
 
-        setState({ type: "multisig is ready", status });
+            .then(([lastKexMessage, lastKexRound]) => {
+              if (cancelled) {
+                return;
+              }
+              setState((prev) => {
+                if (prev.type !== "loading") {
+                  return prev;
+                }
+                return {
+                  type: "multisig setup in progress",
+                  status,
+                  myLastKexMessage: lastKexMessage,
+                  myLastKexRound: lastKexRound,
+                  othersKexMessages: "",
+                  exchanging: false,
+                };
+              });
+            });
+        } else {
+          setState({ type: "multisig is ready", status });
+        }
       })
       .catch((e) => {
         if (cancelled) {
@@ -243,14 +273,7 @@ export function MultisigTab({
     return () => {
       cancelled = true;
     };
-  }, [
-    alert,
-    hasAnyPayments,
-    isPropsLoading,
-    isWalletSyncing,
-    reloadToken,
-    wallet,
-  ]);
+  }, [alert, hasAnyPayments, isPropsLoading, isWalletSyncing, wallet, state]);
 
   const handleMakeMultisig = React.useCallback(async () => {
     if (state.type !== "no multisig" || state.making) {
@@ -280,12 +303,16 @@ export function MultisigTab({
           state.threshold,
         );
         await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
+        await wallet.set_attribute(LAST_MULTISIG_KEX_ROUND_ATTRIBUTE, "1");
+        await wallet.store();
         return nextKexMessage;
       });
       console.log("make_multisig result:", r);
 
       onRefresh();
-      setReloadToken((x) => x + 1);
+      setState({
+        type: "loading",
+      });
     } catch (e) {
       const message =
         (e as Error)?.message || "Unknown error while making multisig";
@@ -300,9 +327,38 @@ export function MultisigTab({
     }
     try {
       setState({ ...state, exchanging: true });
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      const othersKexMessages = state.othersKexMessages;
+      const messages = othersKexMessages
+        .split(/[\s\n]+/)
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0);
+
+      const password = await requestValidWalletPassword();
+      if (password === null) {
+        setState({ ...state, exchanging: false });
+        return;
+      }
+      const r = await withFsLock(async () => {
+        const nextKexMessage = await wallet.exchange_multisig_keys(
+          password,
+          messages.join(" "),
+        );
+        await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
+        await wallet.set_attribute(
+          LAST_MULTISIG_KEX_ROUND_ATTRIBUTE,
+          state.myLastKexRound instanceof Error
+            ? ""
+            : String(Number(state.myLastKexRound) + 1),
+        );
+        await wallet.store();
+        return nextKexMessage;
+      });
+      console.log("exchange_multisig_keys result:", r);
       onRefresh();
-      setReloadToken((x) => x + 1);
+      setState({
+        type: "loading",
+      });
     } catch (e) {
       const message =
         (e as Error)?.message || "Unknown error while exchanging multisig keys";
@@ -377,7 +433,9 @@ export function MultisigTab({
                     ? "Loading..."
                     : state.prepareMessage.type === "error"
                       ? `Error: ${state.prepareMessage.error}`
-                      : state.prepareMessage.message
+                      : state.prepareMessage.type === "ready"
+                        ? state.prepareMessage.message
+                        : (state.prepareMessage satisfies never)
                 }
               />
             </div>
@@ -490,15 +548,37 @@ export function MultisigTab({
     );
   }
   if (state.type === "multisig setup in progress") {
+    const thisRound =
+      state.myLastKexRound instanceof Error
+        ? `[${state.myLastKexRound.message}]`
+        : state.myLastKexRound === ""
+          ? "[error]"
+          : Number(state.myLastKexRound) + 1;
     return (
       <>
         <MultisigTabWrap>
           <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
             <div className="text-sm font-semibold text-white/85">
-              Setting up {state.status.threshold}/{state.status.total} multisig
+              Setting up {state.status.threshold}/{state.status.total} multisig,
+              round {thisRound}
+            </div>
+            <div className="space-y-1">
+              <Label>Your message for this round</Label>
+              <TextArea
+                readOnly
+                rows={1}
+                className="resize-none overflow-hidden [field-sizing:content]"
+                value={
+                  state.myLastKexMessage instanceof Error
+                    ? `Error: ${state.myLastKexMessage.message}`
+                    : state.myLastKexMessage === ""
+                      ? "Error: no attribute found"
+                      : state.myLastKexMessage
+                }
+              />
             </div>
             <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-              <Label>All participants round N messages</Label>
+              <Label>All participants round {thisRound} messages</Label>
               <TextArea
                 rows={12}
                 className="resize-none lg:min-h-0 lg:flex-1"
@@ -552,7 +632,7 @@ export function MultisigTab({
           <Button
             variant="soft"
             className="w-full"
-            onClick={() => setReloadToken((x) => x + 1)}
+            onClick={() => setState((x) => ({ type: "loading" }))}
           >
             Retry
           </Button>
