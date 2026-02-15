@@ -18,8 +18,23 @@ import { withFsLock } from "../utils";
 type MultisigUiState =
   | { type: "loading" }
   | {
-      type: "round1";
-      prepareMessage: string;
+      type: "no multisig";
+      prepareMessage:
+        | {
+            type: "loading";
+          }
+        | {
+            type: "ready";
+            message: string;
+          }
+        | {
+            type: "error";
+            error: string;
+          }
+        | {
+            type: "not possible";
+            reason: string;
+          };
       othersKexMessages: string;
       participants: number;
       threshold: number;
@@ -27,13 +42,13 @@ type MultisigUiState =
       making: boolean;
     }
   | {
-      type: "roundN";
+      type: "multisig setup in progress";
       status: multisig_account_status;
       othersKexMessages: string;
       exchanging: boolean;
     }
   | {
-      type: "ready";
+      type: "multisig is ready";
       status: multisig_account_status;
     }
   | {
@@ -94,58 +109,131 @@ export function MultisigTab({
     payments !== null &&
     mempoolPayments !== null &&
     (payments.length > 0 || mempoolPayments.length > 0);
-  React.useEffect(() => {
-    let cancelled = false;
 
-    if (isPropsLoading || isWalletSyncing || hasAnyPayments) {
+  // Load first multisig message
+  React.useEffect(() => {
+    if (state.type !== "no multisig") {
+      return;
+    }
+    if (state.prepareMessage.type !== "loading") {
       return;
     }
 
-    const loadState = async () => {
-      setState({ type: "loading" });
+    if (isPropsLoading || isWalletSyncing) {
+      setState({
+        ...state,
+        prepareMessage: {
+          type: "not possible",
+          reason: "Wallet is still syncing",
+        },
+      });
+      return;
+    }
+    if (hasAnyPayments) {
+      setState({
+        ...state,
+        prepareMessage: {
+          type: "not possible",
+          reason: "Wallet has payments, unable to do multisig",
+        },
+      });
+      return;
+    }
 
-      const status = await wallet.get_multisig_status();
-      if (cancelled) {
-        return;
-      }
+    let cancelled = false;
 
-      if (!status.multisig_is_active) {
-        const prepareMessage = await wallet.prepare_multisig();
+    wallet
+      .prepare_multisig()
+      .then((message) => {
         if (cancelled) {
           return;
         }
-        setState({
-          type: "round1",
-          prepareMessage,
-          othersKexMessages: "",
-          participants: 2,
-          threshold: 2,
-          showAllParticipants: false,
-          making: false,
+        setState((prev) => {
+          if (prev.type !== "no multisig") {
+            return prev;
+          }
+          return {
+            ...prev,
+            prepareMessage: { type: "ready", message },
+          };
         });
-        return;
-      }
-
-      if (!status.is_ready) {
-        setState({
-          type: "roundN",
-          status,
-          othersKexMessages: "",
-          exchanging: false,
+      })
+      .catch((e) => {
+        if (cancelled) {
+          return;
+        }
+        const message =
+          (e as Error)?.message || "Unknown error while preparing multisig";
+        setState((prev) => {
+          if (prev.type !== "no multisig") {
+            return prev;
+          }
+          return {
+            ...prev,
+            prepareMessage: { type: "error", error: message },
+          };
         });
-        return;
-      }
+      });
 
-      setState({ type: "ready", status });
+    if (cancelled) {
+      return;
+    }
+    return () => {
+      cancelled = true;
     };
+  }, [state, isWalletSyncing, hasAnyPayments, isPropsLoading, wallet]);
 
-    void loadState().catch((e) => {
-      if (cancelled) {
-        return;
-      }
-      const message = (e as Error)?.message;
-      setState({ type: "error", message });
-    });
+  React.useEffect(() => {
+    if (state.type !== "loading") {
+      return;
+    }
+
+    let cancelled = false;
+
+    wallet
+      .get_multisig_status()
+      .then((status) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (!status.multisig_is_active) {
+          setState({
+            type: "no multisig",
+            prepareMessage: {
+              type: "loading",
+            },
+            othersKexMessages: "",
+            participants: 3,
+            threshold: 2,
+            showAllParticipants: false,
+            making: false,
+          });
+          return;
+        }
+
+        if (!status.is_ready) {
+          setState({
+            type: "multisig setup in progress",
+            status,
+            othersKexMessages: "",
+            exchanging: false,
+          });
+          return;
+        }
+
+        setState({ type: "multisig is ready", status });
+      })
+      .catch((e) => {
+        if (cancelled) {
+          return;
+        }
+        const message =
+          (e as Error)?.message ||
+          "Unknown error while loading multisig status";
+        setState({ type: "error", message });
+      });
+
     return () => {
       cancelled = true;
     };
@@ -159,7 +247,7 @@ export function MultisigTab({
   ]);
 
   const handleMakeMultisig = React.useCallback(async () => {
-    if (state.type !== "round1" || state.making) {
+    if (state.type !== "no multisig" || state.making) {
       return;
     }
     try {
@@ -195,7 +283,7 @@ export function MultisigTab({
   }, [alert, onRefresh, requestValidWalletPassword, state]);
 
   const handleExchangeMultisigKeys = React.useCallback(async () => {
-    if (state.type !== "roundN" || state.exchanging) {
+    if (state.type !== "multisig setup in progress" || state.exchanging) {
       return;
     }
     try {
@@ -211,6 +299,7 @@ export function MultisigTab({
     }
   }, [alert, onRefresh, state]);
 
+  /*
   if (isPropsLoading) {
     return (
       <MultisigTabWrap>
@@ -220,6 +309,7 @@ export function MultisigTab({
       </MultisigTabWrap>
     );
   }
+  
   if (isWalletSyncing) {
     return (
       <MultisigTabWrap>
@@ -238,6 +328,8 @@ export function MultisigTab({
       </MultisigTabWrap>
     );
   }
+    */
+
   if (state.type === "loading") {
     return (
       <MultisigTabWrap>
@@ -247,7 +339,17 @@ export function MultisigTab({
       </MultisigTabWrap>
     );
   }
-  if (state.type === "round1") {
+
+  if (state.type === "no multisig") {
+    if (state.prepareMessage.type === "not possible") {
+      return (
+        <MultisigTabWrap>
+          <SurfaceCard className="text-sm text-white/75">
+            {state.prepareMessage.reason}
+          </SurfaceCard>
+        </MultisigTabWrap>
+      );
+    }
     return (
       <>
         <MultisigTabWrap>
@@ -258,7 +360,13 @@ export function MultisigTab({
                 readOnly
                 rows={1}
                 className="resize-none overflow-hidden [field-sizing:content]"
-                value={state.prepareMessage}
+                value={
+                  state.prepareMessage.type === "loading"
+                    ? "Loading..."
+                    : state.prepareMessage.type === "error"
+                      ? `Error: ${state.prepareMessage.error}`
+                      : state.prepareMessage.message
+                }
               />
             </div>
 
@@ -279,7 +387,7 @@ export function MultisigTab({
                     disabled={state.making}
                     onClick={() => {
                       setState((prev) => {
-                        if (prev.type !== "round1") {
+                        if (prev.type !== "no multisig") {
                           return prev;
                         }
                         const nextThreshold = Math.min(prev.threshold, option);
@@ -302,7 +410,7 @@ export function MultisigTab({
                     disabled={state.making}
                     onClick={() =>
                       setState((prev) =>
-                        prev.type !== "round1"
+                        prev.type !== "no multisig"
                           ? prev
                           : { ...prev, showAllParticipants: true },
                       )
@@ -325,7 +433,7 @@ export function MultisigTab({
               disabled={state.making}
               onChange={(threshold) =>
                 setState((prev) =>
-                  prev.type !== "round1"
+                  prev.type !== "no multisig"
                     ? prev
                     : {
                         ...prev,
@@ -343,7 +451,7 @@ export function MultisigTab({
                 value={state.othersKexMessages}
                 onChange={(e) =>
                   setState((prev) =>
-                    prev.type !== "round1"
+                    prev.type !== "no multisig"
                       ? prev
                       : { ...prev, othersKexMessages: e.target.value },
                   )
@@ -369,7 +477,7 @@ export function MultisigTab({
       </>
     );
   }
-  if (state.type === "roundN") {
+  if (state.type === "multisig setup in progress") {
     return (
       <>
         <MultisigTabWrap>
@@ -385,7 +493,7 @@ export function MultisigTab({
                 value={state.othersKexMessages}
                 onChange={(e) =>
                   setState((prev) =>
-                    prev.type !== "roundN"
+                    prev.type !== "multisig setup in progress"
                       ? prev
                       : { ...prev, othersKexMessages: e.target.value },
                   )
@@ -410,7 +518,7 @@ export function MultisigTab({
       </>
     );
   }
-  if (state.type === "ready") {
+  if (state.type === "multisig is ready") {
     return (
       <MultisigTabWrap>
         <SurfaceCard className="space-y-1 text-sm text-white/75">
@@ -422,20 +530,24 @@ export function MultisigTab({
       </MultisigTabWrap>
     );
   }
-  return (
-    <MultisigTabWrap>
-      <SurfaceCard className="space-y-2">
-        <div className="text-sm text-red-200">
-          {state.message || "Unknown error while loading multisig status"}
-        </div>
-        <Button
-          variant="soft"
-          className="w-full"
-          onClick={() => setReloadToken((x) => x + 1)}
-        >
-          Retry
-        </Button>
-      </SurfaceCard>
-    </MultisigTabWrap>
-  );
+  if (state.type === "error") {
+    return (
+      <MultisigTabWrap>
+        <SurfaceCard className="space-y-2">
+          <div className="text-sm text-red-200">
+            {state.message || "Unknown error while loading multisig status"}
+          </div>
+          <Button
+            variant="soft"
+            className="w-full"
+            onClick={() => setReloadToken((x) => x + 1)}
+          >
+            Retry
+          </Button>
+        </SurfaceCard>
+      </MultisigTabWrap>
+    );
+  }
+  state satisfies never;
+  return null;
 }
