@@ -132,6 +132,9 @@ interface Module {
     isDir(mode: number): boolean;
     rmdir(path: string): void;
     unlink(path: string): void;
+    rename(oldPath: string, newPath: string): void;
+    readFile(path: string): Uint8Array;
+    writeFile(path: string, data: Uint8Array): void;
   };
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
@@ -261,9 +264,9 @@ export function listWalletNames() {
     .map((name) => name.slice(0, -5));
 }
 
-export function deleteWalletFiles(fileName: string) {
+export function deleteWalletFiles(walletName: string) {
   const names = new Set(module.FS.readdir("."));
-  for (const candidate of [fileName, `${fileName}.keys`]) {
+  for (const candidate of [walletName, `${walletName}.keys`]) {
     if (names.has(candidate)) {
       module.FS.unlink(candidate);
     }
@@ -273,6 +276,55 @@ export function deleteWalletFiles(fileName: string) {
 export function createWallet() {
   const wallet = new module.MoneroWasmWallet();
   return wallet;
+}
+
+export function isWalletFileExists(walletName: string) {
+  const names = new Set(module.FS.readdir("."));
+  return names.has(walletName) || names.has(`${walletName}.keys`);
+}
+
+export function renameWallet(oldName: string, newName: string) {
+  const names = new Set(module.FS.readdir("."));
+  for (const existingCheck of [newName, `${newName}.keys`]) {
+    if (names.has(existingCheck)) {
+      throw new Error("Wallet with the new name already exists");
+    }
+  }
+
+  for (const candidate of [oldName, `${oldName}.keys`]) {
+    if (names.has(candidate)) {
+      const newCandidate = candidate.replace(oldName, newName);
+      module.FS.rename(candidate, newCandidate);
+    }
+  }
+}
+
+export function getWalletFilesData(walletName: string) {
+  const keysName = `${walletName}.keys`;
+  const keysFileData = module.FS.readFile(keysName);
+  let walletFileData: Uint8Array | null = null;
+  if (isWalletFileExists(walletName)) {
+    walletFileData = module.FS.readFile(walletName);
+  }
+  // TODO: Might be other files line address.txt in the future, need to return them as well
+  // TODO the same for import
+  let outFiles = [{ name: keysName, data: keysFileData }];
+  if (walletFileData) {
+    outFiles.push({ name: walletName, data: walletFileData });
+  }
+  return outFiles;
+}
+
+export function saveWalletFilesData(
+  keysFileData: Uint8Array,
+  walletFileData: Uint8Array | null,
+  walletName: string,
+) {
+  const keysName = `${walletName}.keys`;
+  module.FS.writeFile(keysName, keysFileData);
+  if (walletFileData) {
+    module.FS.writeFile(walletName, walletFileData);
+  }
 }
 
 export const max64 = (1n << 64n) - 1n;

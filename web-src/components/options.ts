@@ -2,7 +2,6 @@ import { getRecommendedMaxConcurrency } from "../../monero-wasm-module/walletApi
 
 type OptionSchema = {
   loadLastWallet: boolean;
-  allowWalletRemoval: boolean;
   cpuThreads: number;
   lastWalletName: string | null;
   daemonAddress: string;
@@ -11,7 +10,6 @@ type OptionSchema = {
 export function getDefaultOptions(): OptionSchema {
   return {
     loadLastWallet: true,
-    allowWalletRemoval: false,
     cpuThreads: getRecommendedMaxConcurrency(),
     lastWalletName: null,
     daemonAddress:

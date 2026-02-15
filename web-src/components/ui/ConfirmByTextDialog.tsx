@@ -41,7 +41,15 @@ export function ConfirmByTextDialog({
 
   return (
     <OverlayDialog onClose={() => !busy && onCancel()}>
-      <div className="space-y-3">
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canConfirm && !busy) {
+            onConfirm();
+          }
+        }}
+      >
         <div className="text-base font-semibold text-white">{title}</div>
         <div className="text-sm text-white/75">{description}</div>
         <Input
@@ -52,14 +60,18 @@ export function ConfirmByTextDialog({
           disabled={busy}
         />
         <ButtonsHolder>
-          <Button variant="soft" disabled={busy} onClick={onCancel}>
+          <Button type="button" variant="soft" disabled={busy} onClick={onCancel}>
             {cancelText}
           </Button>
-          <Button variant="primary" disabled={!canConfirm || busy} onClick={onConfirm}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!canConfirm || busy}
+          >
             {busy ? "Working..." : confirmText}
           </Button>
         </ButtonsHolder>
-      </div>
+      </form>
     </OverlayDialog>
   );
 }

@@ -1,4 +1,5 @@
 import * as React from "react";
+import JSZip from "jszip";
 import {
   Button,
   ButtonsHolder,
@@ -9,6 +10,7 @@ import {
   InputWithAction,
   Label,
   ListRowButton,
+  OverlayDialog,
   FormRow,
   SectionPanel,
   SurfaceCard,
@@ -20,16 +22,20 @@ import {
   decodePolyseed,
   deleteWalletFiles,
   getMaxConcurrency,
+  getWalletFilesData,
   getRecommendedMaxConcurrency,
+  isWalletFileExists,
   listWalletNames,
   MoneroWasmWallet,
+  renameWallet,
+  saveWalletFilesData,
   setMaxConcurrency,
 } from "../../../monero-wasm-module/walletApi";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { getDefaultOptions, options } from "../options";
 import { NiceTabs } from "../main/tabs";
-import { saveWalletIntoFs, withFsLock } from "../utils";
+import { downloadBlob, saveWalletIntoFs, withFsLock } from "../utils";
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
@@ -38,16 +44,7 @@ export function WalletsList() {
   const buildListView = React.useCallback(() => {
     return { type: "list" as const, walletNames: listWalletNames() };
   }, []);
-  const alert = useAlert();
-  const allowWalletRemoval = options.getValue("allowWalletRemoval");
   const cpuThreads = options.getValue("cpuThreads");
-  const [removeState, setRemoveState] = React.useState<
-    | { type: "idle" }
-    | {
-        type: "confirm" | "removing";
-        walletName: string;
-      }
-  >({ type: "idle" });
 
   const [view, setView] = React.useState<
     | {
@@ -64,6 +61,9 @@ export function WalletsList() {
     | {
         type: "opened";
         wallet: MoneroWasmWallet;
+      }
+    | {
+        type: "manage-wallets";
       }
     | {
         type: "options";
@@ -100,30 +100,6 @@ export function WalletsList() {
 
     setView({ type: "opening", fileName: lastWalletName });
   }, [buildListView]);
-
-  const doRemoveWallet = React.useCallback(async () => {
-    if (removeState.type !== "confirm") {
-      return;
-    }
-    try {
-      setRemoveState({ type: "removing", walletName: removeState.walletName });
-
-      await withFsLock(async () => {
-        deleteWalletFiles(removeState.walletName);
-      });
-      if (options.getValue("lastWalletName") === removeState.walletName) {
-        options.setValue("lastWalletName", null);
-      }
-      setRemoveState({ type: "idle" });
-      backToList();
-    } catch (e) {
-      console.error("Failed to remove wallet:", e);
-      await alert(
-        `Failed to remove wallet: ${(e as Error).message || "Unknown error"}`,
-      );
-      setRemoveState({ type: "idle" });
-    }
-  }, [alert, backToList, removeState]);
 
   if (view.type === "opened") {
     return (
@@ -209,24 +185,12 @@ export function WalletsList() {
                   }}
                 >
                   <span>{name}</span>
-                  {allowWalletRemoval && (
-                    <span
-                      role="button"
-                      className="ml-auto cursor-pointer rounded-md px-2 py-1 text-gray-400 transition hover:bg-red-500/10 hover:text-red-300"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRemoveState({ type: "confirm", walletName: name });
-                      }}
-                    >
-                      🗑
-                    </span>
-                  )}
                 </ListRowButton>
               ))}
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
             <Button
               onClick={async () => {
                 setView({ type: "create-new-wallet" });
@@ -239,6 +203,13 @@ export function WalletsList() {
             </Button>
             <Button
               onClick={() => {
+                setView({ type: "manage-wallets" });
+              }}
+            >
+              ☰ Manage wallets
+            </Button>
+            <Button
+              onClick={() => {
                 setView({ type: "options" });
               }}
             >
@@ -246,35 +217,10 @@ export function WalletsList() {
             </Button>
           </div>
         </SectionPanel>
-        <ConfirmByTextDialog
-          open={removeState.type !== "idle"}
-          title="Remove wallet"
-          description={
-            removeState.type !== "idle" ? (
-              <>
-                Type{" "}
-                <span className="font-mono text-white/90">
-                  {removeState.walletName}
-                </span>{" "}
-                to permanently remove wallet files.
-              </>
-            ) : (
-              ""
-            )
-          }
-          expectedText={
-            removeState.type !== "idle" ? removeState.walletName : ""
-          }
-          confirmText="Remove wallet"
-          cancelText="Cancel"
-          busy={removeState.type === "removing"}
-          onCancel={() => setRemoveState({ type: "idle" })}
-          onConfirm={() => {
-            void doRemoveWallet();
-          }}
-        />
       </div>
     );
+  } else if (view.type === "manage-wallets") {
+    return <ManageWalletsView onBack={backToList} />;
   } else if (view.type === "options") {
     return <OptionsView onBack={backToList} />;
   } else {
@@ -980,7 +926,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   const alert = useAlert();
   const defaultOptions = React.useMemo(() => getDefaultOptions(), []);
   const loadLastWallet = options.getValue("loadLastWallet");
-  const allowWalletRemoval = options.getValue("allowWalletRemoval");
   const cpuThreads = options.getValue("cpuThreads");
   const [cpuThreadsInput, setCpuThreadsInput] = React.useState(() =>
     String(cpuThreads),
@@ -1019,16 +964,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
           }}
           label="Load last wallet on startup"
           description="Automatically open the previous wallet after app start."
-        />
-
-        <Toggle
-          checked={allowWalletRemoval}
-          onChange={(next) => {
-            options.setValue("allowWalletRemoval", next);
-            refresh((x) => x + 1);
-          }}
-          label="Allow wallets removing"
-          description="Show remove button in wallet list and allow deleting wallet files."
         />
 
         <FormRow>
@@ -1108,6 +1043,386 @@ function OptionsView({ onBack }: { onBack: () => void }) {
           </Button>
         </ButtonsHolder>
       </div>
+    </div>
+  );
+}
+
+function ManageWalletsView({
+  onBack,
+}: {
+  onBack: () => void;
+}) {
+  const alert = useAlert();
+  const importInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [walletNames, setWalletNames] = React.useState<string[]>(() =>
+    listWalletNames(),
+  );
+  const [removeState, setRemoveState] = React.useState<
+    | { type: "idle" }
+    | {
+        type: "confirm" | "removing";
+        walletName: string;
+      }
+  >({ type: "idle" });
+  const [renameState, setRenameState] = React.useState<
+    | { type: "idle" }
+    | {
+        type: "editing" | "renaming";
+        oldWalletName: string;
+        newWalletName: string;
+      }
+  >({ type: "idle" });
+
+  const doRemoveWallet = React.useCallback(async () => {
+    if (removeState.type !== "confirm") {
+      return;
+    }
+    try {
+      setRemoveState({ type: "removing", walletName: removeState.walletName });
+      await withFsLock(async () => {
+        deleteWalletFiles(removeState.walletName);
+      });
+      if (options.getValue("lastWalletName") === removeState.walletName) {
+        options.setValue("lastWalletName", null);
+      }
+      setWalletNames(listWalletNames());
+      setRemoveState({ type: "idle" });
+    } catch (e) {
+      console.error("Failed to remove wallet:", e);
+      await alert(
+        `Failed to remove wallet: ${(e as Error).message || "Unknown error"}`,
+      );
+      setRemoveState({ type: "idle" });
+    }
+  }, [alert, removeState]);
+
+  const doExportWallet = React.useCallback(
+    async (walletName: string) => {
+      try {
+        await withFsLock(async () => {
+          const files = getWalletFilesData(walletName);
+          const zip = new JSZip();
+          for (const file of files) {
+            zip.file(file.name, file.data);
+          }
+          const blob = await zip.generateAsync({ type: "blob" });
+          downloadBlob(blob, `${walletName}.zip`);
+        });
+      } catch (e) {
+        console.error("Failed to export wallet:", e);
+        await alert(
+          `Failed to export wallet: ${(e as Error).message || "Unknown error"}`,
+        );
+      }
+    },
+    [alert],
+  );
+
+  const doImportFromZip = React.useCallback(
+    async (file: File) => {
+      try {
+        const importSummary = await withFsLock(async () => {
+          const zip = await JSZip.loadAsync(await file.arrayBuffer());
+          const imported: string[] = [];
+          const skippedExisting: string[] = [];
+
+          const filesByBaseName = new Map<
+            string,
+            {
+              isDirectory: boolean;
+              async: (type: "uint8array") => Promise<Uint8Array>;
+            }
+          >();
+
+          for (const zipEntry of Object.values(zip.files)) {
+            const baseName = zipEntry.name.split("/").pop() || "";
+            if (!baseName) {
+              continue;
+            }
+            filesByBaseName.set(baseName, {
+              isDirectory: zipEntry.dir,
+              async: (type) => zipEntry.async(type),
+            });
+          }
+
+          for (const [baseName, keysEntry] of filesByBaseName.entries()) {
+            if (keysEntry.isDirectory || !baseName.endsWith(".keys")) {
+              continue;
+            }
+            const walletName = baseName.slice(0, -5);
+            if (!walletName) {
+              continue;
+            }
+            if (isWalletFileExists(walletName)) {
+              skippedExisting.push(walletName);
+              continue;
+            }
+
+            const keysFileData = await keysEntry.async("uint8array");
+            const walletEntry = filesByBaseName.get(walletName);
+            const walletFileData =
+              walletEntry && !walletEntry.isDirectory
+                ? await walletEntry.async("uint8array")
+                : null;
+
+            saveWalletFilesData(keysFileData, walletFileData, walletName);
+            imported.push(walletName);
+          }
+
+          return { imported, skippedExisting };
+        });
+
+        setWalletNames(listWalletNames());
+
+        const formatWalletSection = (
+          title: string,
+          wallets: string[],
+          emptyText: string,
+        ) => {
+          if (wallets.length === 0) {
+            return `${title} (0):\n${emptyText}`;
+          }
+          return `${title} (${wallets.length}):\n${wallets
+            .map((name) => `- ${name}`)
+            .join("\n")}`;
+        };
+        const importedText = formatWalletSection(
+          "Imported",
+          importSummary.imported,
+          "No wallets were imported.",
+        );
+        const skippedText = formatWalletSection(
+          "Skipped (already exists)",
+          importSummary.skippedExisting,
+          "No wallets were skipped.",
+        );
+        await alert(
+          `Import completed.\n\n${importedText}\n\n${skippedText}`,
+        );
+      } catch (e) {
+        console.error("Failed to import wallets:", e);
+        await alert(
+          `Failed to import wallets: ${(e as Error).message || "Unknown error"}`,
+        );
+      }
+    },
+    [alert],
+  );
+
+  const doRenameWallet = React.useCallback(async () => {
+    if (renameState.type !== "editing") {
+      return;
+    }
+    const oldName = renameState.oldWalletName;
+    const newName = renameState.newWalletName.trim();
+    if (!newName) {
+      await alert("Wallet name cannot be empty.");
+      return;
+    }
+    if (newName === oldName) {
+      setRenameState({ type: "idle" });
+      return;
+    }
+    try {
+      setRenameState({
+        type: "renaming",
+        oldWalletName: oldName,
+        newWalletName: renameState.newWalletName,
+      });
+      await withFsLock(async () => {
+        renameWallet(oldName, newName);
+      });
+      if (options.getValue("lastWalletName") === oldName) {
+        options.setValue("lastWalletName", newName);
+      }
+      setWalletNames(listWalletNames());
+      setRenameState({ type: "idle" });
+    } catch (e) {
+      console.error("Failed to rename wallet:", e);
+      await alert(
+        `Failed to rename wallet: ${(e as Error).message || "Unknown error"}`,
+      );
+      setRenameState({ type: "idle" });
+    }
+  }, [alert, renameState]);
+
+  return (
+    <div className="space-y-4">
+      <Header>Manage wallets</Header>
+
+      <SectionPanel className="space-y-3">
+        {walletNames.length === 0 ? (
+          <SurfaceCard className="text-sm text-white/60">
+            No wallets available.
+          </SurfaceCard>
+        ) : (
+          walletNames.map((walletName) => (
+            <SurfaceCard
+              key={walletName}
+              className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="truncate text-sm text-white/85">{walletName}</div>
+              <div className="flex flex-nowrap gap-2 overflow-x-auto">
+                <Button
+                  className="shrink-0 whitespace-nowrap"
+                  variant="soft"
+                  onClick={() => {
+                    setRemoveState({ type: "confirm", walletName });
+                  }}
+                >
+                  🗑 Remove
+                </Button>
+                <Button
+                  className="shrink-0 whitespace-nowrap"
+                  variant="soft"
+                  onClick={() => {
+                    setRenameState({
+                      type: "editing",
+                      oldWalletName: walletName,
+                      newWalletName: walletName,
+                    });
+                  }}
+                >
+                  ✎ Rename
+                </Button>
+                <Button
+                  className="shrink-0 whitespace-nowrap"
+                  variant="soft"
+                  onClick={async () => {
+                    await doExportWallet(walletName);
+                  }}
+                >
+                  ⬇︎ Export
+                </Button>
+              </div>
+            </SurfaceCard>
+          ))
+        )}
+      </SectionPanel>
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".zip,application/zip"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) {
+            return;
+          }
+          try {
+            await doImportFromZip(file);
+          } finally {
+            e.target.value = "";
+          }
+        }}
+      />
+
+      <ButtonsHolder>
+        <Button className="w-full" variant="soft" onClick={onBack}>
+          ← Back
+        </Button>
+        <Button
+          className="w-full"
+          onClick={() => {
+            importInputRef.current?.click();
+          }}
+        >
+          ⬆︎ Import
+        </Button>
+      </ButtonsHolder>
+
+      <ConfirmByTextDialog
+        open={removeState.type !== "idle"}
+        title="Remove wallet"
+        description={
+          removeState.type !== "idle" ? (
+            <>
+              Type{" "}
+              <span className="font-mono text-white/90">
+                {removeState.walletName}
+              </span>{" "}
+              to permanently remove wallet files.
+            </>
+          ) : (
+            ""
+          )
+        }
+        expectedText={removeState.type !== "idle" ? removeState.walletName : ""}
+        confirmText="Remove wallet"
+        cancelText="Cancel"
+        busy={removeState.type === "removing"}
+        onCancel={() => setRemoveState({ type: "idle" })}
+        onConfirm={() => {
+          void doRemoveWallet();
+        }}
+      />
+
+      {renameState.type !== "idle" && (
+        <OverlayDialog
+          onClose={() => {
+            if (renameState.type !== "renaming") {
+              setRenameState({ type: "idle" });
+            }
+          }}
+        >
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (
+                renameState.type !== "renaming" &&
+                renameState.newWalletName.trim() !== "" &&
+                renameState.newWalletName.trim() !== renameState.oldWalletName
+              ) {
+                void doRenameWallet();
+              }
+            }}
+          >
+            <div className="text-base font-semibold text-white">Rename wallet</div>
+            <div className="text-sm text-white/75">
+              Enter new name for{" "}
+              <span className="font-mono text-white/90">
+                {renameState.oldWalletName}
+              </span>
+              .
+            </div>
+            <Input
+              value={renameState.newWalletName}
+              onChange={(e) => {
+                setRenameState((prev) =>
+                  prev.type === "idle"
+                    ? prev
+                    : { ...prev, newWalletName: e.target.value },
+                );
+              }}
+              autoComplete="off"
+              disabled={renameState.type === "renaming"}
+            />
+            <ButtonsHolder>
+              <Button
+                type="button"
+                variant="soft"
+                disabled={renameState.type === "renaming"}
+                onClick={() => setRenameState({ type: "idle" })}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={
+                  renameState.type === "renaming" ||
+                  renameState.newWalletName.trim() === "" ||
+                  renameState.newWalletName.trim() === renameState.oldWalletName
+                }
+              >
+                {renameState.type === "renaming" ? "Renaming..." : "Rename wallet"}
+              </Button>
+            </ButtonsHolder>
+          </form>
+        </OverlayDialog>
+      )}
     </div>
   );
 }
