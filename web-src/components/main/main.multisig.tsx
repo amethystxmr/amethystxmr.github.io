@@ -13,6 +13,7 @@ import {
   useAlert,
   usePasswordPrompt,
 } from "../ui";
+import { withFsLock } from "../utils";
 
 type MultisigUiState =
   | { type: "loading" }
@@ -178,10 +179,8 @@ export function MultisigTab({
         return;
       }
 
-      const r = await wallet.make_multisig(
-        password,
-        messages.join(" "),
-        state.threshold,
+      const r = await withFsLock(() =>
+        wallet.make_multisig(password, messages.join(" "), state.threshold),
       );
       console.log("make_multisig result:", r);
 
@@ -253,117 +252,117 @@ export function MultisigTab({
       <>
         <MultisigTabWrap>
           <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-          <div className="space-y-1">
-            <Label>Your round 1 message</Label>
-            <TextArea
-              readOnly
-              rows={1}
-              className="resize-none overflow-hidden [field-sizing:content]"
-              value={state.prepareMessage}
-            />
-          </div>
-
-          <div className="space-y-1 lg:grid lg:grid-cols-[190px_minmax(0,1fr)] lg:items-start lg:gap-2 lg:space-y-0">
-            <div className="text-sm font-semibold text-white/85">
-              Amount of participants
+            <div className="space-y-1">
+              <Label>Your round 1 message</Label>
+              <TextArea
+                readOnly
+                rows={1}
+                className="resize-none overflow-hidden [field-sizing:content]"
+                value={state.prepareMessage}
+              />
             </div>
-            <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-8 lg:gap-1">
-              {(state.showAllParticipants
-                ? PARTICIPANT_OPTIONS
-                : [2, 3, 4]
-              ).map((option) => (
-                <Button
-                  key={option}
-                  type="button"
-                  className="w-full px-2.5 py-1.5 text-xs"
-                  variant={option === state.participants ? "primary" : "soft"}
-                  disabled={state.making}
-                  onClick={() => {
-                    setState((prev) => {
-                      if (prev.type !== "round1") {
-                        return prev;
-                      }
-                      const nextThreshold = Math.min(prev.threshold, option);
-                      return {
-                        ...prev,
-                        participants: option,
-                        threshold: nextThreshold,
-                      };
-                    });
-                  }}
-                >
-                  {option}
-                </Button>
-              ))}
-              {!state.showAllParticipants && (
-                <Button
-                  type="button"
-                  className="w-full px-2.5 py-1.5 text-xs"
-                  variant="soft"
-                  disabled={state.making}
-                  onClick={() =>
-                    setState((prev) =>
-                      prev.type !== "round1"
-                        ? prev
-                        : { ...prev, showAllParticipants: true },
-                    )
-                  }
-                >
-                  More
-                </Button>
+
+            <div className="space-y-1 lg:grid lg:grid-cols-[190px_minmax(0,1fr)] lg:items-start lg:gap-2 lg:space-y-0">
+              <div className="text-sm font-semibold text-white/85">
+                Amount of participants
+              </div>
+              <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-8 lg:gap-1">
+                {(state.showAllParticipants
+                  ? PARTICIPANT_OPTIONS
+                  : [2, 3, 4]
+                ).map((option) => (
+                  <Button
+                    key={option}
+                    type="button"
+                    className="w-full px-2.5 py-1.5 text-xs"
+                    variant={option === state.participants ? "primary" : "soft"}
+                    disabled={state.making}
+                    onClick={() => {
+                      setState((prev) => {
+                        if (prev.type !== "round1") {
+                          return prev;
+                        }
+                        const nextThreshold = Math.min(prev.threshold, option);
+                        return {
+                          ...prev,
+                          participants: option,
+                          threshold: nextThreshold,
+                        };
+                      });
+                    }}
+                  >
+                    {option}
+                  </Button>
+                ))}
+                {!state.showAllParticipants && (
+                  <Button
+                    type="button"
+                    className="w-full px-2.5 py-1.5 text-xs"
+                    variant="soft"
+                    disabled={state.making}
+                    onClick={() =>
+                      setState((prev) =>
+                        prev.type !== "round1"
+                          ? prev
+                          : { ...prev, showAllParticipants: true },
+                      )
+                    }
+                  >
+                    More
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <ButtonRadioRow
+              label="Threshold"
+              options={Array.from(
+                { length: state.participants },
+                (_, i) => i + 1,
               )}
-            </div>
-          </div>
-
-          <ButtonRadioRow
-            label="Threshold"
-            options={Array.from(
-              { length: state.participants },
-              (_, i) => i + 1,
-            )}
-            value={state.threshold}
-            compact
-            disabled={state.making}
-            onChange={(threshold) =>
-              setState((prev) =>
-                prev.type !== "round1"
-                  ? prev
-                  : {
-                      ...prev,
-                      threshold,
-                    },
-              )
-            }
-          />
-
-          <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-            <Label>All participants round 1 messages</Label>
-            <TextArea
-              rows={10}
-              className="resize-none lg:min-h-0 lg:flex-1"
-              value={state.othersKexMessages}
-              onChange={(e) =>
+              value={state.threshold}
+              compact
+              disabled={state.making}
+              onChange={(threshold) =>
                 setState((prev) =>
                   prev.type !== "round1"
                     ? prev
-                    : { ...prev, othersKexMessages: e.target.value },
+                    : {
+                        ...prev,
+                        threshold,
+                      },
                 )
               }
             />
-          </div>
 
-          <Button
-            variant="primary"
-            className="!flex-none w-full py-2.5"
-            disabled={state.making}
-            onClick={() => {
-              void handleMakeMultisig();
-            }}
-          >
-            {state.making
-              ? `Making ${state.threshold}/${state.participants} multisig...`
-              : `Make ${state.threshold}/${state.participants} multisig`}
-          </Button>
+            <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+              <Label>All participants round 1 messages</Label>
+              <TextArea
+                rows={10}
+                className="resize-none lg:min-h-0 lg:flex-1"
+                value={state.othersKexMessages}
+                onChange={(e) =>
+                  setState((prev) =>
+                    prev.type !== "round1"
+                      ? prev
+                      : { ...prev, othersKexMessages: e.target.value },
+                  )
+                }
+              />
+            </div>
+
+            <Button
+              variant="primary"
+              className="!flex-none w-full py-2.5"
+              disabled={state.making}
+              onClick={() => {
+                void handleMakeMultisig();
+              }}
+            >
+              {state.making
+                ? `Making ${state.threshold}/${state.participants} multisig...`
+                : `Make ${state.threshold}/${state.participants} multisig`}
+            </Button>
           </SurfaceCard>
         </MultisigTabWrap>
         {passwordPromptDialog}
@@ -375,34 +374,36 @@ export function MultisigTab({
       <>
         <MultisigTabWrap>
           <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-          <div className="text-sm font-semibold text-white/85">
-            Setting up {state.status.threshold}/{state.status.total} multisig
-          </div>
-          <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-            <Label>All participants round N messages</Label>
-            <TextArea
-              rows={12}
-              className="resize-none lg:min-h-0 lg:flex-1"
-              value={state.othersKexMessages}
-              onChange={(e) =>
-                setState((prev) =>
-                  prev.type !== "roundN"
-                    ? prev
-                    : { ...prev, othersKexMessages: e.target.value },
-                )
-              }
-            />
-          </div>
-          <Button
-            variant="primary"
-            className="!flex-none w-full py-2.5"
-            disabled={state.exchanging}
-            onClick={() => {
-              void handleExchangeMultisigKeys();
-            }}
-          >
-            {state.exchanging ? "Exchanging keys..." : "Exchange multisig keys"}
-          </Button>
+            <div className="text-sm font-semibold text-white/85">
+              Setting up {state.status.threshold}/{state.status.total} multisig
+            </div>
+            <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+              <Label>All participants round N messages</Label>
+              <TextArea
+                rows={12}
+                className="resize-none lg:min-h-0 lg:flex-1"
+                value={state.othersKexMessages}
+                onChange={(e) =>
+                  setState((prev) =>
+                    prev.type !== "roundN"
+                      ? prev
+                      : { ...prev, othersKexMessages: e.target.value },
+                  )
+                }
+              />
+            </div>
+            <Button
+              variant="primary"
+              className="!flex-none w-full py-2.5"
+              disabled={state.exchanging}
+              onClick={() => {
+                void handleExchangeMultisigKeys();
+              }}
+            >
+              {state.exchanging
+                ? "Exchanging keys..."
+                : "Exchange multisig keys"}
+            </Button>
           </SurfaceCard>
         </MultisigTabWrap>
         {passwordPromptDialog}
