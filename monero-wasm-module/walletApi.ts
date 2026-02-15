@@ -132,6 +132,7 @@ interface Module {
     isDir(mode: number): boolean;
     rmdir(path: string): void;
     unlink(path: string): void;
+    rename(oldPath: string, newPath: string): void;
   };
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
