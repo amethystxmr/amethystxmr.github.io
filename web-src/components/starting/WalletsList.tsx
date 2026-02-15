@@ -10,6 +10,7 @@ import {
   InputWithAction,
   Label,
   ListRowButton,
+  OverlayDialog,
   FormRow,
   SectionPanel,
   SurfaceCard,
@@ -26,6 +27,7 @@ import {
   isWalletFileExists,
   listWalletNames,
   MoneroWasmWallet,
+  renameWallet,
   saveWalletFilesData,
   setMaxConcurrency,
 } from "../../../monero-wasm-module/walletApi";
@@ -1062,6 +1064,14 @@ function ManageWalletsView({
         walletName: string;
       }
   >({ type: "idle" });
+  const [renameState, setRenameState] = React.useState<
+    | { type: "idle" }
+    | {
+        type: "editing" | "renaming";
+        oldWalletName: string;
+        newWalletName: string;
+      }
+  >({ type: "idle" });
 
   const doRemoveWallet = React.useCallback(async () => {
     if (removeState.type !== "confirm") {
@@ -1185,6 +1195,43 @@ function ManageWalletsView({
     [alert],
   );
 
+  const doRenameWallet = React.useCallback(async () => {
+    if (renameState.type !== "editing") {
+      return;
+    }
+    const oldName = renameState.oldWalletName;
+    const newName = renameState.newWalletName.trim();
+    if (!newName) {
+      await alert("Wallet name cannot be empty.");
+      return;
+    }
+    if (newName === oldName) {
+      setRenameState({ type: "idle" });
+      return;
+    }
+    try {
+      setRenameState({
+        type: "renaming",
+        oldWalletName: oldName,
+        newWalletName: renameState.newWalletName,
+      });
+      await withFsLock(async () => {
+        renameWallet(oldName, newName);
+      });
+      if (options.getValue("lastWalletName") === oldName) {
+        options.setValue("lastWalletName", newName);
+      }
+      setWalletNames(listWalletNames());
+      setRenameState({ type: "idle" });
+    } catch (e) {
+      console.error("Failed to rename wallet:", e);
+      await alert(
+        `Failed to rename wallet: ${(e as Error).message || "Unknown error"}`,
+      );
+      setRenameState({ type: "idle" });
+    }
+  }, [alert, renameState]);
+
   return (
     <div className="space-y-4">
       <Header>Manage wallets</Header>
@@ -1214,8 +1261,12 @@ function ManageWalletsView({
                 <Button
                   className="shrink-0 whitespace-nowrap"
                   variant="soft"
-                  onClick={async () => {
-                    await alert("Rename is not implemented yet.");
+                  onClick={() => {
+                    setRenameState({
+                      type: "editing",
+                      oldWalletName: walletName,
+                      newWalletName: walletName,
+                    });
                   }}
                 >
                   ✎ Rename
@@ -1292,6 +1343,61 @@ function ManageWalletsView({
           void doRemoveWallet();
         }}
       />
+
+      {renameState.type !== "idle" && (
+        <OverlayDialog
+          onClose={() => {
+            if (renameState.type !== "renaming") {
+              setRenameState({ type: "idle" });
+            }
+          }}
+        >
+          <div className="space-y-3">
+            <div className="text-base font-semibold text-white">Rename wallet</div>
+            <div className="text-sm text-white/75">
+              Enter new name for{" "}
+              <span className="font-mono text-white/90">
+                {renameState.oldWalletName}
+              </span>
+              .
+            </div>
+            <Input
+              value={renameState.newWalletName}
+              onChange={(e) => {
+                setRenameState((prev) =>
+                  prev.type === "idle"
+                    ? prev
+                    : { ...prev, newWalletName: e.target.value },
+                );
+              }}
+              autoComplete="off"
+              disabled={renameState.type === "renaming"}
+            />
+            <ButtonsHolder>
+              <Button
+                variant="soft"
+                disabled={renameState.type === "renaming"}
+                onClick={() => setRenameState({ type: "idle" })}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={
+                  renameState.type === "renaming" ||
+                  renameState.newWalletName.trim() === "" ||
+                  renameState.newWalletName.trim() === renameState.oldWalletName
+                }
+                onClick={() => {
+                  void doRenameWallet();
+                }}
+              >
+                {renameState.type === "renaming" ? "Renaming..." : "Rename wallet"}
+              </Button>
+            </ButtonsHolder>
+          </div>
+        </OverlayDialog>
+      )}
     </div>
   );
 }
