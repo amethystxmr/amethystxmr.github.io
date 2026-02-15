@@ -292,20 +292,27 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
 
-        const multisigStatus = await wallet.get_multisig_status();
-        if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
-          // No refreshing while multisig is not ready
-          console.warn("Wallet is in multisig setup state", multisigStatus);
-          await interruptableDelay(30_000)();
-          continue;
-        }
-
         if (!isInitialSync) {
           await interruptableDelay(60_000)();
         }
 
         if (cancelled) {
           return;
+        }
+
+        {
+          const multisigStatus = await wallet.get_multisig_status();
+          if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
+            // No refreshing while multisig is not ready
+            console.warn("Wallet is in multisig setup state", multisigStatus);
+            // Actually here it might be anything because all user can do it
+            // to continue kex exchange and it will interrupt here
+            await interruptableDelay(60_000 * 5)();
+            continue;
+          }
+          if (cancelled) {
+            return;
+          }
         }
 
         if (
