@@ -14,6 +14,7 @@ import { balanceToString, saveWalletIntoFs, toFiat } from "../utils";
 import { TransactionsTab } from "./main.transactions";
 import { SendTab } from "./main.send";
 import { OtherTab } from "./main.other";
+import { MultisigTab } from "./main.multisig";
 
 export function WalletMain({
   wallet,
@@ -524,6 +525,24 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 />
               ),
             },
+            ...(payments &&
+            mempoolPayments &&
+            (payments.length > 0 || mempoolPayments.length > 0)
+              ? []
+              : [
+                  {
+                    key: "multisig",
+                    label: "Multisig",
+                    content: (
+                      <MultisigTab
+                        wallet={wallet}
+                        onRefresh={stopWaitingOrScheduleNoWait}
+                        payments={payments}
+                        mempoolPayments={mempoolPayments}
+                      />
+                    ),
+                  },
+                ]),
             {
               key: "other",
               label: "Other",
