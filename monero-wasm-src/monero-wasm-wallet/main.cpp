@@ -722,9 +722,21 @@ public:
             });
     }
 
-    struct multisig::multisig_account_status get_multisig_status()
+     auto get_multisig_status()
     {
-        return m_wallet.get_multisig_status();
+        using R = multisig::multisig_account_status;
+               return runAsyncPromise<R>(
+            walletQueue,
+            walletThread,
+            [this](R &r)
+            {
+                r = m_wallet.get_multisig_status();
+            },
+            [](R &r) -> emscripten::val
+            {
+                return emscripten::val(r);
+            });
+
     }
 
     emscripten::val prepare_multisig()
