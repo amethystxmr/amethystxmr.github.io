@@ -70,6 +70,12 @@ export declare class MoneroWasmWallet {
 
   get_multisig_status(): Promise<multisig_account_status>;
   prepare_multisig(): Promise<string>;
+  /** Note: this function saves wallet, .keys and .address.txt files! */
+  make_multisig(
+    password: string,
+    initial_kex_msgs: string,
+    threshold: number,
+  ): Promise<string>;
 }
 
 export const FeePriority = {

@@ -231,7 +231,6 @@ public:
     // TODO: This actually not needed because it will close in destructor
     emscripten::val close_wallet()
     {
-
         return runAsyncPromise<bool>(
             walletQueue,
             walletThread,
@@ -738,6 +737,31 @@ public:
             });
     }
 
+    auto make_multisig(const std::string &password_str,
+                       const std::string &initial_kex_msgs,
+                       std::uint32_t threshold)
+    {
+        using R = std::string;
+        epee::wipeable_string password(password_str);
+        return runAsyncPromise<R>(
+            walletQueue,
+            walletThread,
+            [this, password, initial_kex_msgs, threshold](R &r)
+            {
+                if (m_wallet.get_multisig_status().multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is already multisig");
+                };
+                if (m_wallet.get_num_transfer_details())
+                {
+                    throw std::runtime_error("Wallet must be empty to create multisig");
+                };
+                std::vector<std::string> kex_msgs;
+                boost::split(kex_msgs, initial_kex_msgs, boost::is_any_of(" "), boost::token_compress_on);
+                r = m_wallet.make_multisig(password, kex_msgs, threshold);
+            });
+    }
+
     emscripten::val prepare_multisig()
     {
         return runAsyncPromise<std::string>(
@@ -812,6 +836,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
         .function("prepare_multisig", &MoneroWasmWallet::prepare_multisig)
+        .function("make_multisig", &MoneroWasmWallet::make_multisig)
         .constructor();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
