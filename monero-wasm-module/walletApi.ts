@@ -81,6 +81,7 @@ export declare class MoneroWasmWallet {
    * If kex_msgs is empty it returns current kex message
    */
   exchange_multisig_keys(password: string, kex_msgs: string): Promise<string>;
+  verify_password(password: string): Promise<boolean>;
 }
 
 export const FeePriority = {

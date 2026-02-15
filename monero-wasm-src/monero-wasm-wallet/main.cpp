@@ -737,6 +737,19 @@ public:
             });
     }
 
+    auto verify_password(const std::string &password_str)
+    {
+        using R = bool;
+        epee::wipeable_string password(password_str);
+        return runAsyncPromise<R>(
+            walletQueue,
+            walletThread,
+            [this, password](R &r)
+            {
+                r = m_wallet.verify_password(password);
+            });
+    }
+
     auto make_multisig(const std::string &password_str,
                        const std::string &initial_kex_msgs,
                        std::uint32_t threshold)
@@ -748,6 +761,11 @@ public:
             walletThread,
             [this, password, initial_kex_msgs, threshold](R &r)
             {
+                if (!m_wallet.verify_password(password))
+                {
+                    throw std::runtime_error("invalid password");
+                }
+
                 if (m_wallet.get_multisig_status().multisig_is_active)
                 {
                     throw std::runtime_error("Wallet is already multisig");
@@ -771,6 +789,10 @@ public:
             walletThread,
             [this, password, kex_msgs_str](R &r)
             {
+                if (!m_wallet.verify_password(password))
+                {
+                    throw std::runtime_error("invalid password");
+                }
                 if (!m_wallet.get_multisig_status().multisig_is_active)
                 {
                     throw std::runtime_error("Wallet is not multisig");
@@ -857,6 +879,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("prepare_multisig", &MoneroWasmWallet::prepare_multisig)
         .function("make_multisig", &MoneroWasmWallet::make_multisig)
         .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)
+        .function("verify_password", &MoneroWasmWallet::verify_password)
         .constructor();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
