@@ -775,7 +775,10 @@ public:
                     throw std::runtime_error("Wallet must be empty to create multisig");
                 };
                 std::vector<std::string> kex_msgs;
-                boost::split(kex_msgs, initial_kex_msgs, boost::is_any_of(" "), boost::token_compress_on);
+                if (!kex_msgs_str.empty())
+                {
+                    boost::split(kex_msgs, initial_kex_msgs, boost::is_any_of(" "), boost::token_compress_on);
+                }
                 r = m_wallet.make_multisig(password, kex_msgs, threshold);
             });
     }
@@ -798,7 +801,10 @@ public:
                     throw std::runtime_error("Wallet is not multisig");
                 };
                 std::vector<std::string> kex_msgs;
-                boost::split(kex_msgs, kex_msgs_str, boost::is_any_of(" "), boost::token_compress_on);
+                if (!kex_msgs_str.empty())
+                {
+                    boost::split(kex_msgs, kex_msgs_str, boost::is_any_of(" "), boost::token_compress_on);
+                }
                 r = m_wallet.exchange_multisig_keys(password, kex_msgs);
             });
     }
