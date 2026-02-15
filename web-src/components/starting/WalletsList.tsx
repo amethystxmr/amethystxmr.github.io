@@ -39,7 +39,6 @@ export function WalletsList() {
     return { type: "list" as const, walletNames: listWalletNames() };
   }, []);
   const alert = useAlert();
-  const allowWalletRemoval = options.getValue("allowWalletRemoval");
   const cpuThreads = options.getValue("cpuThreads");
   const [removeState, setRemoveState] = React.useState<
     | { type: "idle" }
@@ -209,18 +208,16 @@ export function WalletsList() {
                   }}
                 >
                   <span>{name}</span>
-                  {allowWalletRemoval && (
-                    <span
-                      role="button"
-                      className="ml-auto cursor-pointer rounded-md px-2 py-1 text-gray-400 transition hover:bg-red-500/10 hover:text-red-300"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setRemoveState({ type: "confirm", walletName: name });
-                      }}
-                    >
-                      🗑
-                    </span>
-                  )}
+                  <span
+                    role="button"
+                    className="ml-auto cursor-pointer rounded-md px-2 py-1 text-gray-400 transition hover:bg-red-500/10 hover:text-red-300"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRemoveState({ type: "confirm", walletName: name });
+                    }}
+                  >
+                    🗑
+                  </span>
                 </ListRowButton>
               ))}
             </div>
@@ -980,7 +977,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   const alert = useAlert();
   const defaultOptions = React.useMemo(() => getDefaultOptions(), []);
   const loadLastWallet = options.getValue("loadLastWallet");
-  const allowWalletRemoval = options.getValue("allowWalletRemoval");
   const cpuThreads = options.getValue("cpuThreads");
   const [cpuThreadsInput, setCpuThreadsInput] = React.useState(() =>
     String(cpuThreads),
@@ -1019,16 +1015,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
           }}
           label="Load last wallet on startup"
           description="Automatically open the previous wallet after app start."
-        />
-
-        <Toggle
-          checked={allowWalletRemoval}
-          onChange={(next) => {
-            options.setValue("allowWalletRemoval", next);
-            refresh((x) => x + 1);
-          }}
-          label="Allow wallets removing"
-          description="Show remove button in wallet list and allow deleting wallet files."
         />
 
         <FormRow>
