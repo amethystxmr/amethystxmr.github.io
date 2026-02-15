@@ -306,7 +306,13 @@ export function getWalletFilesData(walletName: string) {
   if (isWalletFileExists(walletName)) {
     walletFileData = module.FS.readFile(walletName);
   }
-  return [keysFileData, walletFileData] as const;
+  // TODO: Might be other files line address.txt in the future, need to return them as well
+  // TODO the same for import
+  let outFiles = [{ name: keysName, data: keysFileData }];
+  if (walletFileData) {
+    outFiles.push({ name: walletName, data: walletFileData });
+  }
+  return outFiles;
 }
 
 export function saveWalletFilesData(

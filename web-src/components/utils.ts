@@ -112,3 +112,21 @@ export async function saveWalletIntoFs(wallet: MoneroWasmWallet) {
     await wallet.store();
   });
 }
+
+export function downloadBlob(
+  blob: Blob,
+  fileName: string,
+  revokeDelayMs: number = 1000,
+) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, revokeDelayMs);
+}

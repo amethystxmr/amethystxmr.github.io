@@ -1,4 +1,5 @@
 import * as React from "react";
+import JSZip from "jszip";
 import {
   Button,
   ButtonsHolder,
@@ -20,16 +21,19 @@ import {
   decodePolyseed,
   deleteWalletFiles,
   getMaxConcurrency,
+  getWalletFilesData,
   getRecommendedMaxConcurrency,
+  isWalletFileExists,
   listWalletNames,
   MoneroWasmWallet,
+  saveWalletFilesData,
   setMaxConcurrency,
 } from "../../../monero-wasm-module/walletApi";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { getDefaultOptions, options } from "../options";
 import { NiceTabs } from "../main/tabs";
-import { saveWalletIntoFs, withFsLock } from "../utils";
+import { downloadBlob, saveWalletIntoFs, withFsLock } from "../utils";
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
@@ -1082,6 +1086,105 @@ function ManageWalletsView({
     }
   }, [alert, removeState]);
 
+  const doExportWallet = React.useCallback(
+    async (walletName: string) => {
+      try {
+        await withFsLock(async () => {
+          const files = getWalletFilesData(walletName);
+          const zip = new JSZip();
+          for (const file of files) {
+            zip.file(file.name, file.data);
+          }
+          const blob = await zip.generateAsync({ type: "blob" });
+          downloadBlob(blob, `${walletName}.zip`);
+        });
+      } catch (e) {
+        console.error("Failed to export wallet:", e);
+        await alert(
+          `Failed to export wallet: ${(e as Error).message || "Unknown error"}`,
+        );
+      }
+    },
+    [alert],
+  );
+
+  const doImportFromZip = React.useCallback(
+    async (file: File) => {
+      try {
+        const importSummary = await withFsLock(async () => {
+          const zip = await JSZip.loadAsync(await file.arrayBuffer());
+          const imported: string[] = [];
+          const skippedExisting: string[] = [];
+
+          const filesByBaseName = new Map<
+            string,
+            {
+              isDirectory: boolean;
+              async: (type: "uint8array") => Promise<Uint8Array>;
+            }
+          >();
+
+          for (const zipEntry of Object.values(zip.files)) {
+            const baseName = zipEntry.name.split("/").pop() || "";
+            if (!baseName) {
+              continue;
+            }
+            filesByBaseName.set(baseName, {
+              isDirectory: zipEntry.dir,
+              async: (type) => zipEntry.async(type),
+            });
+          }
+
+          for (const [baseName, keysEntry] of filesByBaseName.entries()) {
+            if (keysEntry.isDirectory || !baseName.endsWith(".keys")) {
+              continue;
+            }
+            const walletName = baseName.slice(0, -5);
+            if (!walletName) {
+              continue;
+            }
+            if (isWalletFileExists(walletName)) {
+              skippedExisting.push(walletName);
+              continue;
+            }
+
+            const keysFileData = await keysEntry.async("uint8array");
+            const walletEntry = filesByBaseName.get(walletName);
+            const walletFileData =
+              walletEntry && !walletEntry.isDirectory
+                ? await walletEntry.async("uint8array")
+                : null;
+
+            saveWalletFilesData(keysFileData, walletFileData, walletName);
+            imported.push(walletName);
+          }
+
+          return { imported, skippedExisting };
+        });
+
+        setWalletNames(listWalletNames());
+
+        const importedText =
+          importSummary.imported.length > 0
+            ? importSummary.imported.join(", ")
+            : "none";
+        const skippedText =
+          importSummary.skippedExisting.length > 0
+            ? importSummary.skippedExisting.join(", ")
+            : "none";
+        await alert(
+          `Import completed.\nImported: ${importedText}\nSkipped (already exists): ${skippedText}`,
+        );
+      } catch (e) {
+        console.error("Failed to import wallets:", e);
+        await alert(
+          `Failed to import wallets: ${(e as Error).message || "Unknown error"}`,
+        );
+      }
+    },
+    [alert],
+  );
+
   return (
     <div className="space-y-4">
       <Header>Manage wallets</Header>
@@ -1121,7 +1224,7 @@ function ManageWalletsView({
                   className="shrink-0 whitespace-nowrap"
                   variant="soft"
                   onClick={async () => {
-                    await alert("Export is not implemented yet.");
+                    await doExportWallet(walletName);
                   }}
                 >
                   ⬇︎ Export
@@ -1142,8 +1245,11 @@ function ManageWalletsView({
           if (!file) {
             return;
           }
-          await alert(`Selected file: ${file.name}. Import is not implemented yet.`);
-          e.target.value = "";
+          try {
+            await doImportFromZip(file);
+          } finally {
+            e.target.value = "";
+          }
         }}
       />
 
