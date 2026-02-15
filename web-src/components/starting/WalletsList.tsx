@@ -1098,30 +1098,33 @@ function ManageWalletsView({
               className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="truncate text-sm text-white/85">{walletName}</div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-nowrap gap-2 overflow-x-auto">
                 <Button
+                  className="shrink-0 whitespace-nowrap"
                   variant="soft"
                   onClick={() => {
                     setRemoveState({ type: "confirm", walletName });
                   }}
                 >
-                  Remove
+                  🗑 Remove
                 </Button>
                 <Button
+                  className="shrink-0 whitespace-nowrap"
                   variant="soft"
                   onClick={async () => {
                     await alert("Rename is not implemented yet.");
                   }}
                 >
-                  Rename
+                  ✎ Rename
                 </Button>
                 <Button
+                  className="shrink-0 whitespace-nowrap"
                   variant="soft"
                   onClick={async () => {
                     await alert("Export is not implemented yet.");
                   }}
                 >
-                  Export
+                  ⬇︎ Export
                 </Button>
               </div>
             </SurfaceCard>
@@ -1154,7 +1157,7 @@ function ManageWalletsView({
             importInputRef.current?.click();
           }}
         >
-          Import
+          ⬆︎ Import
         </Button>
       </ButtonsHolder>
 
