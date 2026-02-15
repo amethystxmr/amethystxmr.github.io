@@ -157,7 +157,32 @@ export function MultisigTab({
       if (messages.length !== state.participants) {
         throw new Error(`Expected ${state.participants} messages`);
       }
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      let password: string | null = "";
+      while (true) {
+        if (password === null) {
+          break;
+        }
+        if (await wallet.verify_password(password)) {
+          break;
+        }
+
+        // TODO: prompt for password with proper UI similar to remove confirm
+        // return null if user cancels
+        await "TODO";
+      }
+      if (password === null) {
+        setState({ ...state, making: false });
+        return;
+      }
+
+      const r = await wallet.make_multisig(
+        password,
+        messages.join(" "),
+        state.threshold,
+      );
+      console.log("make_multisig result:", r);
+
       onRefresh();
       setReloadToken((x) => x + 1);
     } catch (e) {
