@@ -44,6 +44,7 @@ type MultisigUiState =
   | {
       type: "multisig setup in progress";
       status: multisig_account_status;
+      myLastKexMessage: string | null | Error;
       othersKexMessages: string;
       exchanging: boolean;
     }
@@ -115,10 +116,12 @@ export function MultisigTab({
     if (state.type !== "no multisig") {
       return;
     }
+
     if (state.prepareMessage.type !== "loading") {
       return;
     }
 
+    // TODO: When wallet has no txes but become synced this is not updated
     if (isPropsLoading || isWalletSyncing) {
       setState({
         ...state,
@@ -215,6 +218,7 @@ export function MultisigTab({
         if (!status.is_ready) {
           setState({
             type: "multisig setup in progress",
+            myLastKexMessage: null,
             status,
             othersKexMessages: "",
             exchanging: false,
