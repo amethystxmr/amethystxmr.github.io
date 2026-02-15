@@ -1352,7 +1352,19 @@ function ManageWalletsView({
             }
           }}
         >
-          <div className="space-y-3">
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (
+                renameState.type !== "renaming" &&
+                renameState.newWalletName.trim() !== "" &&
+                renameState.newWalletName.trim() !== renameState.oldWalletName
+              ) {
+                void doRenameWallet();
+              }
+            }}
+          >
             <div className="text-base font-semibold text-white">Rename wallet</div>
             <div className="text-sm text-white/75">
               Enter new name for{" "}
@@ -1375,6 +1387,7 @@ function ManageWalletsView({
             />
             <ButtonsHolder>
               <Button
+                type="button"
                 variant="soft"
                 disabled={renameState.type === "renaming"}
                 onClick={() => setRenameState({ type: "idle" })}
@@ -1382,20 +1395,18 @@ function ManageWalletsView({
                 Cancel
               </Button>
               <Button
+                type="submit"
                 variant="primary"
                 disabled={
                   renameState.type === "renaming" ||
                   renameState.newWalletName.trim() === "" ||
                   renameState.newWalletName.trim() === renameState.oldWalletName
                 }
-                onClick={() => {
-                  void doRenameWallet();
-                }}
               >
                 {renameState.type === "renaming" ? "Renaming..." : "Rename wallet"}
               </Button>
             </ButtonsHolder>
-          </div>
+          </form>
         </OverlayDialog>
       )}
     </div>
