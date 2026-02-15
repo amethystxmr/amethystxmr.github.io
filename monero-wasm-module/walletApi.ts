@@ -292,9 +292,13 @@ export function listWalletNames() {
 
 export function deleteWalletFiles(walletName: string) {
   const names = new Set(module.FS.readdir("."));
-  for (const candidate of [walletName, `${walletName}.keys`]) {
-    if (names.has(candidate)) {
-      module.FS.unlink(candidate);
+  for (const name of names) {
+    if (
+      name === walletName ||
+      name === `${walletName}.keys` ||
+      name.startsWith(walletName + ".")
+    ) {
+      module.FS.unlink(name);
     }
   }
 }
