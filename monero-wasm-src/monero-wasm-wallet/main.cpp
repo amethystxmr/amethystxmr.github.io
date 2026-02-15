@@ -209,6 +209,29 @@ public:
             });
     }
 
+    emscripten::val set_attribute(std::string key, std::string value)
+    {
+        return runAsyncPromise<bool>(
+            walletQueue,
+            walletThread,
+            [this, key = std::move(key), value = std::move(value)](bool &r)
+            {
+                m_wallet.set_attribute(key, value);
+                r = true;
+            });
+    }
+
+    emscripten::val get_attribute(std::string key)
+    {
+        return runAsyncPromise<std::string>(
+            walletQueue,
+            walletThread,
+            [this, key = std::move(key)](std::string &r)
+            {
+                m_wallet.get_attribute(key, r);
+            });
+    }
+
     emscripten::val load(
         std::string fileName,
         std::string password)
@@ -870,6 +893,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_payments", &MoneroWasmWallet::get_payments)
         .function("get_payments_mempool", &MoneroWasmWallet::get_payments_mempool)
         .function("store", &MoneroWasmWallet::store)
+        .function("set_attribute", &MoneroWasmWallet::set_attribute)
+        .function("get_attribute", &MoneroWasmWallet::get_attribute)
         .function("get_seed", &MoneroWasmWallet::get_seed)
         .function("get_wallet_file", &MoneroWasmWallet::get_wallet_file)
         .function("balance", &MoneroWasmWallet::balance)

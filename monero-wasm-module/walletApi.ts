@@ -17,6 +17,8 @@ export declare class MoneroWasmWallet {
   ): Promise<Uint8Array>;
   is_synced(): Promise<boolean>;
   store(): Promise<void>;
+  set_attribute(key: string, value: string): Promise<boolean>;
+  get_attribute(key: string): Promise<string>;
   load(fileName: string, password: string): Promise<void>;
   refresh(
     isTrustedWallet: boolean,
