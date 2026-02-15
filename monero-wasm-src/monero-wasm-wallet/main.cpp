@@ -69,6 +69,7 @@ public:
         pthread_cancel(walletThread);
         // pthread_join(walletThread, NULL);
         m_wallet.stop();
+        printf("Wallet destroyed\n");
     }
 
     emscripten::val init()
