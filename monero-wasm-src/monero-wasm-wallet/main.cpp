@@ -722,10 +722,10 @@ public:
             });
     }
 
-     auto get_multisig_status()
+    auto get_multisig_status()
     {
         using R = multisig::multisig_account_status;
-               return runAsyncPromise<R>(
+        return runAsyncPromise<R>(
             walletQueue,
             walletThread,
             [this](R &r)
@@ -736,7 +736,6 @@ public:
             {
                 return emscripten::val(r);
             });
-
     }
 
     emscripten::val prepare_multisig()
