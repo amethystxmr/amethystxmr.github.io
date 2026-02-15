@@ -67,6 +67,9 @@ export declare class MoneroWasmWallet {
   ): Promise<PendingTxHandle>;
   transfer_get_fee(handle: PendingTxHandle): bigint;
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
+
+  get_multisig_status(): multisig_account_status;
+  prepare_multisig(): Promise<string>;
 }
 
 export const FeePriority = {
@@ -107,6 +110,18 @@ export interface PaymentDetails {
   index_major: number;
   index_minor: number;
   note: string;
+}
+
+export interface multisig_account_status {
+  // is the multisig account active/initialized?
+  multisig_is_active: boolean;
+  // has the multisig account completed the main key exchange rounds?
+  kex_is_done: boolean;
+  // is the multisig account ready to use?
+  is_ready: boolean;
+  // multisig is: M-of-N
+  threshold: number; // M
+  total: number; // N
 }
 
 interface ClassHandle {

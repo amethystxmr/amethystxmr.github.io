@@ -16,6 +16,11 @@
 #include <emscripten/val.h>
 #include <optional>
 
+#include "multisig/multisig.h"
+#include "multisig/multisig_account.h"
+#include "multisig/multisig_kex_msg.h"
+#include "multisig/multisig_tx_builder_ringct.h"
+
 #include "jsPromise.hpp"
 
 class MoneroWasmWallet : public tools::i_wallet2_callback
@@ -717,6 +722,34 @@ public:
             });
     }
 
+    struct multisig::multisig_account_status get_multisig_status()
+    {
+        return m_wallet.get_multisig_status();
+    }
+
+    emscripten::val prepare_multisig()
+    {
+        return runAsyncPromise<std::string>(
+            walletQueue,
+            walletThread,
+            [this](std::string &r)
+            {
+                if (m_wallet.get_num_transfer_details() > 0)
+                {
+                    throw std::runtime_error("Wallet must be empty to prepare multisig");
+                }
+                if (m_wallet.get_multisig_status().multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is already multisig");
+                }
+                r = m_wallet.get_multisig_first_kex_msg();
+            },
+            [](std::string &r) -> emscripten::val
+            {
+                return emscripten::val(r);
+            });
+    }
+
 private:
     // TODO: Add a callback for onFetching for better UI
     tools::wallet2 m_wallet = tools::wallet2(
@@ -766,10 +799,19 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("transfer_prepare", &MoneroWasmWallet::transfer_prepare)
         .function("transfer_get_fee", &MoneroWasmWallet::transfer_get_fee)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
+        .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
+        .function("prepare_multisig", &MoneroWasmWallet::prepare_multisig)
         .constructor();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
         .smart_ptr<std::shared_ptr<std::vector<tools::wallet2::pending_tx>>>("VectorOfPendingTx");
+
+    emscripten::value_object<struct multisig::multisig_account_status>("MultisigAccountStatus")
+        .field("multisig_is_active", &multisig::multisig_account_status::multisig_is_active)
+        .field("kex_is_done", &multisig::multisig_account_status::kex_is_done)
+        .field("is_ready", &multisig::multisig_account_status::is_ready)
+        .field("threshold", &multisig::multisig_account_status::threshold)
+        .field("total", &multisig::multisig_account_status::total);
 
     /*
 emscripten::class_<tools::wallet2::transfer_details>("TransferDetails")
