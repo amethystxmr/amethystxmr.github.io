@@ -323,28 +323,38 @@ export function renameWallet(oldName: string, newName: string) {
 export function getWalletFilesData(walletName: string) {
   const keysName = `${walletName}.keys`;
   const keysFileData = module.FS.readFile(keysName);
-  let walletFileData: Uint8Array | null = null;
-  if (isWalletFileExists(walletName)) {
-    walletFileData = module.FS.readFile(walletName);
-  }
-  // TODO: Might be other files line address.txt in the future, need to return them as well
-  // TODO the same for import
   let outFiles = [{ name: keysName, data: keysFileData }];
-  if (walletFileData) {
-    outFiles.push({ name: walletName, data: walletFileData });
+
+  for (const name of module.FS.readdir(".")) {
+    if (
+      name === walletName ||
+      (name.startsWith(walletName + ".") && name !== keysName)
+    ) {
+      const data = module.FS.readFile(name);
+      outFiles.push({ name, data });
+    }
   }
   return outFiles;
 }
 
 export function saveWalletFilesData(
-  keysFileData: Uint8Array,
-  walletFileData: Uint8Array | null,
   walletName: string,
+  keysFileData: Uint8Array,
+  otherFilesData: { name: string; data: Uint8Array }[],
 ) {
   const keysName = `${walletName}.keys`;
+  if (module.FS.readdir(".").includes(keysName)) {
+    throw new Error(`File ${keysName} already exists`);
+  }
+  for (const { name, data } of otherFilesData) {
+    if (module.FS.readdir(".").includes(name)) {
+      throw new Error(`File ${name} already exists`);
+    }
+  }
+
   module.FS.writeFile(keysName, keysFileData);
-  if (walletFileData) {
-    module.FS.writeFile(walletName, walletFileData);
+  for (const { name, data } of otherFilesData) {
+    module.FS.writeFile(name, data);
   }
 }
 

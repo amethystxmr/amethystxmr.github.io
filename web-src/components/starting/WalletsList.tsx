@@ -1047,11 +1047,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   );
 }
 
-function ManageWalletsView({
-  onBack,
-}: {
-  onBack: () => void;
-}) {
+function ManageWalletsView({ onBack }: { onBack: () => void }) {
   const alert = useAlert();
   const importInputRef = React.useRef<HTMLInputElement | null>(null);
   const [walletNames, setWalletNames] = React.useState<string[]>(() =>
@@ -1145,11 +1141,14 @@ function ManageWalletsView({
             });
           }
 
-          for (const [baseName, keysEntry] of filesByBaseName.entries()) {
-            if (keysEntry.isDirectory || !baseName.endsWith(".keys")) {
+          for (const [
+            keyFileNameName,
+            keysEntry,
+          ] of filesByBaseName.entries()) {
+            if (keysEntry.isDirectory || !keyFileNameName.endsWith(".keys")) {
               continue;
             }
-            const walletName = baseName.slice(0, -5);
+            const walletName = keyFileNameName.slice(0, -5);
             if (!walletName) {
               continue;
             }
@@ -1159,14 +1158,48 @@ function ManageWalletsView({
             }
 
             const keysFileData = await keysEntry.async("uint8array");
+
             const walletEntry = filesByBaseName.get(walletName);
             const walletFileData =
               walletEntry && !walletEntry.isDirectory
                 ? await walletEntry.async("uint8array")
                 : null;
 
-            saveWalletFilesData(keysFileData, walletFileData, walletName);
-            imported.push(walletName);
+            const otherFiles: { name: string; data: Uint8Array }[] = [];
+            if (walletFileData) {
+              otherFiles.push({
+                name: keyFileNameName,
+                data: keysFileData,
+              });
+            }
+            for (const [
+              otherBaseName,
+              otherEntry,
+            ] of filesByBaseName.entries()) {
+              if (
+                otherEntry.isDirectory ||
+                otherBaseName === keyFileNameName ||
+                otherBaseName === walletName
+              ) {
+                continue;
+              }
+              if (!otherBaseName.startsWith(walletName + ".")) {
+                continue;
+              }
+              const otherFileData = await otherEntry.async("uint8array");
+              otherFiles.push({
+                name: otherBaseName,
+                data: otherFileData,
+              });
+            }
+
+            try {
+              saveWalletFilesData(walletName, keysFileData, otherFiles);
+              imported.push(walletName);
+            } catch (e) {
+              console.error("Failed to save wallet files:", e);
+              skippedExisting.push(walletName);
+            }
           }
 
           return { imported, skippedExisting };
@@ -1196,9 +1229,7 @@ function ManageWalletsView({
           importSummary.skippedExisting,
           "No wallets were skipped.",
         );
-        await alert(
-          `Import completed.\n\n${importedText}\n\n${skippedText}`,
-        );
+        await alert(`Import completed.\n\n${importedText}\n\n${skippedText}`);
       } catch (e) {
         console.error("Failed to import wallets:", e);
         await alert(
@@ -1379,7 +1410,9 @@ function ManageWalletsView({
               }
             }}
           >
-            <div className="text-base font-semibold text-white">Rename wallet</div>
+            <div className="text-base font-semibold text-white">
+              Rename wallet
+            </div>
             <div className="text-sm text-white/75">
               Enter new name for{" "}
               <span className="font-mono text-white/90">
@@ -1417,7 +1450,9 @@ function ManageWalletsView({
                   renameState.newWalletName.trim() === renameState.oldWalletName
                 }
               >
-                {renameState.type === "renaming" ? "Renaming..." : "Rename wallet"}
+                {renameState.type === "renaming"
+                  ? "Renaming..."
+                  : "Rename wallet"}
               </Button>
             </ButtonsHolder>
           </form>
