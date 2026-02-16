@@ -31,14 +31,29 @@ export function WalletMain({
   }, [wallet]);
 
   const [refreshing, setRefreshing] = React.useState(false);
-  // TODO: If daemon just started then it might be small value
-  // and UI can show negative blocks left
-  const [daemonHeight, setDaemonHeight] = React.useState<bigint | null>(null);
-  const [lastTimeStatusesObtained, setLastTimeStatusesObtained] =
-    React.useState<Date | null>(null);
-  const [walletBlockchainCurrentHeight, setWalletBlockchainCurrentHeight] =
-    React.useState<bigint | null>(null);
 
+  const [status, setStatus] = React.useState<{
+    // TODO: If daemon just started then it might be small value
+    // and UI can show negative blocks left
+
+    daemonHeight: bigint;
+    obtainedAt: Date;
+    walletHeight: bigint;
+    balance: Record<
+      "strict" | "nonStrict",
+      {
+        value: bigint;
+        unlocked: {
+          balance: bigint;
+          blocks_to_unlock: bigint;
+          time_to_unlock: bigint;
+        };
+      }
+    >;
+    isSynced: Boolean;
+    multisigStatus: MultisigAccountStatus;
+    payments: PaymentDetailsTransformed[];
+  } | null>(null);
   const [downloadInfo, setDownloadInfo] = React.useState<null | {
     url: string;
     progressLoaded: number;
@@ -47,21 +62,6 @@ export function WalletMain({
 
   const [refreshError, setRefreshError] = React.useState<string | null>(null);
 
-  const [balance, setBalance] = React.useState<Record<
-    "strict" | "nonStrict",
-    {
-      value: bigint;
-      unlocked: {
-        balance: bigint;
-        blocks_to_unlock: bigint;
-        time_to_unlock: bigint;
-      };
-    }
-  > | null>(null);
-
-  const [payments, setPayments] = React.useState<
-    null | PaymentDetailsTransformed[]
-  >(null);
   const [mempoolPayments, setMempoolPayments] = React.useState<
     null | PaymentDetailsTransformed[]
   >(null);
@@ -96,11 +96,6 @@ nonStrict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 
 strict balance value 1765432100n
 strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
-
-  const isSynced =
-    walletBlockchainCurrentHeight !== null &&
-    daemonHeight !== null &&
-    walletBlockchainCurrentHeight >= daemonHeight;
 
   React.useEffect(() => {
     const oldOnFetch = window.globalHttpConfig.onFetch;
@@ -140,26 +135,24 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     }
   };
 
-  const [multisigStatus, setMultisigStatus] =
-    React.useState<null | MultisigAccountStatus>(null);
-
   React.useEffect(() => {
     let cancelled = false;
     wallet.set_on_new_block_callback((height) =>
-      setWalletBlockchainCurrentHeight(height),
+      setStatus((prev) =>
+        prev === null ? null : { ...prev, walletHeight: height },
+      ),
     );
 
     console.info("Address=", wallet.get_address());
 
-    const updateStatuses = async () => {
-      const cycleStartingHeight = wallet.get_blockchain_current_height();
-      setWalletBlockchainCurrentHeight(cycleStartingHeight);
+    const getStatus = async () => {
+      const walletHeight = wallet.get_blockchain_current_height();
 
       const balanceStrict = wallet.balance(0, true);
       const balanceNonStrict = wallet.balance(0, false);
       const unlockedBalanceStrict = wallet.unlocked_balance(0, true);
       const unlockedBalanceNonStrict = wallet.unlocked_balance(0, false);
-      setBalance({
+      const balance = {
         strict: {
           value: balanceStrict,
           unlocked: unlockedBalanceStrict,
@@ -168,46 +161,36 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           value: balanceNonStrict,
           unlocked: unlockedBalanceNonStrict,
         },
-      });
+      };
 
       const newMultisigStatus = await wallet.get_multisig_status();
       if (cancelled) {
         return;
       }
-      setMultisigStatus(newMultisigStatus);
 
       const payments = await wallet.get_payments(0n, max64);
       if (cancelled) {
         return;
       }
       const transformedPayments = transformPayments(payments);
-      setPayments(transformedPayments);
-      updateSecondaryAddresses();
 
       const daemonHeight = await wallet.get_daemon_blockchain_height();
       if (cancelled) {
         return;
       }
-      setDaemonHeight(daemonHeight);
+      const isSynced = await wallet.is_synced();
 
-      setLastTimeStatusesObtained(new Date());
-
-      return {
+      const newStatus: typeof status = {
+        daemonHeight,
+        walletHeight,
+        balance,
+        isSynced,
+        obtainedAt: new Date(),
         multisigStatus: newMultisigStatus,
         payments: transformedPayments,
-        daemonHeight,
-        cycleStartingHeight,
-        balance: {
-          strict: {
-            value: balanceStrict,
-            unlocked: unlockedBalanceStrict,
-          },
-          nonStrict: {
-            value: balanceNonStrict,
-            unlocked: unlockedBalanceNonStrict,
-          },
-        },
       };
+
+      return newStatus;
     };
     const doRefresh = async () => {
       setRefreshing(true);
@@ -296,11 +279,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         setRefreshError(null);
 
         try {
-          const freshStatus = await updateStatuses();
-          console.info("Statuses updated:", freshStatus);
-          if (cancelled || !freshStatus) {
+          updateSecondaryAddresses();
+
+          const freshStatus = await getStatus();
+          if (!freshStatus) {
             return;
           }
+          setStatus(freshStatus);
+          console.info("Statuses updated:", freshStatus);
+
           if (
             freshStatus.multisigStatus.multisig_is_active &&
             !freshStatus.multisigStatus.is_ready
@@ -368,13 +355,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       cancelled = true;
       wallet.set_on_new_block_callback(null);
     };
-  }, [
-    wallet,
-    setRefreshing,
-    setWalletBlockchainCurrentHeight,
-    setDaemonHeight,
-    updateSecondaryAddresses,
-  ]);
+  }, [wallet, setRefreshing, setStatus, updateSecondaryAddresses]);
 
   const priceInfo = useXmrPrice();
   const price = priceInfo?.price ?? null;
@@ -392,69 +373,67 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   const [secondsPerBlockOnInitialSync, setSecondsPerBlockOnInitialSync] =
     React.useState<number | null>(null);
 
-  const progressBarCompact =
-    daemonHeight === null || walletBlockchainCurrentHeight === null ? (
-      <ProgressBar
-        state={refreshError ? "error" : "loading"}
-        size="sm"
-        text={refreshError || "Connecting..."}
-      />
-    ) : refreshing ? (
-      <ProgressBar
-        size="sm"
-        state={downloadInfo ? "progress" : "loading"}
-        value={
-          downloadInfo
-            ? (downloadInfo.progressLoaded / downloadInfo.progressTotal) * 100
-            : 0
-        }
-        text={
-          daemonHeight > walletBlockchainCurrentHeight
-            ? `${daemonHeight - walletBlockchainCurrentHeight} blocks left` +
-              (secondsPerBlockOnInitialSync
-                ? showEstimatedTime(
-                    secondsPerBlockOnInitialSync,
-                    daemonHeight - walletBlockchainCurrentHeight,
-                  )
-                : "")
-            : "Refreshing..."
-        }
-      />
-    ) : isSynced ? (
-      <SynchronizedWithTimer
-        size="sm"
-        lastSyncTimestamp={lastTimeStatusesObtained}
-      />
-    ) : refreshError ? (
-      <ProgressBar size="sm" state="error" text={refreshError} />
-    ) : (
-      // When not synced but no error and not syncing
-      // Should not happen, but might occur between initial refreshes
-      <ProgressBar size="sm" state="loading" text="Loading..." />
-    );
+  const progressBarCompact = !status ? (
+    <ProgressBar
+      state={refreshError ? "error" : "loading"}
+      size="sm"
+      text={refreshError || "Connecting..."}
+    />
+  ) : refreshing ? (
+    <ProgressBar
+      size="sm"
+      state={downloadInfo ? "progress" : "loading"}
+      value={
+        downloadInfo
+          ? (downloadInfo.progressLoaded / downloadInfo.progressTotal) * 100
+          : 0
+      }
+      text={
+        !status.isSynced && status.daemonHeight > status.walletHeight
+          ? `${status.daemonHeight - status.walletHeight} blocks left` +
+            (secondsPerBlockOnInitialSync
+              ? showEstimatedTime(
+                  secondsPerBlockOnInitialSync,
+                  status.daemonHeight - status.walletHeight,
+                )
+              : "")
+          : "Refreshing..."
+      }
+    />
+  ) : status.isSynced ? (
+    <SynchronizedWithTimer size="sm" lastSyncTimestamp={status.obtainedAt} />
+  ) : refreshError ? (
+    <ProgressBar size="sm" state="error" text={refreshError} />
+  ) : (
+    // When not synced but no error and not syncing
+    // Should not happen, but might occur between initial refreshes
+    <ProgressBar size="sm" state="loading" text="Loading..." />
+  );
 
-  const availableAtomic = balance ? balance.nonStrict.unlocked.balance : null;
-  const lockedAtomic = balance
-    ? balance.nonStrict.value - balance.nonStrict.unlocked.balance
+  const availableBalance = status
+    ? status.balance.nonStrict.unlocked.balance
+    : null;
+  const lockedBalance = status
+    ? status.balance.nonStrict.value - status.balance.nonStrict.unlocked.balance
     : null;
   const availableXmrText =
-    availableAtomic !== null
-      ? `${balanceToString(availableAtomic)} XMR`
+    availableBalance !== null
+      ? `${balanceToString(availableBalance)} XMR`
       : "Loading...";
   const lockedXmrText =
-    lockedAtomic !== null
-      ? `${balanceToString(lockedAtomic)} XMR`
+    lockedBalance !== null
+      ? `${balanceToString(lockedBalance)} XMR`
       : "Loading...";
   const availableEurText =
-    availableAtomic !== null && price
-      ? `~${toFiat(availableAtomic, price).toFixed(2)} EUR`
+    availableBalance !== null && price
+      ? `~${toFiat(availableBalance, price).toFixed(2)} EUR`
       : "—";
   const lockedEurText =
-    lockedAtomic !== null && price
-      ? `~${toFiat(lockedAtomic, price).toFixed(2)} EUR`
+    lockedBalance !== null && price
+      ? `~${toFiat(lockedBalance, price).toFixed(2)} EUR`
       : "—";
 
-  const isSyncingNow = refreshing || !isSynced;
+  const isSyncingNow = refreshing || (status && !status.isSynced);
   const syncStatusLabel = isSyncingNow ? "Syncing" : "Synced";
   const syncStatusTone = isSyncingNow
     ? "bg-amber-500/10 text-amber-200 ring-amber-400/20"
@@ -467,9 +446,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     price: price,
   });
   const isShouldHideMultisigTab =
-    !!payments &&
+    !!status &&
     !!mempoolPayments &&
-    (payments.length > 0 || mempoolPayments.length > 0);
+    (status.payments.length > 0 || mempoolPayments.length > 0);
 
   return (
     <div className="space-y-5 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
@@ -480,8 +459,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             <div className="min-w-0">
               {
                 <div className="text-xs tracking-[0.18em] uppercase text-white/45">
-                  {multisigStatus?.multisig_is_active
-                    ? multisigStatus.is_ready
+                  {status?.multisigStatus.multisig_is_active
+                    ? status.multisigStatus.is_ready
                       ? "Multisig (ready)"
                       : "Multisig (setting up)"
                     : ""}
@@ -502,12 +481,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 >
                   {syncStatusLabel}
                 </div>
-                {daemonHeight !== null &&
-                  walletBlockchainCurrentHeight !== null && (
-                    <span className="text-[11px] text-white/45">
-                      {walletBlockchainCurrentHeight}/{daemonHeight}
-                    </span>
-                  )}
+                {status && (
+                  <span className="text-[11px] text-white/45">
+                    {status.walletHeight}/{status.daemonHeight}
+                  </span>
+                )}
               </div>
               {progressBarCompact}
             </div>
@@ -543,7 +521,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 <ReceiveAddresses
                   primaryAddress={primaryAddress}
                   secondaryAddresses={secondaryAddresses || undefined}
-                  payments={payments}
+                  payments={status?.payments || null}
                   mempoolPayments={mempoolPayments}
                   price={price}
                   onAddSubaddressAdd={async (newLabel) => {
@@ -564,10 +542,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               label: "Transactions",
               content: (
                 <TransactionsTab
-                  payments={payments}
+                  payments={status?.payments || null}
                   secondaryAddresses={secondaryAddresses}
                   mempoolPayments={mempoolPayments}
-                  daemonLastBlockHeight={daemonHeight}
+                  daemonLastBlockHeight={status?.daemonHeight ?? null}
                   price={price}
                 />
               ),
@@ -581,10 +559,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                       <MultisigTab
                         wallet={wallet}
                         onRefresh={stopWaitingOrScheduleNoWait}
-                        payments={payments}
+                        payments={status?.payments || null}
                         mempoolPayments={mempoolPayments}
-                        walletHeight={walletBlockchainCurrentHeight}
-                        daemonHeight={daemonHeight}
+                        walletHeight={status?.walletHeight ?? null}
+                        daemonHeight={status?.daemonHeight ?? null}
                       />
                     ),
                   },
@@ -598,9 +576,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   onExit={onExit}
                   wallet={wallet}
                   onRefresh={stopWaitingOrScheduleNoWait}
-                  lastRefreshTimestamp={lastTimeStatusesObtained}
-                  daemonLastBlockHeight={daemonHeight}
-                  payments={payments}
+                  lastRefreshTimestamp={status?.obtainedAt ?? null}
+                  daemonLastBlockHeight={status?.daemonHeight ?? null}
+                  payments={status?.payments || null}
                   priceEur={priceInfo?.price ?? null}
                   priceSource={priceInfo?.source ?? null}
                   priceFetchedAt={priceInfo?.fetchedAt ?? null}
