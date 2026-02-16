@@ -4,6 +4,8 @@ import {
   saveFilesystem,
 } from "../../monero-wasm-module/walletApi";
 
+let didWarnAboutMissingNavigatorLocks = false;
+
 export function balanceToString(balance: bigint): string {
   // 1000000000n = 0.001
   // 0765432100n = 0.0007654321
@@ -94,17 +96,101 @@ export async function withOriginLock<T>(
       },
     );
   }
-  // Do nothing if locks are not supported, just run the function
+  if (!didWarnAboutMissingNavigatorLocks) {
+    didWarnAboutMissingNavigatorLocks = true;
+    console.warn(
+      "navigator.locks.request is not available in this environment; running without cross-tab locking.",
+    );
+  }
   return await fn();
 }
 
+export async function acquireOriginLock(
+  name: string,
+  options: {
+    ifAvailable?: boolean;
+  } = {},
+): Promise<(() => void) | null> {
+  if (!navigator.locks?.request) {
+    if (!didWarnAboutMissingNavigatorLocks) {
+      didWarnAboutMissingNavigatorLocks = true;
+      console.warn(
+        "navigator.locks.request is not available in this environment; running without cross-tab locking.",
+      );
+    }
+    return () => {};
+  }
+
+  let resolveHoldLock: () => void = () => {};
+  const holdLockPromise = new Promise<void>((resolve) => {
+    resolveHoldLock = resolve;
+  });
+
+  let resolveAcquired: () => void = () => {};
+  let rejectAcquired: (error: unknown) => void = () => {};
+  const acquiredPromise = new Promise<void>((resolve, reject) => {
+    resolveAcquired = resolve;
+    rejectAcquired = reject;
+  });
+
+  let unavailable = false;
+  void navigator.locks
+    .request(
+      `origin:${name}`,
+      { mode: "exclusive", ifAvailable: options.ifAvailable ?? false },
+      async (lock) => {
+        if (options.ifAvailable && lock === null) {
+          unavailable = true;
+          resolveAcquired();
+          return;
+        }
+
+        resolveAcquired();
+        await holdLockPromise;
+      },
+    )
+    .catch((error) => {
+      rejectAcquired(error);
+    });
+
+  await acquiredPromise;
+
+  if (unavailable) {
+    return null;
+  }
+
+  let isReleased = false;
+  return () => {
+    if (isReleased) {
+      return;
+    }
+    isReleased = true;
+    resolveHoldLock();
+  };
+}
+
+export async function acquireWalletOpenLock(
+  walletName: string,
+  options: {
+    ifAvailable?: boolean;
+  } = {},
+): Promise<(() => void) | null> {
+  return acquireOriginLock(`wallet-open:${walletName}`, options);
+}
+
 export async function withFsLock<T>(fn: () => Promise<T>): Promise<T> {
-  return withOriginLock("fs-lock", async () => {
+  const releaseFsLock = await acquireOriginLock("fs-lock");
+  if (!releaseFsLock) {
+    throw new Error("Failed to acquire filesystem lock");
+  }
+  try {
     await loadFilesystem();
     const result = await fn();
     await saveFilesystem();
     return result;
-  });
+  } finally {
+    releaseFsLock();
+  }
 }
 
 export async function saveWalletIntoFs(wallet: MoneroWasmWallet) {

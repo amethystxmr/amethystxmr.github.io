@@ -35,7 +35,17 @@ import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { getDefaultOptions, options } from "../options";
 import { NiceTabs } from "../main/tabs";
-import { downloadBlob, saveWalletIntoFs, withFsLock } from "../utils";
+import {
+  acquireWalletOpenLock,
+  downloadBlob,
+  saveWalletIntoFs,
+  withFsLock,
+} from "../utils";
+
+type OpenedWallet = {
+  wallet: MoneroWasmWallet;
+  releaseWalletOpenLock: () => void;
+};
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
@@ -60,7 +70,7 @@ export function WalletsList() {
       }
     | {
         type: "opened";
-        wallet: MoneroWasmWallet;
+        openedWallet: OpenedWallet;
       }
     | {
         type: "manage-wallets";
@@ -104,22 +114,25 @@ export function WalletsList() {
   if (view.type === "opened") {
     return (
       <WalletMain
-        wallet={view.wallet}
+        wallet={view.openedWallet.wallet}
         onExit={() => {
-          const wallet = view.wallet;
+          const { wallet, releaseWalletOpenLock } = view.openedWallet;
           backToList();
           options.setValue("lastWalletName", null);
-          closeWallet(wallet);
+          closeWallet(wallet, releaseWalletOpenLock);
         }}
       />
     );
   } else if (view.type === "restore") {
     return (
       <RestoreView
-        onDone={(wallet) => {
-          if (wallet) {
-            options.setValue("lastWalletName", wallet.get_wallet_file());
-            setView({ type: "opened", wallet });
+        onDone={(openedWallet) => {
+          if (openedWallet) {
+            options.setValue(
+              "lastWalletName",
+              openedWallet.wallet.get_wallet_file(),
+            );
+            setView({ type: "opened", openedWallet });
           } else {
             backToList();
           }
@@ -129,10 +142,13 @@ export function WalletsList() {
   } else if (view.type === "create-new-wallet") {
     return (
       <CreateNewWalletView
-        onDone={(wallet) => {
-          if (wallet) {
-            options.setValue("lastWalletName", wallet.get_wallet_file());
-            setView({ type: "opened", wallet });
+        onDone={(openedWallet) => {
+          if (openedWallet) {
+            options.setValue(
+              "lastWalletName",
+              openedWallet.wallet.get_wallet_file(),
+            );
+            setView({ type: "opened", openedWallet });
           } else {
             backToList();
           }
@@ -143,10 +159,13 @@ export function WalletsList() {
     return (
       <OpenWalletView
         fileName={view.fileName}
-        onDone={(wallet) => {
-          if (wallet) {
-            options.setValue("lastWalletName", wallet.get_wallet_file());
-            setView({ type: "opened", wallet });
+        onDone={(openedWallet) => {
+          if (openedWallet) {
+            options.setValue(
+              "lastWalletName",
+              openedWallet.wallet.get_wallet_file(),
+            );
+            setView({ type: "opened", openedWallet });
           } else {
             options.setValue("lastWalletName", null);
             backToList();
@@ -229,18 +248,21 @@ export function WalletsList() {
   }
 }
 
-function closeWallet(wallet: MoneroWasmWallet): void {
-  wallet
-    .close_wallet()
-    .catch((e) => {
+function closeWallet(wallet: MoneroWasmWallet, onDone?: () => void): void {
+  (async () => {
+    try {
+      await wallet.close_wallet();
+    } catch (e) {
       console.error("Error closing wallet:", e);
-    })
-    .then(() => {
-      return wallet.delete();
-    })
-    .catch((e) => {
+    }
+    try {
+      await wallet.delete();
+    } catch (e) {
       console.error("Error deleting wallet:", e);
-    });
+    } finally {
+      onDone?.();
+    }
+  })();
 }
 
 async function getBlockchainHeightByDateUsingTempWallet(
@@ -260,7 +282,7 @@ async function getBlockchainHeightByDateUsingTempWallet(
 function RestoreView({
   onDone,
 }: {
-  onDone: (wallet: MoneroWasmWallet | null) => void;
+  onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   const alert = useAlert();
   const [fileName, setFileName] = React.useState("kek");
@@ -313,7 +335,13 @@ function RestoreView({
 
     setRestoring(true);
     let wallet: MoneroWasmWallet | undefined;
+    let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
+      releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
+      if (!releaseWalletOpenLock) {
+        throw new Error(`Wallet "${fileName}" is currently open in another tab`);
+      }
+
       let restoreHeight: bigint;
       let polyseedPrivateKey: Uint8Array | null = null;
 
@@ -369,9 +397,17 @@ function RestoreView({
         await wallet.store();
       });
       await persistNavigatorStorage();
+      if (!releaseWalletOpenLock) {
+        throw new Error("Wallet lock release callback is missing");
+      }
+      const openedWallet: OpenedWallet = {
+        wallet,
+        releaseWalletOpenLock,
+      };
+      releaseWalletOpenLock = null;
       console.info("Wallet restored and saved");
       setRestoring(false);
-      onDone(wallet);
+      onDone(openedWallet);
     })().catch((e) => {
       console.error("Error restoring wallet:", e);
       void alert(
@@ -380,6 +416,7 @@ function RestoreView({
       if (wallet) {
         closeWallet(wallet);
       }
+      releaseWalletOpenLock?.();
       setRestoring(false);
     });
   };
@@ -542,7 +579,7 @@ function RestoreView({
 function CreateNewWalletView({
   onDone,
 }: {
-  onDone: (wallet: MoneroWasmWallet | null) => void;
+  onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   const alert = useAlert();
 
@@ -558,6 +595,7 @@ function CreateNewWalletView({
     | {
         type: "showing-seed";
         wallet: MoneroWasmWallet;
+        releaseWalletOpenLock: () => void;
         seed: string;
         daemonHeight: bigint | null;
         daemonHeightFetchedAt: number | null;
@@ -592,7 +630,13 @@ function CreateNewWalletView({
     setState({ type: "creating-wallet", fileName, password, passwordConfirm });
 
     let wallet: MoneroWasmWallet | undefined;
+    let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
+      releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
+      if (!releaseWalletOpenLock) {
+        throw new Error(`Wallet "${fileName}" is currently open in another tab`);
+      }
+
       wallet = createWallet();
       await wallet.init();
 
@@ -620,10 +664,16 @@ function CreateNewWalletView({
 
       await saveWalletIntoFs(wallet);
       await persistNavigatorStorage();
+      if (!releaseWalletOpenLock) {
+        throw new Error("Wallet lock release callback is missing");
+      }
+      const acquiredReleaseWalletOpenLock = releaseWalletOpenLock;
+      releaseWalletOpenLock = null;
       console.info("Wallet created and saved");
       setState({
         type: "showing-seed",
         wallet,
+        releaseWalletOpenLock: acquiredReleaseWalletOpenLock,
         seed,
         daemonHeight: null,
         daemonHeightFetchedAt: null,
@@ -636,6 +686,7 @@ function CreateNewWalletView({
       if (wallet) {
         closeWallet(wallet);
       }
+      releaseWalletOpenLock?.();
       setState({ type: "entering-data", fileName, password, passwordConfirm });
     });
   };
@@ -647,7 +698,7 @@ function CreateNewWalletView({
       );
     }
     onDone(null);
-    closeWallet(state.wallet);
+    closeWallet(state.wallet, state.releaseWalletOpenLock);
   };
 
   React.useEffect(() => {
@@ -744,7 +795,12 @@ function CreateNewWalletView({
               <Button
                 className="w-full"
                 variant="primary"
-                onClick={() => onDone(state.wallet)}
+                onClick={() =>
+                  onDone({
+                    wallet: state.wallet,
+                    releaseWalletOpenLock: state.releaseWalletOpenLock,
+                  })
+                }
               >
                 → Open wallet
               </Button>
@@ -825,7 +881,7 @@ function OpenWalletView({
   fileName,
 }: {
   fileName: string;
-  onDone: (wallet: MoneroWasmWallet | null) => void;
+  onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   const alert = useAlert();
   const [password, setPassword] = React.useState("");
@@ -833,16 +889,40 @@ function OpenWalletView({
 
   const doOpen = (isInitial: boolean) => {
     setBusy(isInitial ? "initial" : "user");
-    let wallet: MoneroWasmWallet;
+    let wallet: MoneroWasmWallet | undefined;
+    let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
+      releaseWalletOpenLock = await acquireWalletOpenLock(fileName, {
+        ifAvailable: true,
+      });
+      if (!releaseWalletOpenLock) {
+        if (!isInitial) {
+          await alert(`Wallet "${fileName}" is already opened in another tab.`);
+        }
+        onDone(null);
+        setBusy(null);
+        return;
+      }
+
       await persistNavigatorStorage();
       wallet = createWallet();
       await wallet.init();
       await wallet.load(fileName, password);
-      onDone(wallet);
+      if (!releaseWalletOpenLock) {
+        throw new Error("Wallet lock release callback is missing");
+      }
+      const openedWallet: OpenedWallet = {
+        wallet,
+        releaseWalletOpenLock,
+      };
+      releaseWalletOpenLock = null;
+      onDone(openedWallet);
       setBusy(null);
     })().catch((e) => {
-      closeWallet(wallet);
+      if (wallet) {
+        closeWallet(wallet);
+      }
+      releaseWalletOpenLock?.();
 
       if (!isInitial) {
         console.error("Error opening wallet:", e);
@@ -1075,8 +1155,20 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
     if (removeState.type !== "confirm") {
       return;
     }
+    let releaseWalletOpenLock: (() => void) | null = null;
     try {
       setRemoveState({ type: "removing", walletName: removeState.walletName });
+      releaseWalletOpenLock = await acquireWalletOpenLock(
+        removeState.walletName,
+        { ifAvailable: true },
+      );
+      if (!releaseWalletOpenLock) {
+        await alert(
+          `Wallet "${removeState.walletName}" is already opened in another tab.`,
+        );
+        setRemoveState({ type: "idle" });
+        return;
+      }
       await withFsLock(async () => {
         deleteWalletFiles(removeState.walletName);
       });
@@ -1091,6 +1183,8 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         `Failed to remove wallet: ${(e as Error).message || "Unknown error"}`,
       );
       setRemoveState({ type: "idle" });
+    } finally {
+      releaseWalletOpenLock?.();
     }
   }, [alert, removeState]);
 
@@ -1256,12 +1350,19 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
       setRenameState({ type: "idle" });
       return;
     }
+    let releaseWalletOpenLock: (() => void) | null = null;
     try {
       setRenameState({
         type: "renaming",
         oldWalletName: oldName,
         newWalletName: renameState.newWalletName,
       });
+      releaseWalletOpenLock = await acquireWalletOpenLock(oldName, {
+        ifAvailable: true,
+      });
+      if (!releaseWalletOpenLock) {
+        throw new Error(`Wallet "${oldName}" is currently opened in another tab.`);
+      }
       await withFsLock(async () => {
         renameWallet(oldName, newName);
       });
@@ -1276,6 +1377,8 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         `Failed to rename wallet: ${(e as Error).message || "Unknown error"}`,
       );
       setRenameState({ type: "idle" });
+    } finally {
+      releaseWalletOpenLock?.();
     }
   }, [alert, renameState]);
 
