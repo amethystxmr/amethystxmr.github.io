@@ -309,11 +309,25 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
 
-        if (
-          !(await wallet.is_synced()) &&
-          lastTimeRefreshStartedAt &&
-          lastTimeRefreshedBlocks
-        ) {
+        // The point of having delay here is to allow to get fresh statuses right after refresh
+        // If we have refresh in the end of the loop then we will just wait
+
+        const isSynced = await wallet.is_synced();
+        if (isSynced) {
+          console.info("Wallet is synced, waiting for next refresh cycle...");
+          lastTimeRefreshStartedAt = null;
+          lastTimeRefreshedBlocks = null;
+          await interruptableDelay(60_000);
+          continue;
+        } else {
+          console.info("Wallet is not synced, going into refresh...");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!isSynced && lastTimeRefreshStartedAt && lastTimeRefreshedBlocks) {
           const secondsSinceLastRefresh =
             (new Date().getTime() - lastTimeRefreshStartedAt.getTime()) / 1000;
           const secondsPerBlock =
@@ -329,15 +343,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         console.info(`Refreshing wallet...`);
         const refreshStatus = await doRefresh();
         lastTimeRefreshedBlocks = refreshStatus?.blocksFetched ?? null;
-
-        if (await wallet.is_synced()) {
-          console.info("End of cycle, wallet is synced");
-          lastTimeRefreshStartedAt = null;
-          lastTimeRefreshedBlocks = null;
-          await interruptableDelay(60_000);
-        } else {
-          console.info("Wallet is not synced, starting loop iteration");
-        }
       }
     })().catch((e) => {
       if (cancelled) {
