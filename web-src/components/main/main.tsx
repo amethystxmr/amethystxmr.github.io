@@ -217,15 +217,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         setRefreshError(null);
         setRefreshing(false);
 
-        const isSynced = await wallet.is_synced();
-        if (isSynced) {
-          // On non-initial refresh also get mempool payments
-          const mempoolPayments = await wallet.get_payments_mempool();
-          const transformedMempoolPayments = transformPayments(mempoolPayments);
-          console.log("Mempool payments:", transformedMempoolPayments);
-          setMempoolPayments(transformedMempoolPayments);
-        }
-
         return refreshStatus;
       } catch (e) {
         console.error("Error during refresh:", e);
@@ -314,9 +305,18 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
         const isSynced = await wallet.is_synced();
         if (isSynced) {
-          console.info("Wallet is synced, waiting for next refresh cycle...");
           lastTimeRefreshStartedAt = null;
           lastTimeRefreshedBlocks = null;
+
+          console.info("Wallet is synced, fetching mempool...");
+          {
+            // On non-initial refresh also get mempool payments
+            const mempoolPayments = await wallet.get_payments_mempool();
+            const transformedMempoolPayments =
+              transformPayments(mempoolPayments);
+            console.log("Mempool payments:", transformedMempoolPayments);
+            setMempoolPayments(transformedMempoolPayments);
+          }
           await interruptableDelay(60_000);
           continue;
         } else {
