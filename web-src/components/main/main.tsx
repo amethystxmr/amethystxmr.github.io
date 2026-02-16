@@ -181,7 +181,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         return;
       }
       const transformedPayments = transformPayments(payments);
-      console.info("Payments:", transformedPayments);
       setPayments(transformedPayments);
       updateSecondaryAddresses();
 
@@ -191,14 +190,24 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       }
       setDaemonHeight(daemonHeight);
 
-      if (cycleStartingHeight >= daemonHeight) {
-        console.info(
-          "Wallet is already synced on , no need to do initial refresh",
-        );
-        setLastTimeStatusesObtained(new Date());
-      }
+      setLastTimeStatusesObtained(new Date());
 
-      return { multisigStatus: newMultisigStatus };
+      return {
+        multisigStatus: newMultisigStatus,
+        payments: transformedPayments,
+        daemonHeight,
+        cycleStartingHeight,
+        balance: {
+          strict: {
+            value: balanceStrict,
+            unlocked: unlockedBalanceStrict,
+          },
+          nonStrict: {
+            value: balanceNonStrict,
+            unlocked: unlockedBalanceNonStrict,
+          },
+        },
+      };
     };
     const doRefresh = async () => {
       setRefreshing(true);
@@ -281,7 +290,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         setRefreshError(null);
 
         try {
-          // TODO: Return other statuses
           const freshStatus = await updateStatuses();
           console.info("Statuses updated:", freshStatus);
           if (cancelled || !freshStatus) {
