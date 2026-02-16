@@ -174,7 +174,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      console.info(`Multisig status:`, newMultisigStatus);
       setMultisigStatus(newMultisigStatus);
 
       const payments = await wallet.get_payments(0n, max64);
@@ -201,9 +200,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
       return { multisigStatus: newMultisigStatus };
     };
-
-    let isInitialSync = true;
-
     const doRefresh = async () => {
       setRefreshing(true);
       setRefreshError(null);
@@ -227,20 +223,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
         setRefreshError(null);
-        // TODO: Is this needed?
-        // setLastTimeStatusesObtained(new Date());
         setRefreshing(false);
-        if (isInitialSync) {
-          const isSynced = await wallet.is_synced();
-          if (isSynced) {
-            console.info("Wallet init sync is done");
-            isInitialSync = false;
-          } else {
-            console.info("Wallet initial sync is in progress");
-          }
-        }
 
-        if (!isInitialSync) {
+        const isSynced = await wallet.is_synced();
+        if (isSynced) {
           // On non-initial refresh also get mempool payments
           const mempoolPayments = await wallet.get_payments_mempool();
           const transformedMempoolPayments = transformPayments(mempoolPayments);
@@ -289,13 +275,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       let lastTimeRefreshedBlocks: bigint | null = null;
       while (!cancelled) {
         console.info(
-          `================= Starting refresh cycle (initial=${isInitialSync}) =================`,
+          `================= Starting refresh cycle =================`,
         );
 
         setRefreshError(null);
 
         try {
+          // TODO: Return other statuses
           const freshStatus = await updateStatuses();
+          console.info("Statuses updated:", freshStatus);
           if (cancelled || !freshStatus) {
             return;
           }
@@ -323,19 +311,19 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         // The point of having delay here is to allow to get fresh statuses right after refresh
         // If we have refresh in the end of the loop then we will just wait
 
-        if (!isInitialSync) {
+        const isSynced = await wallet.is_synced();
+        if (isSynced) {
+          console.info("Wallet is synced, waiting for next refresh cycle...");
           await interruptableDelay(60_000)();
+        } else {
+          console.info("Wallet is not synced, going into refresh...");
         }
 
         if (cancelled) {
           return;
         }
 
-        if (
-          isInitialSync &&
-          lastTimeRefreshStartedAt &&
-          lastTimeRefreshedBlocks
-        ) {
+        if (!isSynced && lastTimeRefreshStartedAt && lastTimeRefreshedBlocks) {
           const secondsSinceLastRefresh =
             (new Date().getTime() - lastTimeRefreshStartedAt.getTime()) / 1000;
           const secondsPerBlock =

@@ -1,7 +1,7 @@
 import React from "react";
 import {
   MoneroWasmWallet,
-  multisig_account_status,
+  MultisigAccountStatus,
   PaymentDetailsTransformed,
 } from "../../../monero-wasm-module/walletApi";
 import {
@@ -43,7 +43,7 @@ type MultisigUiState =
     }
   | {
       type: "multisig setup in progress";
-      status: multisig_account_status;
+      status: MultisigAccountStatus;
       myLastKexMessage: string | Error;
       myLastKexRound: string | Error;
       othersKexMessages: string;
@@ -51,7 +51,7 @@ type MultisigUiState =
     }
   | {
       type: "multisig is ready";
-      status: multisig_account_status;
+      status: MultisigAccountStatus;
     }
   | {
       type: "error";
