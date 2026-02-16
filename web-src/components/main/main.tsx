@@ -280,8 +280,14 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     };
 
     (async () => {
+      /** Only used for estimations during initial sync.
+       *  And it measures whole cycle time, not only refresh time,
+       *   so it also includes time for getting statuses and payments
+       */
       let lastTimeRefreshStartedAt: Date | null = null;
+      /** Only used for estimations during initial sync */
       let lastTimeRefreshedBlocks: bigint | null = null;
+
       while (!cancelled) {
         console.info(
           `================= Starting refresh cycle =================`,
@@ -322,6 +328,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         const isSynced = await wallet.is_synced();
         if (isSynced) {
           console.info("Wallet is synced, waiting for next refresh cycle...");
+          lastTimeRefreshStartedAt = null;
+          lastTimeRefreshedBlocks = null;
           await interruptableDelay(60_000);
           continue;
         } else {
