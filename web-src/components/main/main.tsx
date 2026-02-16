@@ -469,12 +469,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         <div className="relative space-y-4">
           <div className="flex flex-col gap-3">
             <div className="min-w-0">
-              {/*
-              // TODO: Show something meaningfull here
-              <div className="text-xs tracking-[0.18em] uppercase text-white/45">
-                  Monero wallet
-              </div>
-              */}
+              {
+                <div className="text-xs tracking-[0.18em] uppercase text-white/45">
+                  {multisigStatus?.multisig_is_active
+                    ? multisigStatus.is_ready
+                      ? "Multisig (ready)"
+                      : "Multisig (setting up)"
+                    : ""}
+                </div>
+              }
               <h1 className="text-glow text-2xl leading-tight font-bold sm:text-3xl">
                 Amethyst XMR
               </h1>
