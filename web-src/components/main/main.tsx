@@ -284,9 +284,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             !freshStatus.multisigStatus.is_ready
           ) {
             console.info(
-              `Wallet is multisig but not ready, waiting for manual interrupt`,
+              `Wallet is multisig but not ready, basically waiting for manual interrupt`,
             );
-            await interruptableDelay(Infinity);
+            await interruptableDelay(60_000 * 20);
             continue;
           }
         } catch (e) {
