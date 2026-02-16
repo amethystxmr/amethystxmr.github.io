@@ -251,7 +251,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       }
     };
 
-    const interruptableDelay = (ms: number) => async () => {
+    const interruptableDelay = async (ms: number) => {
       if (stopWaitingRef.current === "no-wait") {
         console.info(
           `Waiting for ${ms / 1000} seconds... {no wait mode, skipping wait}`,
@@ -302,13 +302,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             console.info(
               `Wallet is multisig but not ready, waiting for manual interrupt`,
             );
-            await interruptableDelay(Infinity)();
+            await interruptableDelay(Infinity);
             continue;
           }
         } catch (e) {
           console.error("Error while updating wallet/daemon status:", e);
           setRefreshError((e as Error).message || "Unknown error");
-          await interruptableDelay(30_000)();
+          await interruptableDelay(30_000);
           continue;
         }
 
@@ -322,7 +322,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         const isSynced = await wallet.is_synced();
         if (isSynced) {
           console.info("Wallet is synced, waiting for next refresh cycle...");
-          await interruptableDelay(60_000)();
+          await interruptableDelay(60_000);
+          continue;
         } else {
           console.info("Wallet is not synced, going into refresh...");
         }
