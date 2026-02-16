@@ -373,11 +373,22 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   const [secondsPerBlockOnInitialSync, setSecondsPerBlockOnInitialSync] =
     React.useState<number | null>(null);
 
+  const isInMultisigSetupProcess =
+    status &&
+    status.multisigStatus.multisig_is_active &&
+    !status.multisigStatus.is_ready;
+
   const progressBarCompact = !status ? (
     <ProgressBar
       state={refreshError ? "error" : "loading"}
       size="sm"
       text={refreshError || "Connecting..."}
+    />
+  ) : isInMultisigSetupProcess ? (
+    <ProgressBar
+      size="sm"
+      state={"loading"}
+      text={"(kex exchange in progress)"}
     />
   ) : refreshing ? (
     <ProgressBar
@@ -434,7 +445,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       : "—";
 
   const isSyncingNow = refreshing || (status && !status.isSynced);
-  const syncStatusLabel = isSyncingNow ? "Syncing" : "Synced";
+  const syncStatusLabel = isInMultisigSetupProcess
+    ? "Waiting"
+    : isSyncingNow
+      ? "Syncing"
+      : "Synced";
   const syncStatusTone = isSyncingNow
     ? "bg-amber-500/10 text-amber-200 ring-amber-400/20"
     : "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20";
