@@ -474,11 +474,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             <div className="min-w-0">
               {
                 <div className="text-xs tracking-[0.18em] uppercase text-white/45">
-                  {status?.multisigStatus.multisig_is_active
-                    ? status.multisigStatus.is_ready
-                      ? "Multisig (ready)"
-                      : "Multisig (setting up)"
-                    : ""}
+                  {status?.multisigStatus.multisig_is_active ? "Multisig" : ""}
                 </div>
               }
               <h1 className="text-glow text-2xl leading-tight font-bold sm:text-3xl">
