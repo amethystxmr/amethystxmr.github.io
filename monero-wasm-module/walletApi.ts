@@ -27,6 +27,7 @@ export declare class MoneroWasmWallet {
     tryIncremental: boolean,
     maxBlocks: bigint,
   ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
+  rewrite(fileName: string, password: string): Promise<void>;
   set_on_new_block_callback: (
     callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) => void;

@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <iostream>
 #include <memory>
 #include <algorithm>
 #include "wallet/wallet2.h"
@@ -63,7 +63,7 @@ public:
     {
         // TODO: Start the worker thread
 
-        printf("Wallet created\n");
+        std::cout << "Wallet created" << std::endl;
         m_wallet.callback(this);
 
         pthread_create(&walletThread, NULL, [](void *) -> void *
@@ -74,7 +74,7 @@ public:
         pthread_cancel(walletThread);
         // pthread_join(walletThread, NULL);
         m_wallet.stop();
-        printf("Wallet destroyed\n");
+        std::cout << "Wallet destroyed" << std::endl;
     }
 
     emscripten::val init()
@@ -356,6 +356,19 @@ public:
             {
                 std::string seedStr(r.data(), r.size());
                 return emscripten::val(seedStr);
+            });
+    }
+
+    auto rewrite(const std::string &wallet_file, const std::string &password_str)
+    {
+        const epee::wipeable_string password{password_str};
+        return runAsyncPromise<bool>(
+            walletQueue,
+            walletThread,
+            [this, wallet_file, password](bool &r)
+            {
+                m_wallet.rewrite(wallet_file, password);
+                r = true;
             });
     }
 
@@ -884,6 +897,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("init", &MoneroWasmWallet::init)
         .function("get_daemon_blockchain_height", &MoneroWasmWallet::get_daemon_blockchain_height)
         .function("generate", &MoneroWasmWallet::generate)
+        .function("rewrite", &MoneroWasmWallet::rewrite)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
         .function("get_num_subaddresses", &MoneroWasmWallet::get_num_subaddresses)
@@ -978,13 +992,13 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
 
 int main()
 {
-    printf("Initialing module...\n");
+    std::cout << "Initialing module..." << std::endl;
 
     tools::set_max_concurrency(2);
 
     // mlog_set_categories("*:TRACE");
 
-    printf("Module initialized\n");
+    std::cout << "Module initialized" << std::endl;
 
     return 0;
 }

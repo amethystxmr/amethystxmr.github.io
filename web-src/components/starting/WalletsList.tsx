@@ -363,9 +363,11 @@ function RestoreView({
           throw new Error("Wallet was unexpectedly undefined");
         }
         await wallet.generate(fileName, password, secret32, true, false);
+        await wallet.set_explicit_refresh_from_block_height(true);
+        await wallet.set_refresh_from_block_height(restoreHeight);
+        await wallet.rewrite(fileName, password);
+        await wallet.store();
       });
-      wallet.set_refresh_from_block_height(restoreHeight);
-      await saveWalletIntoFs(wallet);
       await persistNavigatorStorage();
       console.info("Wallet restored and saved");
       setRestoring(false);
