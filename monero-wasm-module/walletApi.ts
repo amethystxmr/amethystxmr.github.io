@@ -72,7 +72,7 @@ export declare class MoneroWasmWallet {
   transfer_get_fee(handle: PendingTxHandle): bigint;
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
 
-  get_multisig_status(): Promise<multisig_account_status>;
+  get_multisig_status(): Promise<MultisigAccountStatus>;
   prepare_multisig(): Promise<string>;
   /** Note: this function saves wallet, .keys and .address.txt files! */
   make_multisig(
@@ -127,7 +127,7 @@ export interface PaymentDetails {
   note: string;
 }
 
-export interface multisig_account_status {
+interface multisig_account_status {
   // is the multisig account active/initialized?
   multisig_is_active: boolean;
   // has the multisig account completed the main key exchange rounds?
@@ -138,6 +138,8 @@ export interface multisig_account_status {
   threshold: number; // M
   total: number; // N
 }
+
+export type MultisigAccountStatus = multisig_account_status;
 
 interface ClassHandle {
   delete(): void;

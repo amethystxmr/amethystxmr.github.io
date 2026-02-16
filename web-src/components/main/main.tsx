@@ -2,6 +2,7 @@ import React, { useEffect, useMemo } from "react";
 import {
   max64,
   MoneroWasmWallet,
+  MultisigAccountStatus,
   PaymentDetailsTransformed,
   transformPayments,
 } from "../../../monero-wasm-module/walletApi";
@@ -33,9 +34,8 @@ export function WalletMain({
   // TODO: If daemon just started then it might be small value
   // and UI can show negative blocks left
   const [daemonHeight, setDaemonHeight] = React.useState<bigint | null>(null);
-  const [lastSyncTimestamp, setLastSyncTimestamp] = React.useState<Date | null>(
-    null,
-  );
+  const [lastTimeStatusesObtained, setLastTimeStatusesObtained] =
+    React.useState<Date | null>(null);
   const [walletBlockchainCurrentHeight, setWalletBlockchainCurrentHeight] =
     React.useState<bigint | null>(null);
 
@@ -140,6 +140,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     }
   };
 
+  const [multisigStatus, setMultisigStatus] =
+    React.useState<null | MultisigAccountStatus>(null);
+
   React.useEffect(() => {
     let cancelled = false;
     wallet.set_on_new_block_callback((height) =>
@@ -151,30 +154,38 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     const updateStatuses = async () => {
       const cycleStartingHeight = wallet.get_blockchain_current_height();
       setWalletBlockchainCurrentHeight(cycleStartingHeight);
-      {
-        const balanceStrict = wallet.balance(0, true);
-        const balanceNonStrict = wallet.balance(0, false);
-        const unlockedBalanceStrict = wallet.unlocked_balance(0, true);
-        const unlockedBalanceNonStrict = wallet.unlocked_balance(0, false);
-        setBalance({
-          strict: {
-            value: balanceStrict,
-            unlocked: unlockedBalanceStrict,
-          },
-          nonStrict: {
-            value: balanceNonStrict,
-            unlocked: unlockedBalanceNonStrict,
-          },
-        });
 
-        const payments = await wallet.get_payments(0n, max64);
-        const transformedPayments = transformPayments(payments);
-        console.log("Payments:", transformedPayments);
-        setPayments(transformedPayments);
-        updateSecondaryAddresses();
+      const balanceStrict = wallet.balance(0, true);
+      const balanceNonStrict = wallet.balance(0, false);
+      const unlockedBalanceStrict = wallet.unlocked_balance(0, true);
+      const unlockedBalanceNonStrict = wallet.unlocked_balance(0, false);
+      setBalance({
+        strict: {
+          value: balanceStrict,
+          unlocked: unlockedBalanceStrict,
+        },
+        nonStrict: {
+          value: balanceNonStrict,
+          unlocked: unlockedBalanceNonStrict,
+        },
+      });
+
+      const newMultisigStatus = await wallet.get_multisig_status();
+      if (cancelled) {
+        return;
       }
+      console.info(`Multisig status:`, newMultisigStatus);
+      setMultisigStatus(newMultisigStatus);
 
-      // This part might throw
+      const payments = await wallet.get_payments(0n, max64);
+      if (cancelled) {
+        return;
+      }
+      const transformedPayments = transformPayments(payments);
+      console.info("Payments:", transformedPayments);
+      setPayments(transformedPayments);
+      updateSecondaryAddresses();
+
       const daemonHeight = await wallet.get_daemon_blockchain_height();
       if (cancelled) {
         return;
@@ -182,10 +193,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       setDaemonHeight(daemonHeight);
 
       if (cycleStartingHeight >= daemonHeight) {
-        console.info("Wallet is already synced, no need to do initial refresh");
-        //isInitialSync = false;
-        setLastSyncTimestamp(new Date());
+        console.info(
+          "Wallet is already synced on , no need to do initial refresh",
+        );
+        setLastTimeStatusesObtained(new Date());
       }
+
+      return { multisigStatus: newMultisigStatus };
     };
 
     let isInitialSync = true;
@@ -213,7 +227,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
         setRefreshError(null);
-        setLastSyncTimestamp(new Date());
+        // TODO: Is this needed?
+        // setLastTimeStatusesObtained(new Date());
         setRefreshing(false);
         if (isInitialSync) {
           const isSynced = await wallet.is_synced();
@@ -280,7 +295,20 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         setRefreshError(null);
 
         try {
-          await updateStatuses();
+          const freshStatus = await updateStatuses();
+          if (cancelled || !freshStatus) {
+            return;
+          }
+          if (
+            freshStatus.multisigStatus.multisig_is_active &&
+            !freshStatus.multisigStatus.is_ready
+          ) {
+            console.info(
+              `Wallet is multisig but not ready, waiting for manual interrupt`,
+            );
+            await interruptableDelay(Infinity)();
+            continue;
+          }
         } catch (e) {
           console.error("Error while updating wallet/daemon status:", e);
           setRefreshError((e as Error).message || "Unknown error");
@@ -292,27 +320,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
 
+        // The point of having delay here is to allow to get fresh statuses right after refresh
+        // If we have refresh in the end of the loop then we will just wait
+
         if (!isInitialSync) {
           await interruptableDelay(60_000)();
         }
 
         if (cancelled) {
           return;
-        }
-
-        {
-          const multisigStatus = await wallet.get_multisig_status();
-          if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
-            // No refreshing while multisig is not ready
-            console.warn("Wallet is in multisig setup state", multisigStatus);
-            // Actually here it might be anything because all user can do it
-            // to continue kex exchange and it will interrupt here
-            await interruptableDelay(60_000 * 5)();
-            continue;
-          }
-          if (cancelled) {
-            return;
-          }
         }
 
         if (
@@ -400,7 +416,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         }
       />
     ) : isSynced ? (
-      <SynchronizedWithTimer size="sm" lastSyncTimestamp={lastSyncTimestamp} />
+      <SynchronizedWithTimer
+        size="sm"
+        lastSyncTimestamp={lastTimeStatusesObtained}
+      />
     ) : refreshError ? (
       <ProgressBar size="sm" state="error" text={refreshError} />
     ) : (
@@ -571,7 +590,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   onExit={onExit}
                   wallet={wallet}
                   onRefresh={stopWaitingOrScheduleNoWait}
-                  lastRefreshTimestamp={lastSyncTimestamp}
+                  lastRefreshTimestamp={lastTimeStatusesObtained}
                   daemonLastBlockHeight={daemonHeight}
                   payments={payments}
                   priceEur={priceInfo?.price ?? null}
