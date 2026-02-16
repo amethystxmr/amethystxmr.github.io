@@ -86,6 +86,49 @@ export function WalletsList() {
     () => setView(buildListView()),
     [buildListView],
   );
+  const handleRestoreDone = React.useCallback(
+    (openedWallet: OpenedWallet | null) => {
+      if (openedWallet) {
+        options.setValue(
+          "lastWalletName",
+          openedWallet.wallet.get_wallet_file(),
+        );
+        setView({ type: "opened", openedWallet });
+      } else {
+        backToList();
+      }
+    },
+    [backToList],
+  );
+  const handleCreateDone = React.useCallback(
+    (openedWallet: OpenedWallet | null) => {
+      if (openedWallet) {
+        options.setValue(
+          "lastWalletName",
+          openedWallet.wallet.get_wallet_file(),
+        );
+        setView({ type: "opened", openedWallet });
+      } else {
+        backToList();
+      }
+    },
+    [backToList],
+  );
+  const handleOpenDone = React.useCallback(
+    (openedWallet: OpenedWallet | null) => {
+      if (openedWallet) {
+        options.setValue(
+          "lastWalletName",
+          openedWallet.wallet.get_wallet_file(),
+        );
+        setView({ type: "opened", openedWallet });
+      } else {
+        options.setValue("lastWalletName", null);
+        backToList();
+      }
+    },
+    [backToList],
+  );
 
   React.useEffect(() => {
     setMaxConcurrency(cpuThreads);
@@ -124,55 +167,11 @@ export function WalletsList() {
       />
     );
   } else if (view.type === "restore") {
-    return (
-      <RestoreView
-        onDone={(openedWallet) => {
-          if (openedWallet) {
-            options.setValue(
-              "lastWalletName",
-              openedWallet.wallet.get_wallet_file(),
-            );
-            setView({ type: "opened", openedWallet });
-          } else {
-            backToList();
-          }
-        }}
-      />
-    );
+    return <RestoreView onDone={handleRestoreDone} />;
   } else if (view.type === "create-new-wallet") {
-    return (
-      <CreateNewWalletView
-        onDone={(openedWallet) => {
-          if (openedWallet) {
-            options.setValue(
-              "lastWalletName",
-              openedWallet.wallet.get_wallet_file(),
-            );
-            setView({ type: "opened", openedWallet });
-          } else {
-            backToList();
-          }
-        }}
-      />
-    );
+    return <CreateNewWalletView onDone={handleCreateDone} />;
   } else if (view.type === "opening") {
-    return (
-      <OpenWalletView
-        fileName={view.fileName}
-        onDone={(openedWallet) => {
-          if (openedWallet) {
-            options.setValue(
-              "lastWalletName",
-              openedWallet.wallet.get_wallet_file(),
-            );
-            setView({ type: "opened", openedWallet });
-          } else {
-            options.setValue("lastWalletName", null);
-            backToList();
-          }
-        }}
-      />
-    );
+    return <OpenWalletView fileName={view.fileName} onDone={handleOpenDone} />;
   } else if (view.type === "list") {
     return (
       <div className="space-y-4">
@@ -339,7 +338,9 @@ function RestoreView({
     (async () => {
       releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
       if (!releaseWalletOpenLock) {
-        throw new Error(`Wallet "${fileName}" is currently open in another tab`);
+        throw new Error(
+          `Wallet "${fileName}" is currently open in another tab`,
+        );
       }
 
       let restoreHeight: bigint;
@@ -634,7 +635,9 @@ function CreateNewWalletView({
     (async () => {
       releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
       if (!releaseWalletOpenLock) {
-        throw new Error(`Wallet "${fileName}" is currently open in another tab`);
+        throw new Error(
+          `Wallet "${fileName}" is currently open in another tab`,
+        );
       }
 
       wallet = createWallet();
@@ -883,61 +886,92 @@ function OpenWalletView({
   fileName: string;
   onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
+  type OpenPhase =
+    | "acquiring-lock"
+    | "opening-initial"
+    | "idle"
+    | "opening-user";
+
   const alert = useAlert();
   const [password, setPassword] = React.useState("");
-  const [busy, setBusy] = React.useState<null | "initial" | "user">("initial");
+  const [phase, setPhase] = React.useState<OpenPhase>("acquiring-lock");
+  const walletOpenLockReleaseRef = React.useRef<(() => void) | null>(null);
 
-  const doOpen = (isInitial: boolean) => {
-    setBusy(isInitial ? "initial" : "user");
-    let wallet: MoneroWasmWallet | undefined;
-    let releaseWalletOpenLock: (() => void) | null = null;
+  const doOpen = React.useCallback(
+    (isInitial: boolean, passwordToTry: string) => {
+      setPhase(isInitial ? "opening-initial" : "opening-user");
+      let wallet: MoneroWasmWallet | undefined;
+      (async () => {
+        const releaseWalletOpenLock = walletOpenLockReleaseRef.current;
+        if (!releaseWalletOpenLock) {
+          throw new Error("Wallet open lock is not acquired");
+        }
+
+        await persistNavigatorStorage();
+        wallet = createWallet();
+        await wallet.init();
+        await wallet.load(fileName, passwordToTry);
+        if (!releaseWalletOpenLock) {
+          throw new Error("Wallet lock release callback is missing");
+        }
+        const openedWallet: OpenedWallet = {
+          wallet,
+          releaseWalletOpenLock,
+        };
+        walletOpenLockReleaseRef.current = null;
+        onDone(openedWallet);
+      })().catch((e) => {
+        if (wallet) {
+          closeWallet(wallet);
+        }
+
+        if (!isInitial) {
+          console.error("Error opening wallet:", e);
+          void alert(
+            `Error opening wallet: ${(e as Error).message || "Unknown error"}`,
+          );
+        }
+
+        setPhase("idle");
+      });
+    },
+    [alert, fileName, onDone],
+  );
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setPassword("");
+    setPhase("acquiring-lock");
     (async () => {
-      releaseWalletOpenLock = await acquireWalletOpenLock(fileName, {
+      const releaseWalletOpenLock = await acquireWalletOpenLock(fileName, {
         ifAvailable: true,
       });
-      if (!releaseWalletOpenLock) {
-        if (!isInitial) {
-          await alert(`Wallet "${fileName}" is already opened in another tab.`);
-        }
-        onDone(null);
-        setBusy(null);
+
+      if (cancelled) {
+        releaseWalletOpenLock?.();
         return;
       }
 
-      await persistNavigatorStorage();
-      wallet = createWallet();
-      await wallet.init();
-      await wallet.load(fileName, password);
       if (!releaseWalletOpenLock) {
-        throw new Error("Wallet lock release callback is missing");
+        await alert(`Wallet "${fileName}" is already opened in another tab.`);
+        onDone(null);
+        setPhase("idle");
+        return;
       }
-      const openedWallet: OpenedWallet = {
-        wallet,
-        releaseWalletOpenLock,
-      };
-      releaseWalletOpenLock = null;
-      onDone(openedWallet);
-      setBusy(null);
-    })().catch((e) => {
-      if (wallet) {
-        closeWallet(wallet);
-      }
+
+      walletOpenLockReleaseRef.current = releaseWalletOpenLock;
+      doOpen(true, "");
+    })();
+
+    return () => {
+      cancelled = true;
+      const releaseWalletOpenLock = walletOpenLockReleaseRef.current;
+      walletOpenLockReleaseRef.current = null;
       releaseWalletOpenLock?.();
+    };
+  }, [alert, doOpen, fileName, onDone]);
 
-      if (!isInitial) {
-        console.error("Error opening wallet:", e);
-        void alert(
-          `Error opening wallet: ${(e as Error).message || "Unknown error"}`,
-        );
-      }
-
-      setBusy(null);
-    });
-  };
-
-  React.useEffect(() => {
-    doOpen(true);
-  }, [fileName]);
+  const isBusy = phase !== "idle";
 
   return (
     <div className="space-y-4">
@@ -948,7 +982,7 @@ function OpenWalletView({
           Opening Wallet
         </div>
 
-        {busy === "initial" ? (
+        {phase === "acquiring-lock" || phase === "opening-initial" ? (
           <div className="space-y-2">
             <div className="text-sm text-white/80">
               Preparing wallet data...
@@ -957,7 +991,7 @@ function OpenWalletView({
           </div>
         ) : (
           <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
-            {busy === "user" && (
+            {phase === "opening-user" && (
               <div className="mb-3">
                 <ProgressBar
                   state="loading"
@@ -973,7 +1007,7 @@ function OpenWalletView({
                 type="password"
                 autoComplete="off"
                 value={password}
-                disabled={!!busy}
+                disabled={isBusy}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </FormRow>
@@ -982,8 +1016,14 @@ function OpenWalletView({
               <Button
                 className="w-full"
                 variant="soft"
-                onClick={() => onDone(null)}
-                disabled={!!busy}
+                onClick={() => {
+                  const releaseWalletOpenLock =
+                    walletOpenLockReleaseRef.current;
+                  walletOpenLockReleaseRef.current = null;
+                  releaseWalletOpenLock?.();
+                  onDone(null);
+                }}
+                disabled={isBusy}
               >
                 ← Back
               </Button>
@@ -991,10 +1031,10 @@ function OpenWalletView({
                 type="submit"
                 className="w-full"
                 variant="primary"
-                onClick={() => doOpen(false)}
-                disabled={!!busy}
+                onClick={() => doOpen(false, password)}
+                disabled={isBusy}
               >
-                {busy ? "Opening..." : "Open wallet"}
+                {isBusy ? "Opening..." : "Open wallet"}
               </Button>
             </ButtonsHolder>
           </form>
@@ -1361,7 +1401,9 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         ifAvailable: true,
       });
       if (!releaseWalletOpenLock) {
-        throw new Error(`Wallet "${oldName}" is currently opened in another tab.`);
+        throw new Error(
+          `Wallet "${oldName}" is currently opened in another tab.`,
+        );
       }
       await withFsLock(async () => {
         renameWallet(oldName, newName);
