@@ -43,6 +43,7 @@ export declare class MoneroWasmWallet {
     time_to_unlock: bigint;
   };
   set_refresh_from_block_height(height: bigint): void;
+  set_explicit_refresh_from_block_height(value: boolean): void;
   /**
    * Current height in the wallet. When it is same as get_daemon_blockchain_height() then it is synced
    */

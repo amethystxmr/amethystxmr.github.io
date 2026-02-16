@@ -710,6 +710,11 @@ public:
         m_wallet.set_refresh_from_block_height(height);
     }
 
+    void set_explicit_refresh_from_block_height(bool value)
+    {
+        m_wallet.explicit_refresh_from_block_height(value);
+    }
+
     uint64_t get_blockchain_current_height()
     {
         return m_wallet.get_blockchain_current_height();
