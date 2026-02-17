@@ -75,6 +75,20 @@
     background: linear-gradient(180deg, rgba(190, 154, 255, 0.95), rgba(126, 95, 210, 0.95));
   }
 
+  @keyframes slow-blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .slow-blink {
+    animation: slow-blink 2.2s ease-in-out infinite;
+  }
+
   @media (max-width: 639px) {
     .scrollbar-hidden-mobile {
       scrollbar-width: none;

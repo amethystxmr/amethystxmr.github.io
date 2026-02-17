@@ -550,7 +550,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             />
           </div>
           {status?.hasMultisigPartialKeyImages && (
-            <div className="text-xs text-amber-200/95">
+            <div className="slow-blink text-center text-xs text-amber-200/95">
               User action required in multisig tab
             </div>
           )}
