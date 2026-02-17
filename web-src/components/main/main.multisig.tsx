@@ -388,6 +388,13 @@ export function MultisigTab({
             ) : (
               <>
                 <div className="space-y-1">
+                  {/* TODO: Add a (i) tooltip with explanation that it 
+                  can be different each time but it is ok to use previous one 
+                  from the same wallet. Because it is generated on component mount, 
+                  but it the same data inside
+                  Make this message somehow understanble for non-technical users
+                    
+                  */}
                   <Label>Your round 1 message</Label>
                   <TextArea
                     readOnly
