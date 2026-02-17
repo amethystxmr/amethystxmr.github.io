@@ -50,7 +50,7 @@ export function WalletMain({
         };
       }
     >;
-    isSynced: Boolean;
+    isSynced: boolean;
     multisigStatus: MultisigAccountStatus;
     hasMultisigPartialKeyImages: boolean;
     hasUnknownKeyImages: boolean;
