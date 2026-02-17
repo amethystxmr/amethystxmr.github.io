@@ -976,6 +976,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)
         .function("export_multisig", &MoneroWasmWallet::export_multisig)
         .function("verify_password", &MoneroWasmWallet::verify_password)
+        .function("rescan_blockchain", &MoneroWasmWallet::rescan_blockchain)
         .constructor();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
