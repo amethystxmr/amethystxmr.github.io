@@ -551,8 +551,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           </div>
           {status?.hasMultisigPartialKeyImages && (
             <div className="text-xs text-amber-200/95">
-              Some owned outputs have partial key images - import_multisig_info
-              needed
+              Some owned outputs have partial key images
             </div>
           )}
         </div>
