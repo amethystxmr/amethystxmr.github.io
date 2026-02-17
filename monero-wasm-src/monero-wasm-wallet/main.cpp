@@ -1002,6 +1002,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("make_multisig", &MoneroWasmWallet::make_multisig)
         .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)
         .function("export_multisig", &MoneroWasmWallet::export_multisig)
+        .function("import_multisig", &MoneroWasmWallet::import_multisig)
         .function("verify_password", &MoneroWasmWallet::verify_password)
         .function("rescan_blockchain", &MoneroWasmWallet::rescan_blockchain)
         .constructor();
