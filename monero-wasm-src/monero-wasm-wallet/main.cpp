@@ -22,7 +22,6 @@
 #include "multisig/multisig_account.h"
 #include "multisig/multisig_kex_msg.h"
 #include "multisig/multisig_tx_builder_ringct.h"
-
 #include "jsPromise.hpp"
 
 class MoneroWasmWallet : public tools::i_wallet2_callback
@@ -79,73 +78,27 @@ public:
         std::cout << "Wallet destroyed" << std::endl;
     }
 
-    emscripten::val init()
+    auto init()
     {
-        auto p = makePromise();
-
-        auto retVal = std::make_shared<bool>(0);
-
-        walletQueue.proxyCallback(
-            walletThread,
-            [this, retVal]()
-            {
-                auto initResult = m_wallet.init("127.1.2.3");
-                *retVal = initResult;
-            },
-            [p, retVal]()
-            {
-                p.resolve(*retVal);
-            },
-            [p]()
-            {
-                p.reject(jsError("Failed to initialize wallet"));
-            });
-
-        return p.promise;
+        return promise([this]()
+                       { return m_wallet.init("127.1.2.3"); });
     }
 
-    emscripten::val get_daemon_blockchain_height()
+    auto get_daemon_blockchain_height()
     {
-        auto p = makePromise();
-
-        auto retValInt = std::make_shared<uint64_t>(0);
-        auto retValStr = std::make_shared<std::string>("");
-
-        walletQueue.proxyCallback(
-            walletThread,
-            [this, retValInt, retValStr]()
-            {
-                std::string err;
-                uint64_t blockchain_height = m_wallet.get_daemon_blockchain_height(err);
-                if (err.empty())
-                {
-                    *retValInt = blockchain_height;
-                }
-                else
-                {
-                    *retValStr = err;
-                }
-            },
-            [p, retValInt, retValStr]()
-            {
-                if (retValStr->empty())
-                {
-                    p.resolve(*retValInt);
-                }
-                else
-                {
-                    p.reject(jsError(*retValStr));
-                }
-            },
-            [p]()
-            {
-                p.reject(jsError("Failed to get blockchain height"));
-            });
-
-        return p.promise;
+        return promise([this]()
+                       {
+                           auto err = std::string{};
+                           auto blockchain_height = m_wallet.get_daemon_blockchain_height(err);
+                           if (!err.empty())
+                           {
+                               throw std::runtime_error(err);
+                           }
+                           return blockchain_height;
+                       });
     }
 
-    emscripten::val generate(
+    auto generate(
         std::string fileName,
         std::string password,
         emscripten::val secretStr,
@@ -161,30 +114,22 @@ public:
             secretKey->data[i] = secretStr[i].as<unsigned char>();
         }
 
-        // Result type for this async task
-        using Result = crypto::secret_key;
-
-        return runAsyncPromise<Result>(
-            walletQueue,
-            walletThread,
-
+        return promise(
             [this,
              fileName = std::move(fileName),
              password = std::move(password),
              secretKey,
              recover,
-             two_random](Result &out)
+             two_random]()
             {
-                auto gen_status = m_wallet.generate(
+                return m_wallet.generate(
                     fileName,
                     epee::wipeable_string(password),
                     *secretKey,
                     recover,
                     two_random);
-
-                std::memcpy(out.data, gen_status.data, 32);
             },
-            [](const Result &r) -> emscripten::val
+            [](const auto &r) -> emscripten::val
             {
                 auto v = emscripten::val::global("Uint8Array").new_(32);
                 for (size_t i = 0; i < 32; ++i)
@@ -195,84 +140,59 @@ public:
             });
     }
 
-    emscripten::val store()
+    auto store()
     {
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this](bool &r)
-            {
-                m_wallet.store();
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       {
+                           m_wallet.store();
+                           return true;
+                       });
     }
 
-    emscripten::val set_attribute(std::string key, std::string value)
+    auto set_attribute(std::string key, std::string value)
     {
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this, key = std::move(key), value = std::move(value)](bool &r)
-            {
-                m_wallet.set_attribute(key, value);
-                r = true;
-            });
+        return promise([this, key = std::move(key), value = std::move(value)]()
+                       {
+                           m_wallet.set_attribute(key, value);
+                           return true;
+                       });
     }
 
-    emscripten::val get_attribute(std::string key)
+    auto get_attribute(std::string key)
     {
-        return runAsyncPromise<std::string>(
-            walletQueue,
-            walletThread,
-            [this, key = std::move(key)](std::string &r)
-            {
-                m_wallet.get_attribute(key, r);
-            });
+        return promise([this, key = std::move(key)]()
+                       {
+                           auto r = std::string{};
+                           m_wallet.get_attribute(key, r);
+                           return r;
+                       });
     }
 
-    emscripten::val load(
+    auto load(
         std::string fileName,
         std::string password)
     {
         // This method do not call http but it might take some time, so we run it in the worker thread
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this, fileName, password](bool &r)
-            {
-                m_wallet.load(fileName, epee::wipeable_string(password));
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, fileName = std::move(fileName), password = std::move(password)]()
+                       {
+                           m_wallet.load(fileName, epee::wipeable_string(password));
+                           return true;
+                       });
     }
 
     // TODO: This actually not needed because it will close in destructor
-    emscripten::val close_wallet()
+    auto close_wallet()
     {
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this](bool &r)
-            {
-                m_wallet.stop();
-                m_wallet.deinit();
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       {
+                           m_wallet.stop();
+                           m_wallet.deinit();
+                           return true;
+                       });
     }
 
-    emscripten::val words_to_bytes(std::string words,
-                                   std::string language_name)
+    auto words_to_bytes(std::string words,
+                        std::string language_name)
     {
         crypto::secret_key dst;
         auto words_param = epee::wipeable_string(words);
@@ -309,54 +229,38 @@ public:
     {
         return m_wallet.get_subaddress_label({m_current_subaddress_account, index});
     }
-    emscripten::val add_subaddress(uint32_t index_major, const std::string &label)
+    auto add_subaddress(uint32_t index_major, const std::string &label)
     {
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this, index_major, label](bool &r)
-            {
-                m_wallet.add_subaddress(index_major, label);
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, index_major, label]()
+                       {
+                           m_wallet.add_subaddress(index_major, label);
+                           return true;
+                       });
     }
 
-    emscripten::val is_synced()
+    auto is_synced()
     {
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this](bool &r)
-            {
-                r = m_wallet.is_synced();
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       { return m_wallet.is_synced(); });
     }
 
-    emscripten::val get_seed(std::string seed_language, std::string seedPassphrase)
+    auto get_seed(std::string seed_language, std::string seedPassphrase)
     {
-        return runAsyncPromise<epee::wipeable_string>(
-            walletQueue,
-            walletThread,
-            [this, seed_language, seedPassphrase](epee::wipeable_string &r)
+        return promise(
+            [this, seed_language = std::move(seed_language), seedPassphrase = std::move(seedPassphrase)]()
             {
                 m_wallet.set_seed_language(seed_language);
+                auto r = epee::wipeable_string{};
                 auto isOk = m_wallet.get_seed(r, seedPassphrase);
                 if (!isOk)
                 {
                     throw std::runtime_error("Failed to get seed");
                 }
+                return r;
             },
-            [](epee::wipeable_string &r) -> emscripten::val
+            [](const auto &r) -> emscripten::val
             {
-                std::string seedStr(r.data(), r.size());
+                auto seedStr = std::string(r.data(), r.size());
                 return emscripten::val(seedStr);
             });
     }
@@ -364,14 +268,11 @@ public:
     auto rewrite(const std::string &wallet_file, const std::string &password_str)
     {
         const epee::wipeable_string password{password_str};
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this, wallet_file, password](bool &r)
-            {
-                m_wallet.rewrite(wallet_file, password);
-                r = true;
-            });
+        return promise([this, wallet_file, password]()
+                       {
+                           m_wallet.rewrite(wallet_file, password);
+                           return true;
+                       });
     }
 
     struct RefreshResult
@@ -380,19 +281,14 @@ public:
         bool receivedMoney;
     };
 
-    emscripten::val refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
+    auto refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
     {
-        return runAsyncPromise<RefreshResult>(
-            walletQueue,
-            walletThread,
-            [this, trusted_daemon, start_height, check_pool, try_incremental, max_blocks](RefreshResult &r)
-            {
-                m_wallet.refresh(trusted_daemon, start_height, r.blocksFetched, r.receivedMoney, check_pool, try_incremental, max_blocks);
-            },
-            [](RefreshResult &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, trusted_daemon, start_height, check_pool, try_incremental, max_blocks]()
+                       {
+                           auto r = RefreshResult{};
+                           m_wallet.refresh(trusted_daemon, start_height, r.blocksFetched, r.receivedMoney, check_pool, try_incremental, max_blocks);
+                           return r;
+                       });
     }
 
     void set_on_new_block_callback(emscripten::val callback)
@@ -559,20 +455,10 @@ public:
         return result;
     }
 
-    emscripten::val get_payments_mempool()
+    auto get_payments_mempool()
     {
-        using R = std::vector<PaymentDetails>;
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this](R &r)
-            {
-                r = get_payments_mempool_impl();
-            },
-            [](R &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       { return get_payments_mempool_impl(); });
     }
 
     std::vector<PaymentDetails> get_payments_mempool_impl()
@@ -620,20 +506,10 @@ public:
         return result;
     }
 
-    emscripten::val transfer_prepare(std::string dst_address, uint64_t amount, uint32_t priority)
+    auto transfer_prepare(std::string dst_address, uint64_t amount, uint32_t priority)
     {
-        using R = std::shared_ptr<std::vector<tools::wallet2::pending_tx>>;
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this, dst_address, amount, priority](R &r)
-            {
-                r = transfer_impl(dst_address, amount, priority);
-            },
-            [](R &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, dst_address = std::move(dst_address), amount, priority]()
+                       { return transfer_impl(dst_address, amount, priority); });
     }
 
     uint64_t transfer_get_fee(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
@@ -646,22 +522,13 @@ public:
         return total_fee;
     }
 
-    emscripten::val transfer_commit_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
+    auto transfer_commit_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
-
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this, ptx_vector](bool &r)
-            {
-                m_wallet.commit_tx(*ptx_vector);
-                ;
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, ptx_vector = std::move(ptx_vector)]()
+                       {
+                           m_wallet.commit_tx(*ptx_vector);
+                           return true;
+                       });
     }
 
     std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(std::string dst_address, uint64_t amount, uint32_t priority)
@@ -739,130 +606,90 @@ public:
         return r;
     }
 
-    emscripten::val get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
+    auto get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
     {
-        return runAsyncPromise<uint64_t>(
-            walletQueue,
-            walletThread,
-            [this, year, month, day](uint64_t &r)
-            {
-                r = m_wallet.get_blockchain_height_by_date(year, month, day);
-            },
-            [](uint64_t &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, year, month, day]()
+                       { return m_wallet.get_blockchain_height_by_date(year, month, day); });
     }
 
     auto get_multisig_status()
     {
-        using R = multisig::multisig_account_status;
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this](R &r)
-            {
-                r = m_wallet.get_multisig_status();
-            },
-            [](R &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       { return m_wallet.get_multisig_status(); });
     }
 
     auto verify_password(const std::string &password_str)
     {
-        using R = bool;
         epee::wipeable_string password(password_str);
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this, password](R &r)
-            {
-                r = m_wallet.verify_password(password);
-            });
+        return promise([this, password]()
+                       { return m_wallet.verify_password(password); });
     }
 
     auto make_multisig(const std::string &password_str,
                        const std::string &initial_kex_msgs,
                        std::uint32_t threshold)
     {
-        using R = std::string;
         epee::wipeable_string password(password_str);
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this, password, initial_kex_msgs, threshold](R &r)
-            {
-                if (!m_wallet.verify_password(password))
-                {
-                    throw std::runtime_error("invalid password");
-                }
+        return promise([this, password, initial_kex_msgs, threshold]()
+                       {
+                           if (!m_wallet.verify_password(password))
+                           {
+                               throw std::runtime_error("invalid password");
+                           }
 
-                if (m_wallet.get_multisig_status().multisig_is_active)
-                {
-                    throw std::runtime_error("Wallet is already multisig");
-                };
-                if (m_wallet.get_num_transfer_details())
-                {
-                    throw std::runtime_error("Wallet must be empty to create multisig");
-                };
-                std::vector<std::string> kex_msgs;
-                if (!initial_kex_msgs.empty())
-                {
-                    boost::split(kex_msgs, initial_kex_msgs, boost::is_any_of(" "), boost::token_compress_on);
-                }
-                r = m_wallet.make_multisig(password, kex_msgs, threshold);
-            });
+                           if (m_wallet.get_multisig_status().multisig_is_active)
+                           {
+                               throw std::runtime_error("Wallet is already multisig");
+                           };
+                           if (m_wallet.get_num_transfer_details())
+                           {
+                               throw std::runtime_error("Wallet must be empty to create multisig");
+                           };
+                           auto kex_msgs = std::vector<std::string>{};
+                           if (!initial_kex_msgs.empty())
+                           {
+                               boost::split(kex_msgs, initial_kex_msgs, boost::is_any_of(" "), boost::token_compress_on);
+                           }
+                           return m_wallet.make_multisig(password, kex_msgs, threshold);
+                       });
     }
 
     auto exchange_multisig_keys(const std::string &password_str, const std::string &kex_msgs_str)
     {
-        using R = std::string;
         epee::wipeable_string password(password_str);
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this, password, kex_msgs_str](R &r)
-            {
-                if (!m_wallet.verify_password(password))
-                {
-                    throw std::runtime_error("invalid password");
-                }
-                if (!m_wallet.get_multisig_status().multisig_is_active)
-                {
-                    throw std::runtime_error("Wallet is not multisig");
-                };
-                std::vector<std::string> kex_msgs;
-                if (!kex_msgs_str.empty())
-                {
-                    boost::split(kex_msgs, kex_msgs_str, boost::is_any_of(" "), boost::token_compress_on);
-                }
-                r = m_wallet.exchange_multisig_keys(password, kex_msgs);
-            });
+        return promise([this, password, kex_msgs_str]()
+                       {
+                           if (!m_wallet.verify_password(password))
+                           {
+                               throw std::runtime_error("invalid password");
+                           }
+                           if (!m_wallet.get_multisig_status().multisig_is_active)
+                           {
+                               throw std::runtime_error("Wallet is not multisig");
+                           };
+                           auto kex_msgs = std::vector<std::string>{};
+                           if (!kex_msgs_str.empty())
+                           {
+                               boost::split(kex_msgs, kex_msgs_str, boost::is_any_of(" "), boost::token_compress_on);
+                           }
+                           return m_wallet.exchange_multisig_keys(password, kex_msgs);
+                       });
     }
 
-    emscripten::val prepare_multisig()
+    auto prepare_multisig()
     {
-        return runAsyncPromise<std::string>(
-            walletQueue,
-            walletThread,
-            [this](std::string &r)
-            {
-                if (m_wallet.get_num_transfer_details() > 0)
-                {
-                    throw std::runtime_error("Wallet must be empty to prepare multisig");
-                }
-                if (m_wallet.get_multisig_status().multisig_is_active)
-                {
-                    throw std::runtime_error("Wallet is already multisig");
-                }
-                r = m_wallet.get_multisig_first_kex_msg();
-            },
-            [](std::string &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       {
+                           if (m_wallet.get_num_transfer_details() > 0)
+                           {
+                               throw std::runtime_error("Wallet must be empty to prepare multisig");
+                           }
+                           if (m_wallet.get_multisig_status().multisig_is_active)
+                           {
+                               throw std::runtime_error("Wallet is already multisig");
+                           }
+                           return m_wallet.get_multisig_first_kex_msg();
+                       });
     }
 
 private:
