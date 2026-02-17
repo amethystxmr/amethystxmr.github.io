@@ -3,13 +3,13 @@ import React from "react";
 import { baseClasses } from "./fieldStyles";
 import type { BaseProps } from "./types";
 
-export function TextArea({
-  error,
-  className,
-  ...props
-}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & BaseProps) {
+export const TextArea = React.forwardRef<
+  HTMLTextAreaElement,
+  React.TextareaHTMLAttributes<HTMLTextAreaElement> & BaseProps
+>(function TextArea({ error, className, ...props }, ref) {
   return (
     <textarea
+      ref={ref}
       className={clsx(
         baseClasses,
         error
@@ -20,4 +20,4 @@ export function TextArea({
       {...props}
     />
   );
-}
+});

@@ -4,8 +4,15 @@ import {
   MoneroWasmWallet,
   PaymentDetailsTransformed,
 } from "../../../monero-wasm-module/walletApi";
-import { Button, TextArea } from "../ui";
-import { formatWalletTimestamp } from "../utils";
+import {
+  Button,
+  ButtonsHolder,
+  OverlayDialog,
+  TextArea,
+  Toggle,
+  useAlert,
+} from "../ui";
+import { formatWalletTimestamp, withFsLock } from "../utils";
 
 type SeedRevealState =
   | { type: "hidden-idle" }
@@ -40,6 +47,13 @@ export function OtherTab({
     type: "hidden-idle",
   });
   const [now, setNow] = React.useState(() => Date.now());
+  const [rescanState, setRescanState] = React.useState({
+    open: false,
+    hard: false,
+    keepKeyImages: true,
+    busy: false,
+  });
+  const alert = useAlert();
 
   React.useEffect(() => {
     if (!priceFetchedAt) {
@@ -138,6 +152,39 @@ export function OtherTab({
     }
   };
 
+  const onOpenRescanDialog = () => {
+    setRescanState({
+      open: true,
+      hard: false,
+      keepKeyImages: true,
+      busy: false,
+    });
+  };
+
+  const onConfirmRescan = async () => {
+    if (rescanState.busy) {
+      return;
+    }
+
+    setRescanState((prev) => ({ ...prev, busy: true }));
+    try {
+      await withFsLock(async () => {
+        await wallet.rescan_blockchain(
+          rescanState.hard,
+          rescanState.keepKeyImages,
+        );
+        await wallet.store();
+      });
+      onRefresh();
+    } catch (e) {
+      void alert(
+        (e as Error).message || "Unknown error while rescanning blockchain",
+      );
+    } finally {
+      setRescanState((prev) => ({ ...prev, busy: false, open: false }));
+    }
+  };
+
   return (
     <div className="mt-2 space-y-3">
       <Button
@@ -194,6 +241,13 @@ export function OtherTab({
           ? `Last refresh: ${lastRefreshTimestamp.toLocaleTimeString()}`
           : "Last refresh: waiting for first sync"}
       </div>
+      <Button
+        className="w-full py-2 text-sm font-semibold"
+        variant="neutral"
+        onClick={onOpenRescanDialog}
+      >
+        Rescan blockchain
+      </Button>
 
       <Button
         className="w-full py-2 text-sm font-semibold"
@@ -218,6 +272,72 @@ export function OtherTab({
       >
         ✖ Exit
       </Button>
+
+      {rescanState.open && (
+        <OverlayDialog
+          onClose={() => {
+            if (!rescanState.busy) {
+              setRescanState((prev) => ({ ...prev, open: false }));
+            }
+          }}
+        >
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void onConfirmRescan();
+            }}
+          >
+            <div className="text-base font-semibold text-white">
+              Rescan blockchain
+            </div>
+            <div className="text-sm text-white/75">
+              This can take time and may trigger significant wallet work.
+            </div>
+            <Toggle
+              checked={rescanState.hard}
+              onChange={(next) => {
+                if (rescanState.busy) return;
+                setRescanState((prev) => ({ ...prev, hard: next }));
+              }}
+              label="hard"
+              className={
+                rescanState.busy ? "pointer-events-none opacity-60" : ""
+              }
+            />
+            <Toggle
+              checked={rescanState.keepKeyImages}
+              onChange={(next) => {
+                if (rescanState.busy) return;
+                setRescanState((prev) => ({ ...prev, keepKeyImages: next }));
+              }}
+              label="keep_key_images"
+              className={
+                rescanState.busy ? "pointer-events-none opacity-60" : ""
+              }
+            />
+            <ButtonsHolder>
+              <Button
+                type="button"
+                variant="soft"
+                disabled={rescanState.busy}
+                onClick={() =>
+                  setRescanState((prev) => ({ ...prev, open: false }))
+                }
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={rescanState.busy}
+              >
+                {rescanState.busy ? "Scheduling..." : "OK"}
+              </Button>
+            </ButtonsHolder>
+          </form>
+        </OverlayDialog>
+      )}
     </div>
   );
 }

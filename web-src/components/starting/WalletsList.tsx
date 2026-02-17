@@ -35,7 +35,12 @@ import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { getDefaultOptions, options } from "../options";
 import { NiceTabs } from "../main/tabs";
-import { downloadBlob, saveWalletIntoFs, withFsLock } from "../utils";
+import { acquireWalletOpenLock, downloadBlob, withFsLock } from "../utils";
+
+type OpenedWallet = {
+  wallet: MoneroWasmWallet;
+  releaseWalletOpenLock: () => void;
+};
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
@@ -60,7 +65,7 @@ export function WalletsList() {
       }
     | {
         type: "opened";
-        wallet: MoneroWasmWallet;
+        openedWallet: OpenedWallet;
       }
     | {
         type: "manage-wallets";
@@ -75,6 +80,61 @@ export function WalletsList() {
   const backToList = React.useCallback(
     () => setView(buildListView()),
     [buildListView],
+  );
+  const handleRestoreDone = React.useCallback(
+    (openedWallet: OpenedWallet | null) => {
+      if (openedWallet) {
+        void (async () => {
+          try {
+            const walletFile = await openedWallet.wallet.get_wallet_file();
+            options.setValue("lastWalletName", walletFile);
+          } catch (e) {
+            console.error("Failed to read opened wallet file name:", e);
+          }
+        })();
+        setView({ type: "opened", openedWallet });
+      } else {
+        backToList();
+      }
+    },
+    [backToList],
+  );
+  const handleCreateDone = React.useCallback(
+    (openedWallet: OpenedWallet | null) => {
+      if (openedWallet) {
+        void (async () => {
+          try {
+            const walletFile = await openedWallet.wallet.get_wallet_file();
+            options.setValue("lastWalletName", walletFile);
+          } catch (e) {
+            console.error("Failed to read opened wallet file name:", e);
+          }
+        })();
+        setView({ type: "opened", openedWallet });
+      } else {
+        backToList();
+      }
+    },
+    [backToList],
+  );
+  const handleOpenDone = React.useCallback(
+    (openedWallet: OpenedWallet | null) => {
+      if (openedWallet) {
+        void (async () => {
+          try {
+            const walletFile = await openedWallet.wallet.get_wallet_file();
+            options.setValue("lastWalletName", walletFile);
+          } catch (e) {
+            console.error("Failed to read opened wallet file name:", e);
+          }
+        })();
+        setView({ type: "opened", openedWallet });
+      } else {
+        options.setValue("lastWalletName", null);
+        backToList();
+      }
+    },
+    [backToList],
   );
 
   React.useEffect(() => {
@@ -104,56 +164,21 @@ export function WalletsList() {
   if (view.type === "opened") {
     return (
       <WalletMain
-        wallet={view.wallet}
+        wallet={view.openedWallet.wallet}
         onExit={() => {
-          const wallet = view.wallet;
+          const { wallet, releaseWalletOpenLock } = view.openedWallet;
           backToList();
           options.setValue("lastWalletName", null);
-          closeWallet(wallet);
+          closeWallet(wallet, releaseWalletOpenLock);
         }}
       />
     );
   } else if (view.type === "restore") {
-    return (
-      <RestoreView
-        onDone={(wallet) => {
-          if (wallet) {
-            options.setValue("lastWalletName", wallet.get_wallet_file());
-            setView({ type: "opened", wallet });
-          } else {
-            backToList();
-          }
-        }}
-      />
-    );
+    return <RestoreView onDone={handleRestoreDone} />;
   } else if (view.type === "create-new-wallet") {
-    return (
-      <CreateNewWalletView
-        onDone={(wallet) => {
-          if (wallet) {
-            options.setValue("lastWalletName", wallet.get_wallet_file());
-            setView({ type: "opened", wallet });
-          } else {
-            backToList();
-          }
-        }}
-      />
-    );
+    return <CreateNewWalletView onDone={handleCreateDone} />;
   } else if (view.type === "opening") {
-    return (
-      <OpenWalletView
-        fileName={view.fileName}
-        onDone={(wallet) => {
-          if (wallet) {
-            options.setValue("lastWalletName", wallet.get_wallet_file());
-            setView({ type: "opened", wallet });
-          } else {
-            options.setValue("lastWalletName", null);
-            backToList();
-          }
-        }}
-      />
-    );
+    return <OpenWalletView fileName={view.fileName} onDone={handleOpenDone} />;
   } else if (view.type === "list") {
     return (
       <div className="space-y-4">
@@ -229,18 +254,21 @@ export function WalletsList() {
   }
 }
 
-function closeWallet(wallet: MoneroWasmWallet): void {
-  wallet
-    .close_wallet()
-    .catch((e) => {
+function closeWallet(wallet: MoneroWasmWallet, onDone?: () => void): void {
+  (async () => {
+    try {
+      await wallet.close_wallet();
+    } catch (e) {
       console.error("Error closing wallet:", e);
-    })
-    .then(() => {
-      return wallet.delete();
-    })
-    .catch((e) => {
+    }
+    try {
+      await wallet.delete();
+    } catch (e) {
       console.error("Error deleting wallet:", e);
-    });
+    } finally {
+      onDone?.();
+    }
+  })();
 }
 
 async function getBlockchainHeightByDateUsingTempWallet(
@@ -260,9 +288,10 @@ async function getBlockchainHeightByDateUsingTempWallet(
 function RestoreView({
   onDone,
 }: {
-  onDone: (wallet: MoneroWasmWallet | null) => void;
+  onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   const alert = useAlert();
+  // TODO: Remove this hardcoded values
   const [fileName, setFileName] = React.useState("kek");
   const [moneroSeed, setMoneroSeed] = React.useState(
     `verification italics saved under upper fetches answers masterful general ` +
@@ -313,7 +342,15 @@ function RestoreView({
 
     setRestoring(true);
     let wallet: MoneroWasmWallet | undefined;
+    let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
+      releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
+      if (!releaseWalletOpenLock) {
+        throw new Error(
+          `Wallet "${fileName}" is currently open in another tab`,
+        );
+      }
+
       let restoreHeight: bigint;
       let polyseedPrivateKey: Uint8Array | null = null;
 
@@ -363,13 +400,23 @@ function RestoreView({
           throw new Error("Wallet was unexpectedly undefined");
         }
         await wallet.generate(fileName, password, secret32, true, false);
+        await wallet.set_explicit_refresh_from_block_height(true);
+        await wallet.set_refresh_from_block_height(restoreHeight);
+        await wallet.rewrite(fileName, password);
+        await wallet.store();
       });
-      wallet.set_refresh_from_block_height(restoreHeight);
-      await saveWalletIntoFs(wallet);
       await persistNavigatorStorage();
+      if (!releaseWalletOpenLock) {
+        throw new Error("Wallet lock release callback is missing");
+      }
+      const openedWallet: OpenedWallet = {
+        wallet,
+        releaseWalletOpenLock,
+      };
+      releaseWalletOpenLock = null;
       console.info("Wallet restored and saved");
       setRestoring(false);
-      onDone(wallet);
+      onDone(openedWallet);
     })().catch((e) => {
       console.error("Error restoring wallet:", e);
       void alert(
@@ -378,6 +425,7 @@ function RestoreView({
       if (wallet) {
         closeWallet(wallet);
       }
+      releaseWalletOpenLock?.();
       setRestoring(false);
     });
   };
@@ -540,7 +588,7 @@ function RestoreView({
 function CreateNewWalletView({
   onDone,
 }: {
-  onDone: (wallet: MoneroWasmWallet | null) => void;
+  onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   const alert = useAlert();
 
@@ -556,6 +604,7 @@ function CreateNewWalletView({
     | {
         type: "showing-seed";
         wallet: MoneroWasmWallet;
+        releaseWalletOpenLock: () => void;
         seed: string;
         daemonHeight: bigint | null;
         daemonHeightFetchedAt: number | null;
@@ -590,38 +639,54 @@ function CreateNewWalletView({
     setState({ type: "creating-wallet", fileName, password, passwordConfirm });
 
     let wallet: MoneroWasmWallet | undefined;
+    let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
-      wallet = createWallet();
-      await wallet.init();
+      releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
+      if (!releaseWalletOpenLock) {
+        throw new Error(
+          `Wallet "${fileName}" is currently open in another tab`,
+        );
+      }
 
-      const generatedSecret32 = await withFsLock(async () => {
-        if (!wallet) {
-          throw new Error("Wallet was unexpectedly undefined");
-        }
-        const r = await wallet.generate(
+      const seed = await withFsLock(async () => {
+        wallet = createWallet();
+        await wallet.init();
+
+        const generatedSecret32 = await wallet.generate(
           fileName,
           password,
           new Uint8Array(32).fill(0),
           false,
           false,
         );
-        return r;
+
+        if (!generatedSecret32 || generatedSecret32.length !== 32) {
+          throw new Error("Generated secret is invalid");
+        }
+        if (generatedSecret32.every((byte) => byte === 0)) {
+          throw new Error("Generated secret is all zeroes, which is invalid");
+        }
+
+        const seedLocal = await wallet.get_seed("English", "");
+
+        await wallet.store();
+
+        return seedLocal;
       });
-      if (!generatedSecret32 || generatedSecret32.length !== 32) {
-        throw new Error("Generated secret is invalid");
+      if (!wallet) {
+        throw new Error("Wallet was unexpectedly undefined after creation");
       }
-      if (generatedSecret32.every((byte) => byte === 0)) {
-        throw new Error("Generated secret is all zeroes, which is invalid");
-      }
-
-      const seed = await wallet.get_seed("English", "");
-
-      await saveWalletIntoFs(wallet);
       await persistNavigatorStorage();
+      if (!releaseWalletOpenLock) {
+        throw new Error("Wallet lock release callback is missing");
+      }
+      const acquiredReleaseWalletOpenLock = releaseWalletOpenLock;
+      releaseWalletOpenLock = null;
       console.info("Wallet created and saved");
       setState({
         type: "showing-seed",
         wallet,
+        releaseWalletOpenLock: acquiredReleaseWalletOpenLock,
         seed,
         daemonHeight: null,
         daemonHeightFetchedAt: null,
@@ -634,6 +699,7 @@ function CreateNewWalletView({
       if (wallet) {
         closeWallet(wallet);
       }
+      releaseWalletOpenLock?.();
       setState({ type: "entering-data", fileName, password, passwordConfirm });
     });
   };
@@ -645,7 +711,7 @@ function CreateNewWalletView({
       );
     }
     onDone(null);
-    closeWallet(state.wallet);
+    closeWallet(state.wallet, state.releaseWalletOpenLock);
   };
 
   React.useEffect(() => {
@@ -742,7 +808,12 @@ function CreateNewWalletView({
               <Button
                 className="w-full"
                 variant="primary"
-                onClick={() => onDone(state.wallet)}
+                onClick={() =>
+                  onDone({
+                    wallet: state.wallet,
+                    releaseWalletOpenLock: state.releaseWalletOpenLock,
+                  })
+                }
               >
                 → Open wallet
               </Button>
@@ -823,39 +894,94 @@ function OpenWalletView({
   fileName,
 }: {
   fileName: string;
-  onDone: (wallet: MoneroWasmWallet | null) => void;
+  onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
+  type OpenPhase =
+    | "acquiring-lock"
+    | "opening-initial"
+    | "idle"
+    | "opening-user";
+
   const alert = useAlert();
   const [password, setPassword] = React.useState("");
-  const [busy, setBusy] = React.useState<null | "initial" | "user">("initial");
+  const [phase, setPhase] = React.useState<OpenPhase>("acquiring-lock");
+  const walletOpenLockReleaseRef = React.useRef<(() => void) | null>(null);
 
-  const doOpen = (isInitial: boolean) => {
-    setBusy(isInitial ? "initial" : "user");
-    let wallet: MoneroWasmWallet;
-    (async () => {
-      await persistNavigatorStorage();
-      wallet = createWallet();
-      await wallet.init();
-      await wallet.load(fileName, password);
-      onDone(wallet);
-      setBusy(null);
-    })().catch((e) => {
-      closeWallet(wallet);
+  const doOpen = React.useCallback(
+    (isInitial: boolean, passwordToTry: string) => {
+      setPhase(isInitial ? "opening-initial" : "opening-user");
+      let wallet: MoneroWasmWallet | undefined;
+      (async () => {
+        const releaseWalletOpenLock = walletOpenLockReleaseRef.current;
+        if (!releaseWalletOpenLock) {
+          throw new Error("Wallet open lock is not acquired");
+        }
 
-      if (!isInitial) {
-        console.error("Error opening wallet:", e);
-        void alert(
-          `Error opening wallet: ${(e as Error).message || "Unknown error"}`,
-        );
-      }
+        await persistNavigatorStorage();
+        wallet = createWallet();
+        await wallet.init();
+        await wallet.load(fileName, passwordToTry);
+        if (!releaseWalletOpenLock) {
+          throw new Error("Wallet lock release callback is missing");
+        }
+        const openedWallet: OpenedWallet = {
+          wallet,
+          releaseWalletOpenLock,
+        };
+        walletOpenLockReleaseRef.current = null;
+        onDone(openedWallet);
+      })().catch((e) => {
+        if (wallet) {
+          closeWallet(wallet);
+        }
 
-      setBusy(null);
-    });
-  };
+        if (!isInitial) {
+          console.error("Error opening wallet:", e);
+          void alert(
+            `Error opening wallet: ${(e as Error).message || "Unknown error"}`,
+          );
+        }
+
+        setPhase("idle");
+      });
+    },
+    [alert, fileName, onDone],
+  );
 
   React.useEffect(() => {
-    doOpen(true);
-  }, [fileName]);
+    let cancelled = false;
+    setPassword("");
+    setPhase("acquiring-lock");
+    (async () => {
+      const releaseWalletOpenLock = await acquireWalletOpenLock(fileName, {
+        ifAvailable: true,
+      });
+
+      if (cancelled) {
+        releaseWalletOpenLock?.();
+        return;
+      }
+
+      if (!releaseWalletOpenLock) {
+        await alert(`Wallet "${fileName}" is already opened in another tab.`);
+        onDone(null);
+        setPhase("idle");
+        return;
+      }
+
+      walletOpenLockReleaseRef.current = releaseWalletOpenLock;
+      doOpen(true, "");
+    })();
+
+    return () => {
+      cancelled = true;
+      const releaseWalletOpenLock = walletOpenLockReleaseRef.current;
+      walletOpenLockReleaseRef.current = null;
+      releaseWalletOpenLock?.();
+    };
+  }, [alert, doOpen, fileName, onDone]);
+
+  const isBusy = phase !== "idle";
 
   return (
     <div className="space-y-4">
@@ -866,7 +992,7 @@ function OpenWalletView({
           Opening Wallet
         </div>
 
-        {busy === "initial" ? (
+        {phase === "acquiring-lock" || phase === "opening-initial" ? (
           <div className="space-y-2">
             <div className="text-sm text-white/80">
               Preparing wallet data...
@@ -875,7 +1001,7 @@ function OpenWalletView({
           </div>
         ) : (
           <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
-            {busy === "user" && (
+            {phase === "opening-user" && (
               <div className="mb-3">
                 <ProgressBar
                   state="loading"
@@ -891,7 +1017,7 @@ function OpenWalletView({
                 type="password"
                 autoComplete="off"
                 value={password}
-                disabled={!!busy}
+                disabled={isBusy}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </FormRow>
@@ -900,8 +1026,14 @@ function OpenWalletView({
               <Button
                 className="w-full"
                 variant="soft"
-                onClick={() => onDone(null)}
-                disabled={!!busy}
+                onClick={() => {
+                  const releaseWalletOpenLock =
+                    walletOpenLockReleaseRef.current;
+                  walletOpenLockReleaseRef.current = null;
+                  releaseWalletOpenLock?.();
+                  onDone(null);
+                }}
+                disabled={isBusy}
               >
                 ← Back
               </Button>
@@ -909,10 +1041,10 @@ function OpenWalletView({
                 type="submit"
                 className="w-full"
                 variant="primary"
-                onClick={() => doOpen(false)}
-                disabled={!!busy}
+                onClick={() => doOpen(false, password)}
+                disabled={isBusy}
               >
-                {busy ? "Opening..." : "Open wallet"}
+                {isBusy ? "Opening..." : "Open wallet"}
               </Button>
             </ButtonsHolder>
           </form>
@@ -1047,11 +1179,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   );
 }
 
-function ManageWalletsView({
-  onBack,
-}: {
-  onBack: () => void;
-}) {
+function ManageWalletsView({ onBack }: { onBack: () => void }) {
   const alert = useAlert();
   const importInputRef = React.useRef<HTMLInputElement | null>(null);
   const [walletNames, setWalletNames] = React.useState<string[]>(() =>
@@ -1077,8 +1205,20 @@ function ManageWalletsView({
     if (removeState.type !== "confirm") {
       return;
     }
+    let releaseWalletOpenLock: (() => void) | null = null;
     try {
       setRemoveState({ type: "removing", walletName: removeState.walletName });
+      releaseWalletOpenLock = await acquireWalletOpenLock(
+        removeState.walletName,
+        { ifAvailable: true },
+      );
+      if (!releaseWalletOpenLock) {
+        await alert(
+          `Wallet "${removeState.walletName}" is already opened in another tab.`,
+        );
+        setRemoveState({ type: "idle" });
+        return;
+      }
       await withFsLock(async () => {
         deleteWalletFiles(removeState.walletName);
       });
@@ -1093,6 +1233,8 @@ function ManageWalletsView({
         `Failed to remove wallet: ${(e as Error).message || "Unknown error"}`,
       );
       setRemoveState({ type: "idle" });
+    } finally {
+      releaseWalletOpenLock?.();
     }
   }, [alert, removeState]);
 
@@ -1145,11 +1287,14 @@ function ManageWalletsView({
             });
           }
 
-          for (const [baseName, keysEntry] of filesByBaseName.entries()) {
-            if (keysEntry.isDirectory || !baseName.endsWith(".keys")) {
+          for (const [
+            keyFileName,
+            keysEntry,
+          ] of filesByBaseName.entries()) {
+            if (keysEntry.isDirectory || !keyFileName.endsWith(".keys")) {
               continue;
             }
-            const walletName = baseName.slice(0, -5);
+            const walletName = keyFileName.slice(0, -5);
             if (!walletName) {
               continue;
             }
@@ -1159,14 +1304,48 @@ function ManageWalletsView({
             }
 
             const keysFileData = await keysEntry.async("uint8array");
+
             const walletEntry = filesByBaseName.get(walletName);
             const walletFileData =
               walletEntry && !walletEntry.isDirectory
                 ? await walletEntry.async("uint8array")
                 : null;
 
-            saveWalletFilesData(keysFileData, walletFileData, walletName);
-            imported.push(walletName);
+            const otherFiles: { name: string; data: Uint8Array }[] = [];
+            if (walletFileData) {
+              otherFiles.push({
+                name: walletName,
+                data: walletFileData,
+              });
+            }
+            for (const [
+              otherBaseName,
+              otherEntry,
+            ] of filesByBaseName.entries()) {
+              if (
+                otherEntry.isDirectory ||
+                otherBaseName === keyFileName ||
+                otherBaseName === walletName
+              ) {
+                continue;
+              }
+              if (!otherBaseName.startsWith(walletName + ".")) {
+                continue;
+              }
+              const otherFileData = await otherEntry.async("uint8array");
+              otherFiles.push({
+                name: otherBaseName,
+                data: otherFileData,
+              });
+            }
+
+            try {
+              saveWalletFilesData(walletName, keysFileData, otherFiles);
+              imported.push(walletName);
+            } catch (e) {
+              console.error("Failed to save wallet files:", e);
+              skippedExisting.push(walletName);
+            }
           }
 
           return { imported, skippedExisting };
@@ -1196,9 +1375,7 @@ function ManageWalletsView({
           importSummary.skippedExisting,
           "No wallets were skipped.",
         );
-        await alert(
-          `Import completed.\n\n${importedText}\n\n${skippedText}`,
-        );
+        await alert(`Import completed.\n\n${importedText}\n\n${skippedText}`);
       } catch (e) {
         console.error("Failed to import wallets:", e);
         await alert(
@@ -1223,12 +1400,21 @@ function ManageWalletsView({
       setRenameState({ type: "idle" });
       return;
     }
+    let releaseWalletOpenLock: (() => void) | null = null;
     try {
       setRenameState({
         type: "renaming",
         oldWalletName: oldName,
         newWalletName: renameState.newWalletName,
       });
+      releaseWalletOpenLock = await acquireWalletOpenLock(oldName, {
+        ifAvailable: true,
+      });
+      if (!releaseWalletOpenLock) {
+        throw new Error(
+          `Wallet "${oldName}" is currently opened in another tab.`,
+        );
+      }
       await withFsLock(async () => {
         renameWallet(oldName, newName);
       });
@@ -1243,6 +1429,8 @@ function ManageWalletsView({
         `Failed to rename wallet: ${(e as Error).message || "Unknown error"}`,
       );
       setRenameState({ type: "idle" });
+    } finally {
+      releaseWalletOpenLock?.();
     }
   }, [alert, renameState]);
 
@@ -1379,7 +1567,9 @@ function ManageWalletsView({
               }
             }}
           >
-            <div className="text-base font-semibold text-white">Rename wallet</div>
+            <div className="text-base font-semibold text-white">
+              Rename wallet
+            </div>
             <div className="text-sm text-white/75">
               Enter new name for{" "}
               <span className="font-mono text-white/90">
@@ -1417,7 +1607,9 @@ function ManageWalletsView({
                   renameState.newWalletName.trim() === renameState.oldWalletName
                 }
               >
-                {renameState.type === "renaming" ? "Renaming..." : "Rename wallet"}
+                {renameState.type === "renaming"
+                  ? "Renaming..."
+                  : "Rename wallet"}
               </Button>
             </ButtonsHolder>
           </form>

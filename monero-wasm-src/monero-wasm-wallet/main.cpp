@@ -1,6 +1,8 @@
-#include <stdio.h>
+#include <iostream>
 #include <memory>
 #include <algorithm>
+#include <type_traits>
+#include <utility>
 #include "wallet/wallet2.h"
 #include "wallet/api/wallet2_api.h"
 #include "mnemonics/electrum-words.h"
@@ -15,7 +17,12 @@
 
 #include <emscripten/val.h>
 #include <optional>
+#include <cstdint>
 
+#include "multisig/multisig.h"
+#include "multisig/multisig_account.h"
+#include "multisig/multisig_kex_msg.h"
+#include "multisig/multisig_tx_builder_ringct.h"
 #include "jsPromise.hpp"
 
 class MoneroWasmWallet : public tools::i_wallet2_callback
@@ -58,7 +65,7 @@ public:
     {
         // TODO: Start the worker thread
 
-        printf("Wallet created\n");
+        std::cout << "Wallet created" << std::endl;
         m_wallet.callback(this);
 
         pthread_create(&walletThread, NULL, [](void *) -> void *
@@ -69,115 +76,54 @@ public:
         pthread_cancel(walletThread);
         // pthread_join(walletThread, NULL);
         m_wallet.stop();
-        printf("Wallet destroyed\n");
+        std::cout << "Wallet destroyed" << std::endl;
     }
 
-    emscripten::val init()
+    auto init()
     {
-        auto p = makePromise();
-
-        auto retVal = std::make_shared<bool>(0);
-
-        walletQueue.proxyCallback(
-            walletThread,
-            [this, retVal]()
-            {
-                auto initResult = m_wallet.init("127.1.2.3");
-                *retVal = initResult;
-            },
-            [p, retVal]()
-            {
-                p.resolve(*retVal);
-            },
-            [p]()
-            {
-                p.reject(jsError("Failed to initialize wallet"));
-            });
-
-        return p.promise;
+        return promise([this]()
+                       { return m_wallet.init("127.1.2.3"); });
     }
 
-    emscripten::val get_daemon_blockchain_height()
+    auto get_daemon_blockchain_height()
     {
-        auto p = makePromise();
-
-        auto retValInt = std::make_shared<uint64_t>(0);
-        auto retValStr = std::make_shared<std::string>("");
-
-        walletQueue.proxyCallback(
-            walletThread,
-            [this, retValInt, retValStr]()
-            {
-                std::string err;
-                uint64_t blockchain_height = m_wallet.get_daemon_blockchain_height(err);
-                if (err.empty())
-                {
-                    *retValInt = blockchain_height;
-                }
-                else
-                {
-                    *retValStr = err;
-                }
-            },
-            [p, retValInt, retValStr]()
-            {
-                if (retValStr->empty())
-                {
-                    p.resolve(*retValInt);
-                }
-                else
-                {
-                    p.reject(jsError(*retValStr));
-                }
-            },
-            [p]()
-            {
-                p.reject(jsError("Failed to get blockchain height"));
-            });
-
-        return p.promise;
+        return promise([this]()
+                       {
+                           auto err = std::string{};
+                           auto blockchain_height = m_wallet.get_daemon_blockchain_height(err);
+                           if (!err.empty())
+                           {
+                               throw std::runtime_error(err);
+                           }
+                           return blockchain_height; });
     }
 
-    emscripten::val generate(
+    auto generate(
         std::string fileName,
         std::string password,
-        emscripten::val secretStr,
+        emscripten::val secretArrayBuf,
         bool recover,
         bool two_random)
     {
-        if (secretStr["length"].as<unsigned>() != 32)
-            throw std::runtime_error(std::string("Secret must be 32 bytes but got ") + std::to_string(secretStr["length"].as<unsigned>()));
-
         auto secretKey = std::make_shared<crypto::secret_key>();
-        for (size_t i = 0; i < 32; ++i)
-        {
-            secretKey->data[i] = secretStr[i].as<unsigned char>();
-        }
+        copy_js_uint8_array_to(secretArrayBuf, reinterpret_cast<std::uint8_t *>(secretKey->data), 32);
 
-        // Result type for this async task
-        using Result = crypto::secret_key;
-
-        return runAsyncPromise<Result>(
-            walletQueue,
-            walletThread,
-
+        return promise(
             [this,
              fileName = std::move(fileName),
              password = std::move(password),
              secretKey,
              recover,
-             two_random](Result &out)
+             two_random]()
             {
-                auto gen_status = m_wallet.generate(
+                return m_wallet.generate(
                     fileName,
                     epee::wipeable_string(password),
                     *secretKey,
                     recover,
                     two_random);
-
-                std::memcpy(out.data, gen_status.data, 32);
             },
-            [](const Result &r) -> emscripten::val
+            [](const auto &r) -> emscripten::val
             {
                 auto v = emscripten::val::global("Uint8Array").new_(32);
                 for (size_t i = 0; i < 32; ++i)
@@ -188,62 +134,54 @@ public:
             });
     }
 
-    emscripten::val store()
+    auto store()
     {
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this](bool &r)
-            {
-                m_wallet.store();
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       {
+                           m_wallet.store();
+                           return true; });
     }
 
-    emscripten::val load(
+    auto set_attribute(std::string key, std::string value)
+    {
+        return promise([this, key = std::move(key), value = std::move(value)]()
+                       {
+                           m_wallet.set_attribute(key, value);
+                           return true; });
+    }
+
+    auto get_attribute(std::string key)
+    {
+        return promise([this, key = std::move(key)]()
+                       {
+                           auto r = std::string{};
+                           m_wallet.get_attribute(key, r);
+                           return r; });
+    }
+
+    auto load(
         std::string fileName,
         std::string password)
     {
         // This method do not call http but it might take some time, so we run it in the worker thread
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this, fileName, password](bool &r)
-            {
-                m_wallet.load(fileName, epee::wipeable_string(password));
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, fileName = std::move(fileName), password = std::move(password)]()
+                       {
+                           m_wallet.load(fileName, epee::wipeable_string(password));
+                           return true; });
     }
 
     // TODO: This actually not needed because it will close in destructor
-    emscripten::val close_wallet()
+    auto close_wallet()
     {
-
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this](bool &r)
-            {
-                m_wallet.stop();
-                m_wallet.deinit();
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       {
+                           m_wallet.stop();
+                           m_wallet.deinit();
+                           return true; });
     }
 
-    emscripten::val words_to_bytes(std::string words,
-                                   std::string language_name)
+    auto words_to_bytes(std::string words,
+                        std::string language_name)
     {
         crypto::secret_key dst;
         auto words_param = epee::wipeable_string(words);
@@ -263,73 +201,96 @@ public:
         }
     }
 
-    std::string get_address()
+    auto get_address()
     {
-        return m_wallet.get_address_as_str();
+        return promise([this]()
+                       { return m_wallet.get_address_as_str(); });
     }
-    size_t get_num_subaddresses(uint32_t index_major) const
+    auto get_num_subaddresses(uint32_t index_major)
     {
-        return m_wallet.get_num_subaddresses(index_major);
+        return promise([this, index_major]()
+                       { return m_wallet.get_num_subaddresses(index_major); });
     }
-    std::string get_subaddress_as_str(uint32_t m_current_subaddress_account, uint32_t index)
+    auto get_subaddress_as_str(uint32_t m_current_subaddress_account, uint32_t index)
     {
-        auto subaddr_index = cryptonote::subaddress_index{m_current_subaddress_account, index};
-        return m_wallet.get_subaddress_as_str(subaddr_index);
+        return promise([this, m_current_subaddress_account, index]()
+                       {
+                           auto subaddr_index = cryptonote::subaddress_index{m_current_subaddress_account, index};
+                           return m_wallet.get_subaddress_as_str(subaddr_index); });
     }
-    std::string get_subaddress_label(uint32_t m_current_subaddress_account, uint32_t index)
+    auto get_subaddress_label(uint32_t m_current_subaddress_account, uint32_t index)
     {
-        return m_wallet.get_subaddress_label({m_current_subaddress_account, index});
-    }
-    emscripten::val add_subaddress(uint32_t index_major, const std::string &label)
-    {
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this, index_major, label](bool &r)
-            {
-                m_wallet.add_subaddress(index_major, label);
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, m_current_subaddress_account, index]()
+                       { return m_wallet.get_subaddress_label({m_current_subaddress_account, index}); });
     }
 
-    emscripten::val is_synced()
+    struct WalletAddress
     {
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this](bool &r)
-            {
-                r = m_wallet.is_synced();
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        std::string address;
+        std::string label;
+        uint32_t indexMinor;
+    };
+
+    auto get_wallet_addresses(uint32_t accountId)
+    {
+        return promise([this, accountId]()
+                       {
+                           auto result = std::vector<WalletAddress>{};
+                           auto count = m_wallet.get_num_subaddresses(accountId);
+                           result.reserve(count);
+                           for (uint32_t indexMinor = 0; indexMinor < count; ++indexMinor)
+                           {
+                               auto subaddr_index = cryptonote::subaddress_index{accountId, indexMinor};
+                               result.push_back(WalletAddress{
+                                   m_wallet.get_subaddress_as_str(subaddr_index),
+                                   m_wallet.get_subaddress_label(subaddr_index),
+                                   indexMinor,
+                               });
+                           }
+                           return result; });
+    }
+    auto add_subaddress(uint32_t index_major, const std::string &label)
+    {
+        return promise([this, index_major, label]()
+                       {
+                           m_wallet.add_subaddress(index_major, label);
+                           return true; });
     }
 
-    emscripten::val get_seed(std::string seed_language, std::string seedPassphrase)
+    auto is_synced()
     {
-        return runAsyncPromise<epee::wipeable_string>(
-            walletQueue,
-            walletThread,
-            [this, seed_language, seedPassphrase](epee::wipeable_string &r)
+        return promise([this]()
+                       { return m_wallet.is_synced(); });
+    }
+
+    auto get_seed(std::string seed_language, std::string seedPassphrase)
+    {
+        return promise(
+            [this, seed_language = std::move(seed_language), seedPassphrase = std::move(seedPassphrase)]()
             {
                 m_wallet.set_seed_language(seed_language);
+                auto r = epee::wipeable_string{};
                 auto isOk = m_wallet.get_seed(r, seedPassphrase);
                 if (!isOk)
                 {
                     throw std::runtime_error("Failed to get seed");
                 }
+                return r;
             },
-            [](epee::wipeable_string &r) -> emscripten::val
+            [](const auto &r) -> emscripten::val
             {
-                std::string seedStr(r.data(), r.size());
+                auto seedStr = std::string(r.data(), r.size());
                 return emscripten::val(seedStr);
             });
+    }
+
+    auto rewrite(const std::string &wallet_file, const std::string &password_str)
+    {
+        const epee::wipeable_string password{password_str};
+        return promise([this, wallet_file, password]()
+                       {
+                           m_wallet.rewrite(wallet_file, password);
+                           return true; });
     }
 
     struct RefreshResult
@@ -338,19 +299,13 @@ public:
         bool receivedMoney;
     };
 
-    emscripten::val refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
+    auto refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
     {
-        return runAsyncPromise<RefreshResult>(
-            walletQueue,
-            walletThread,
-            [this, trusted_daemon, start_height, check_pool, try_incremental, max_blocks](RefreshResult &r)
-            {
-                m_wallet.refresh(trusted_daemon, start_height, r.blocksFetched, r.receivedMoney, check_pool, try_incremental, max_blocks);
-            },
-            [](RefreshResult &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, trusted_daemon, start_height, check_pool, try_incremental, max_blocks]()
+                       {
+                           auto r = RefreshResult{};
+                           m_wallet.refresh(trusted_daemon, start_height, r.blocksFetched, r.receivedMoney, check_pool, try_incremental, max_blocks);
+                           return r; });
     }
 
     void set_on_new_block_callback(emscripten::val callback)
@@ -376,20 +331,10 @@ public:
     };
 
     // TODO: Add support for sub-addresses filtering
-    emscripten::val get_payments(uint64_t min_height, uint64_t max_height)
+    auto get_payments(uint64_t min_height, uint64_t max_height)
     {
-        using R = std::vector<PaymentDetails>;
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this, min_height, max_height](R &r)
-            {
-                r = get_payments_impl(min_height, max_height);
-            },
-            [](R &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, min_height, max_height]()
+                       { return get_payments_impl(min_height, max_height); });
     }
 
     std::vector<PaymentDetails> get_payments_impl(uint64_t min_height, uint64_t max_height)
@@ -527,20 +472,10 @@ public:
         return result;
     }
 
-    emscripten::val get_payments_mempool()
+    auto get_payments_mempool()
     {
-        using R = std::vector<PaymentDetails>;
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this](R &r)
-            {
-                r = get_payments_mempool_impl();
-            },
-            [](R &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this]()
+                       { return get_payments_mempool_impl(); });
     }
 
     std::vector<PaymentDetails> get_payments_mempool_impl()
@@ -588,20 +523,10 @@ public:
         return result;
     }
 
-    emscripten::val transfer_prepare(std::string dst_address, uint64_t amount, uint32_t priority)
+    auto transfer_prepare(std::string dst_address, uint64_t amount, uint32_t priority)
     {
-        using R = std::shared_ptr<std::vector<tools::wallet2::pending_tx>>;
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this, dst_address, amount, priority](R &r)
-            {
-                r = transfer_impl(dst_address, amount, priority);
-            },
-            [](R &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, dst_address = std::move(dst_address), amount, priority]()
+                       { return transfer_impl(dst_address, amount, priority); });
     }
 
     uint64_t transfer_get_fee(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
@@ -614,22 +539,12 @@ public:
         return total_fee;
     }
 
-    emscripten::val transfer_commit_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
+    auto transfer_commit_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
-
-        return runAsyncPromise<bool>(
-            walletQueue,
-            walletThread,
-            [this, ptx_vector](bool &r)
-            {
-                m_wallet.commit_tx(*ptx_vector);
-                ;
-                r = true;
-            },
-            [](bool &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, ptx_vector = std::move(ptx_vector)]()
+                       {
+                           m_wallet.commit_tx(*ptx_vector);
+                           return true; });
     }
 
     std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(std::string dst_address, uint64_t amount, uint32_t priority)
@@ -668,24 +583,38 @@ public:
         return std::make_shared<std::vector<tools::wallet2::pending_tx>>(std::move(ptx_vector));
     }
 
-    std::string get_wallet_file()
+    auto get_wallet_file()
     {
-        return m_wallet.get_wallet_file();
+        return promise([this]()
+                       { return m_wallet.get_wallet_file(); });
     }
 
-    uint64_t balance(uint32_t index_major, bool strict)
+    auto balance(uint32_t index_major, bool strict)
     {
-        return m_wallet.balance(index_major, strict);
+        return promise([this, index_major, strict]()
+                       { return m_wallet.balance(index_major, strict); });
     }
 
-    void set_refresh_from_block_height(uint64_t height)
+    auto set_refresh_from_block_height(uint64_t height)
     {
-        m_wallet.set_refresh_from_block_height(height);
+        return promise([this, height]()
+                       {
+                           m_wallet.set_refresh_from_block_height(height);
+                           return true; });
     }
 
-    uint64_t get_blockchain_current_height()
+    auto set_explicit_refresh_from_block_height(bool value)
     {
-        return m_wallet.get_blockchain_current_height();
+        return promise([this, value]()
+                       {
+                           m_wallet.explicit_refresh_from_block_height(value);
+                           return true; });
+    }
+
+    auto get_blockchain_current_height()
+    {
+        return promise([this]()
+                       { return m_wallet.get_blockchain_current_height(); });
     }
 
     struct UnlockedBalanceResult
@@ -695,29 +624,319 @@ public:
         uint64_t time_to_unlock;
     };
 
-    struct UnlockedBalanceResult unlocked_balance(uint32_t index_major, bool strict)
+    auto unlocked_balance(uint32_t index_major, bool strict)
     {
-        UnlockedBalanceResult r;
-        r.balance = m_wallet.unlocked_balance(index_major, strict, &r.blocks_to_unlock, &r.time_to_unlock);
-        return r;
+        return promise([this, index_major, strict]()
+                       {
+                           auto r = UnlockedBalanceResult{};
+                           r.balance = m_wallet.unlocked_balance(index_major, strict, &r.blocks_to_unlock, &r.time_to_unlock);
+                           return r; });
     }
 
-    emscripten::val get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
+    auto get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
     {
-        return runAsyncPromise<uint64_t>(
-            walletQueue,
-            walletThread,
-            [this, year, month, day](uint64_t &r)
+        return promise([this, year, month, day]()
+                       { return m_wallet.get_blockchain_height_by_date(year, month, day); });
+    }
+
+    auto get_multisig_status()
+    {
+        return promise([this]()
+                       { return m_wallet.get_multisig_status(); });
+    }
+
+    auto has_multisig_partial_key_images()
+    {
+        return promise([this]()
+                       { return m_wallet.has_multisig_partial_key_images(); });
+    }
+
+    auto has_unknown_key_images()
+    {
+        return promise([this]()
+                       { return m_wallet.has_unknown_key_images(); });
+    }
+
+    auto verify_password(const std::string &password_str)
+    {
+        epee::wipeable_string password(password_str);
+        return promise([this, password]()
+                       { return m_wallet.verify_password(password); });
+    }
+
+    auto make_multisig(const std::string &password_str,
+                       emscripten::val initial_kex_msgs_js,
+                       std::uint32_t threshold)
+    {
+        epee::wipeable_string password(password_str);
+        auto initial_kex_msgs = parse_js_array<std::string>(
+            initial_kex_msgs_js,
+            [](const emscripten::val &item, size_t index) -> std::string
             {
-                r = m_wallet.get_blockchain_height_by_date(year, month, day);
+                if (!item.isString())
+                {
+                    throw std::runtime_error("Expected string at index " + std::to_string(index));
+                }
+                return item.as<std::string>();
+            });
+
+        return promise([this, password, initial_kex_msgs = std::move(initial_kex_msgs), threshold]()
+                       {
+                           if (!m_wallet.verify_password(password))
+                           {
+                               throw std::runtime_error("invalid password");
+                           }
+
+                           if (m_wallet.get_multisig_status().multisig_is_active)
+                           {
+                               throw std::runtime_error("Wallet is already multisig");
+                           };
+                           if (m_wallet.get_num_transfer_details())
+                           {
+                               throw std::runtime_error("Wallet must be empty to create multisig");
+                           };
+                           return m_wallet.make_multisig(password, initial_kex_msgs, threshold); });
+    }
+
+    auto exchange_multisig_keys(const std::string &password_str, emscripten::val kex_msgs_js)
+    {
+        epee::wipeable_string password(password_str);
+        auto kex_msgs = parse_js_array<std::string>(
+            kex_msgs_js,
+            [](const emscripten::val &item, size_t index) -> std::string
+            {
+                if (!item.isString())
+                {
+                    throw std::runtime_error("Expected string at index " + std::to_string(index));
+                }
+                return item.as<std::string>();
+            });
+
+        return promise([this, password, kex_msgs = std::move(kex_msgs)]()
+                       {
+                           if (!m_wallet.verify_password(password))
+                           {
+                               throw std::runtime_error("invalid password");
+                           }
+                           if (!m_wallet.get_multisig_status().multisig_is_active)
+                           {
+                               throw std::runtime_error("Wallet is not multisig");
+                           };
+                           return m_wallet.exchange_multisig_keys(password, kex_msgs); });
+    }
+
+    auto prepare_multisig()
+    {
+        return promise([this]()
+                       {
+                           if (m_wallet.get_num_transfer_details() > 0)
+                           {
+                               throw std::runtime_error("Wallet must be empty to prepare multisig");
+                           }
+                           if (m_wallet.get_multisig_status().multisig_is_active)
+                           {
+                               throw std::runtime_error("Wallet is already multisig");
+                           }
+                           return m_wallet.get_multisig_first_kex_msg(); });
+    }
+
+    auto export_multisig()
+    {
+        return promise(
+            [this]()
+            {
+                auto status = m_wallet.get_multisig_status();
+                if (!status.multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is not multisig");
+                }
+                if (!status.is_ready)
+                {
+                    throw std::runtime_error("Multisig wallet is not ready");
+                }
+                return m_wallet.export_multisig();
             },
-            [](uint64_t &r) -> emscripten::val
+            [](const cryptonote::blobdata &ciphertext) -> emscripten::val
+            {
+                auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
+                return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes, ciphertext.size());
+            });
+    }
+
+    auto import_multisig(emscripten::val others_multisig_info_js)
+    {
+
+        auto info_uint = parse_js_uint8_array_array(others_multisig_info_js);
+        std::vector<cryptonote::blobdata> info;
+        info.reserve(info_uint.size());
+        for (const auto &i : info_uint)
+        {
+            info.emplace_back(reinterpret_cast<const char *>(i.data()), i.size());
+        }
+        return promise(
+            [this, info = std::move(info)]()
+            {
+                auto status = m_wallet.get_multisig_status();
+                if (!status.multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is not multisig");
+                }
+                if (!status.is_ready)
+                {
+                    throw std::runtime_error("Multisig wallet is not ready");
+                }
+                if (info.size() + 1 < status.threshold)
+                {
+                    throw std::runtime_error("Not enough multisig info provided");
+                }
+                size_t n_outputs = m_wallet.import_multisig(info);
+                return n_outputs;
+            });
+    }
+
+    auto rescan_blockchain(bool hard, bool keep_key_images)
+    {
+        return promise([this, hard, keep_key_images]()
+                       {
+                           m_wallet.rescan_blockchain(hard, false, keep_key_images);
+                           return true; });
+    }
+
+private:
+    template <typename T, typename ParseItemFn>
+    static std::vector<T> parse_js_array(const emscripten::val &js_array, ParseItemFn &&parse_item)
+    {
+        if (!js_array.instanceof(emscripten::val::global("Array")))
+        {
+            throw std::runtime_error("Expected array");
+        }
+
+        const auto len = js_array["length"].as<size_t>();
+        auto out = std::vector<T>{};
+        out.reserve(len);
+        for (size_t i = 0; i < len; ++i)
+        {
+            out.push_back(parse_item(js_array[i], i));
+        }
+        return out;
+    }
+
+    static std::vector<std::uint8_t> parse_js_uint8_array(const emscripten::val &js_uint8_array)
+    {
+        if (!js_uint8_array.instanceof(emscripten::val::global("Uint8Array")))
+        {
+            throw std::runtime_error("Expected Uint8Array");
+        }
+
+        const auto len = js_uint8_array["length"].as<size_t>();
+        auto out = std::vector<std::uint8_t>(len);
+        if (len > 0)
+        {
+            auto out_view = emscripten::val(emscripten::typed_memory_view(len, out.data()));
+            out_view.call<void>("set", js_uint8_array);
+        }
+        return out;
+    }
+
+    static void copy_js_uint8_array_to(const emscripten::val &js_uint8_array, unsigned char *out, size_t expected_len)
+    {
+        if (!js_uint8_array.instanceof(emscripten::val::global("Uint8Array")))
+        {
+            throw std::runtime_error("Expected Uint8Array");
+        }
+
+        const auto len = js_uint8_array["length"].as<size_t>();
+        if (len != expected_len)
+        {
+            throw std::runtime_error("Expected " + std::to_string(expected_len) + " bytes but got " + std::to_string(len));
+        }
+
+        if (expected_len > 0)
+        {
+            auto out_view = emscripten::val(emscripten::typed_memory_view(expected_len, out));
+            out_view.call<void>("set", js_uint8_array);
+        }
+    }
+
+    static std::vector<std::vector<std::uint8_t>> parse_js_uint8_array_array(const emscripten::val &js_array)
+    {
+        return parse_js_array<std::vector<std::uint8_t>>(
+            js_array,
+            [&](const emscripten::val &item, size_t /*index*/) -> std::vector<std::uint8_t>
+            {
+                return parse_js_uint8_array(item);
+            });
+    }
+
+    static emscripten::val copy_bytes_to_uint8_array(const std::uint8_t *data, size_t size)
+    {
+        auto out = emscripten::val::global("Uint8Array").new_(size);
+        if (size == 0)
+        {
+            return out;
+        }
+
+        // Copy in one call to avoid per-byte embind overhead for large buffers.
+        out.call<void>("set", emscripten::val(emscripten::typed_memory_view(size, data)));
+        return out;
+    }
+
+    template <class WorkFn, class PackFn>
+    emscripten::val promise(WorkFn &&work, PackFn &&pack_to_js)
+    {
+        using ResultT = std::decay_t<std::invoke_result_t<WorkFn>>;
+        static_assert(!std::is_void_v<ResultT>, "promise() requires non-void return type");
+
+        auto p = makePromise();
+        auto result = std::make_shared<std::optional<ResultT>>();
+        auto error = std::make_shared<std::optional<std::string>>();
+
+        walletQueue.proxyCallback(
+            walletThread,
+            [work = std::forward<WorkFn>(work), result, error]() mutable
+            {
+                try
+                {
+                    result->emplace(work());
+                }
+                catch (const std::exception &e)
+                {
+                    *error = e.what();
+                }
+                catch (...)
+                {
+                    *error = "Unknown error";
+                }
+            },
+            [p, result, error, pack_to_js = std::forward<PackFn>(pack_to_js)]() mutable
+            {
+                if (error->has_value())
+                {
+                    p.reject(jsError(error->value()));
+                    return;
+                }
+                p.resolve(pack_to_js(result->value()));
+            },
+            [p]()
+            {
+                p.reject(jsError("Thread error"));
+            });
+
+        return p.promise;
+    }
+
+    template <class WorkFn>
+    emscripten::val promise(WorkFn &&work)
+    {
+        using ResultT = std::decay_t<std::invoke_result_t<WorkFn>>;
+        return promise(
+            std::forward<WorkFn>(work),
+            [](const ResultT &r) -> emscripten::val
             {
                 return emscripten::val(r);
             });
     }
 
-private:
     // TODO: Add a callback for onFetching for better UI
     tools::wallet2 m_wallet = tools::wallet2(
         cryptonote::network_type::MAINNET,
@@ -741,11 +960,13 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("init", &MoneroWasmWallet::init)
         .function("get_daemon_blockchain_height", &MoneroWasmWallet::get_daemon_blockchain_height)
         .function("generate", &MoneroWasmWallet::generate)
+        .function("rewrite", &MoneroWasmWallet::rewrite)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
         .function("get_num_subaddresses", &MoneroWasmWallet::get_num_subaddresses)
         .function("get_subaddress_as_str", &MoneroWasmWallet::get_subaddress_as_str)
         .function("get_subaddress_label", &MoneroWasmWallet::get_subaddress_label)
+        .function("get_wallet_addresses", &MoneroWasmWallet::get_wallet_addresses)
         .function("add_subaddress", &MoneroWasmWallet::add_subaddress)
         .function("is_synced", &MoneroWasmWallet::is_synced)
         .function("set_on_new_block_callback", &MoneroWasmWallet::set_on_new_block_callback)
@@ -755,21 +976,41 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_payments", &MoneroWasmWallet::get_payments)
         .function("get_payments_mempool", &MoneroWasmWallet::get_payments_mempool)
         .function("store", &MoneroWasmWallet::store)
+        .function("set_attribute", &MoneroWasmWallet::set_attribute)
+        .function("get_attribute", &MoneroWasmWallet::get_attribute)
         .function("get_seed", &MoneroWasmWallet::get_seed)
         .function("get_wallet_file", &MoneroWasmWallet::get_wallet_file)
         .function("balance", &MoneroWasmWallet::balance)
         .function("unlocked_balance", &MoneroWasmWallet::unlocked_balance)
         .function("set_refresh_from_block_height", &MoneroWasmWallet::set_refresh_from_block_height)
+        .function("set_explicit_refresh_from_block_height", &MoneroWasmWallet::set_explicit_refresh_from_block_height)
         .function("get_blockchain_current_height", &MoneroWasmWallet::get_blockchain_current_height)
         .function("get_blockchain_height_by_date", &MoneroWasmWallet::get_blockchain_height_by_date)
         .function("words_to_bytes", &MoneroWasmWallet::words_to_bytes)
         .function("transfer_prepare", &MoneroWasmWallet::transfer_prepare)
         .function("transfer_get_fee", &MoneroWasmWallet::transfer_get_fee)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
+        .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
+        .function("has_multisig_partial_key_images", &MoneroWasmWallet::has_multisig_partial_key_images)
+        .function("has_unknown_key_images", &MoneroWasmWallet::has_unknown_key_images)
+        .function("prepare_multisig", &MoneroWasmWallet::prepare_multisig)
+        .function("make_multisig", &MoneroWasmWallet::make_multisig)
+        .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)
+        .function("export_multisig", &MoneroWasmWallet::export_multisig)
+        .function("import_multisig", &MoneroWasmWallet::import_multisig)
+        .function("verify_password", &MoneroWasmWallet::verify_password)
+        .function("rescan_blockchain", &MoneroWasmWallet::rescan_blockchain)
         .constructor();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
         .smart_ptr<std::shared_ptr<std::vector<tools::wallet2::pending_tx>>>("VectorOfPendingTx");
+
+    emscripten::value_object<struct multisig::multisig_account_status>("MultisigAccountStatus")
+        .field("multisig_is_active", &multisig::multisig_account_status::multisig_is_active)
+        .field("kex_is_done", &multisig::multisig_account_status::kex_is_done)
+        .field("is_ready", &multisig::multisig_account_status::is_ready)
+        .field("threshold", &multisig::multisig_account_status::threshold)
+        .field("total", &multisig::multisig_account_status::total);
 
     /*
 emscripten::class_<tools::wallet2::transfer_details>("TransferDetails")
@@ -784,6 +1025,7 @@ emscripten::value_object<tools::wallet2::transfer_details>("TransferDetails")
 emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVector");
 */
     emscripten::register_vector<struct MoneroWasmWallet::PaymentDetails>("PaymentDetailsVector");
+    emscripten::register_vector<struct MoneroWasmWallet::WalletAddress>("WalletAddressVector");
     emscripten::value_object<struct MoneroWasmWallet::PaymentDetails>("PaymentDetails")
         .field("payment_id", &MoneroWasmWallet::PaymentDetails::payment_id)
         .field("type", &MoneroWasmWallet::PaymentDetails::type)
@@ -798,6 +1040,11 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
         .field("index_major", &MoneroWasmWallet::PaymentDetails::index_major)
         .field("index_minor", &MoneroWasmWallet::PaymentDetails::index_minor)
         .field("note", &MoneroWasmWallet::PaymentDetails::note);
+
+    emscripten::value_object<struct MoneroWasmWallet::WalletAddress>("WalletAddress")
+        .field("address", &MoneroWasmWallet::WalletAddress::address)
+        .field("label", &MoneroWasmWallet::WalletAddress::label)
+        .field("indexMinor", &MoneroWasmWallet::WalletAddress::indexMinor);
 
     emscripten::value_object<MoneroWasmWallet::RefreshResult>("RefreshResult")
         .field("blocksFetched", &MoneroWasmWallet::RefreshResult::blocksFetched)
@@ -820,13 +1067,13 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
 
 int main()
 {
-    printf("Initialing module...\n");
+    std::cout << "Initialing module..." << std::endl;
 
     tools::set_max_concurrency(2);
 
     // mlog_set_categories("*:TRACE");
 
-    printf("Module initialized\n");
+    std::cout << "Module initialized" << std::endl;
 
     return 0;
 }

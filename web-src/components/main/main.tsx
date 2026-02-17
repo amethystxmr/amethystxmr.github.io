@@ -1,19 +1,23 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useCallback } from "react";
 import {
   max64,
   MoneroWasmWallet,
+  MultisigAccountStatus,
   PaymentDetailsTransformed,
+  WalletAddress,
   transformPayments,
+  transformWalletAddresses,
 } from "../../../monero-wasm-module/walletApi";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
 import { NiceTabs } from "./tabs";
 import { ReceiveAddresses } from "./main.receive";
-import { balanceToString, saveWalletIntoFs, toFiat } from "../utils";
+import { balanceToString, toFiat, withFsLock } from "../utils";
 import { TransactionsTab } from "./main.transactions";
 import { SendTab } from "./main.send";
 import { OtherTab } from "./main.other";
+import { MultisigTab } from "./main.multisig";
 
 export function WalletMain({
   wallet,
@@ -24,20 +28,34 @@ export function WalletMain({
 }) {
   (window as any).wallet = wallet;
 
-  const walletFileName = React.useMemo(() => {
-    return wallet.get_wallet_file();
-  }, [wallet]);
+  const [walletFileName, setWalletFileName] = React.useState("Loading...");
 
   const [refreshing, setRefreshing] = React.useState(false);
-  // TODO: If daemon just started then it might be small value
-  // and UI can show negative blocks left
-  const [daemonHeight, setDaemonHeight] = React.useState<bigint | null>(null);
-  const [lastSyncTimestamp, setLastSyncTimestamp] = React.useState<Date | null>(
-    null,
-  );
-  const [walletBlockchainCurrentHeight, setWalletBlockchainCurrentHeight] =
-    React.useState<bigint | null>(null);
 
+  const [status, setStatus] = React.useState<{
+    // TODO: If daemon just started then it might be small value
+    // and UI can show negative blocks left
+
+    daemonHeight: bigint;
+    obtainedAt: Date;
+    walletHeight: bigint;
+    balance: Record<
+      "strict" | "nonStrict",
+      {
+        value: bigint;
+        unlocked: {
+          balance: bigint;
+          blocks_to_unlock: bigint;
+          time_to_unlock: bigint;
+        };
+      }
+    >;
+    isSynced: boolean;
+    multisigStatus: MultisigAccountStatus;
+    hasMultisigPartialKeyImages: boolean;
+    hasUnknownKeyImages: boolean;
+    payments: PaymentDetailsTransformed[];
+  } | null>(null);
   const [downloadInfo, setDownloadInfo] = React.useState<null | {
     url: string;
     progressLoaded: number;
@@ -46,35 +64,38 @@ export function WalletMain({
 
   const [refreshError, setRefreshError] = React.useState<string | null>(null);
 
-  const [balance, setBalance] = React.useState<Record<
-    "strict" | "nonStrict",
-    {
-      value: bigint;
-      unlocked: {
-        balance: bigint;
-        blocks_to_unlock: bigint;
-        time_to_unlock: bigint;
-      };
-    }
-  > | null>(null);
-
-  const [payments, setPayments] = React.useState<
-    null | PaymentDetailsTransformed[]
-  >(null);
   const [mempoolPayments, setMempoolPayments] = React.useState<
     null | PaymentDetailsTransformed[]
   >(null);
 
-  const updateSecondaryAddresses = React.useCallback(() => {
-    const accounts = [];
-    const numAccounts = wallet.get_num_subaddresses(0);
-    for (let i = 1; i < numAccounts; i++) {
-      // start from 1 because 0 is primary
-      const address = wallet.get_subaddress_as_str(0, i);
-      const label = wallet.get_subaddress_label(0, i);
-      accounts.push({ address, label, indexMinor: i });
-    }
-    setSecondaryAddresses(accounts);
+  const [addresses, setAddresses] = React.useState<WalletAddress[] | null>(
+    null,
+  );
+
+  const updateWalletAddresses = React.useCallback(async () => {
+    const addressesVector = await wallet.get_wallet_addresses(0);
+    const nextAddresses = transformWalletAddresses(addressesVector);
+    setAddresses(nextAddresses);
+  }, [wallet]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const file = await wallet.get_wallet_file();
+        if (!cancelled) {
+          setWalletFileName(file);
+        }
+      } catch (e) {
+        console.error("Failed to get wallet file name:", e);
+        if (!cancelled) {
+          setWalletFileName("Unknown wallet");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [wallet]);
 
   /*
@@ -95,11 +116,6 @@ nonStrict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 
 strict balance value 1765432100n
 strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
-
-  const isSynced =
-    walletBlockchainCurrentHeight !== null &&
-    daemonHeight !== null &&
-    walletBlockchainCurrentHeight >= daemonHeight;
 
   React.useEffect(() => {
     const oldOnFetch = window.globalHttpConfig.onFetch;
@@ -128,7 +144,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   }, [wallet]);
 
   const stopWaitingRef = React.useRef<null | (() => void) | "no-wait">(null);
-  const stopWaitingOrScheduleNoWait = () => {
+  const stopWaitingOrScheduleNoWait = useCallback(() => {
     if (stopWaitingRef.current === "no-wait") {
       return;
     }
@@ -137,99 +153,100 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     } else {
       stopWaitingRef.current = "no-wait";
     }
-  };
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
     wallet.set_on_new_block_callback((height) =>
-      setWalletBlockchainCurrentHeight(height),
+      setStatus((prev) =>
+        prev === null ? null : { ...prev, walletHeight: height },
+      ),
     );
 
-    console.info("Address=", wallet.get_address());
+    const getStatus = async () => {
+      const walletHeight = await wallet.get_blockchain_current_height();
 
-    const updateStatuses = async () => {
-      const cycleStartingHeight = wallet.get_blockchain_current_height();
-      setWalletBlockchainCurrentHeight(cycleStartingHeight);
-      {
-        const balanceStrict = wallet.balance(0, true);
-        const balanceNonStrict = wallet.balance(0, false);
-        const unlockedBalanceStrict = wallet.unlocked_balance(0, true);
-        const unlockedBalanceNonStrict = wallet.unlocked_balance(0, false);
-        setBalance({
-          strict: {
-            value: balanceStrict,
-            unlocked: unlockedBalanceStrict,
-          },
-          nonStrict: {
-            value: balanceNonStrict,
-            unlocked: unlockedBalanceNonStrict,
-          },
-        });
+      const balanceStrict = await wallet.balance(0, true);
+      const balanceNonStrict = await wallet.balance(0, false);
+      const unlockedBalanceStrict = await wallet.unlocked_balance(0, true);
+      const unlockedBalanceNonStrict = await wallet.unlocked_balance(0, false);
+      const balance = {
+        strict: {
+          value: balanceStrict,
+          unlocked: unlockedBalanceStrict,
+        },
+        nonStrict: {
+          value: balanceNonStrict,
+          unlocked: unlockedBalanceNonStrict,
+        },
+      };
 
-        const payments = await wallet.get_payments(0n, max64);
-        const transformedPayments = transformPayments(payments);
-        console.log("Payments:", transformedPayments);
-        setPayments(transformedPayments);
-        updateSecondaryAddresses();
+      const newMultisigStatus = await wallet.get_multisig_status();
+      const hasMultisigPartialKeyImages =
+        await wallet.has_multisig_partial_key_images();
+      const hasUnknownKeyImages = await wallet.has_unknown_key_images();
+      if (cancelled) {
+        return;
       }
 
-      // This part might throw
+      const payments = await wallet.get_payments(0n, max64);
+      if (cancelled) {
+        return;
+      }
+      const transformedPayments = transformPayments(payments);
+
       const daemonHeight = await wallet.get_daemon_blockchain_height();
       if (cancelled) {
         return;
       }
-      setDaemonHeight(daemonHeight);
+      const isSynced = await wallet.is_synced();
 
-      if (cycleStartingHeight >= daemonHeight) {
-        console.info("Wallet is already synced, no need to do initial refresh");
-        //isInitialSync = false;
-        setLastSyncTimestamp(new Date());
-      }
+      const newStatus: typeof status = {
+        daemonHeight,
+        walletHeight,
+        balance,
+        isSynced,
+        obtainedAt: new Date(),
+        multisigStatus: newMultisigStatus,
+        hasMultisigPartialKeyImages,
+        hasUnknownKeyImages,
+        payments: transformedPayments,
+      };
+
+      return newStatus;
     };
-
-    let isInitialSync = true;
-
     const doRefresh = async () => {
       setRefreshing(true);
       setRefreshError(null);
+
       try {
-        const refreshStatus = await wallet.refresh(
-          false,
-          0n,
-          true,
-          true,
-          2000n,
-        );
+        const refreshStatus = await withFsLock(async () => {
+          if (cancelled) {
+            return;
+          }
+          const refreshStatusLocal = await wallet.refresh(
+            false,
+            0n,
+            true,
+            true,
+            2000n,
+          );
+          await wallet.store();
+          return refreshStatusLocal;
+        });
+        if (!refreshStatus) {
+          return;
+        }
         console.info("Refresh status:", refreshStatus);
         if (cancelled) {
           return;
         }
-        await saveWalletIntoFs(wallet);
-        console.info("Refresh saved");
 
         if (cancelled) {
           return;
         }
         setRefreshError(null);
-        setLastSyncTimestamp(new Date());
         setRefreshing(false);
-        if (isInitialSync) {
-          const isSynced = await wallet.is_synced();
-          if (isSynced) {
-            console.info("Wallet init sync is done");
-            isInitialSync = false;
-          } else {
-            console.info("Wallet initial sync is in progress");
-          }
-        }
-
-        if (!isInitialSync) {
-          // On non-initial refresh also get mempool payments
-          const mempoolPayments = await wallet.get_payments_mempool();
-          const transformedMempoolPayments = transformPayments(mempoolPayments);
-          console.log("Mempool payments:", transformedMempoolPayments);
-          setMempoolPayments(transformedMempoolPayments);
-        }
 
         return refreshStatus;
       } catch (e) {
@@ -239,7 +256,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       }
     };
 
-    const interruptableDelay = (ms: number) => async () => {
+    const interruptableDelay = async (ms: number) => {
       if (stopWaitingRef.current === "no-wait") {
         console.info(
           `Waiting for ${ms / 1000} seconds... {no wait mode, skipping wait}`,
@@ -268,21 +285,45 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     };
 
     (async () => {
+      /** Only used for estimations during initial sync.
+       *  And it measures whole cycle time, not only refresh time,
+       *   so it also includes time for getting statuses and payments
+       */
       let lastTimeRefreshStartedAt: Date | null = null;
+      /** Only used for estimations during initial sync */
       let lastTimeRefreshedBlocks: bigint | null = null;
+
       while (!cancelled) {
         console.info(
-          `================= Starting refresh cycle (initial=${isInitialSync}) =================`,
+          `================= Starting refresh cycle =================`,
         );
 
         setRefreshError(null);
 
         try {
-          await updateStatuses();
+          await updateWalletAddresses();
+
+          const freshStatus = await getStatus();
+          if (!freshStatus) {
+            return;
+          }
+          setStatus(freshStatus);
+          console.info("Statuses updated:", freshStatus);
+
+          if (
+            freshStatus.multisigStatus.multisig_is_active &&
+            !freshStatus.multisigStatus.is_ready
+          ) {
+            console.info(
+              `Wallet is multisig but not ready, basically waiting for manual interrupt`,
+            );
+            await interruptableDelay(60_000 * 20);
+            continue;
+          }
         } catch (e) {
           console.error("Error while updating wallet/daemon status:", e);
           setRefreshError((e as Error).message || "Unknown error");
-          await interruptableDelay(30_000)();
+          await interruptableDelay(30_000);
           continue;
         }
 
@@ -290,19 +331,43 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
 
-        if (!isInitialSync) {
-          await interruptableDelay(60_000)();
+        // The point of having delay here is to allow to get fresh statuses right after refresh
+        // If we have refresh in the end of the loop then we will just wait
+        const isSynced = await wallet.is_synced().catch(() => null);
+        if (isSynced) {
+          lastTimeRefreshStartedAt = null;
+          lastTimeRefreshedBlocks = null;
+
+          console.info("Wallet is synced, fetching mempool...");
+          {
+            // On non-initial refresh also get mempool payments
+            const mempoolPayments = await wallet
+              .get_payments_mempool()
+              .catch(() => null);
+            if (mempoolPayments) {
+              const transformedMempoolPayments =
+                transformPayments(mempoolPayments);
+              console.log("Mempool payments:", transformedMempoolPayments);
+              setMempoolPayments(transformedMempoolPayments);
+            } else {
+              console.warn("Failed to fetch mempool payments");
+              setMempoolPayments(null);
+              setRefreshError("Failed to fetch mempool payments");
+              await interruptableDelay(30_000);
+              continue;
+            }
+          }
+          await interruptableDelay(60_000);
+          continue;
+        } else {
+          console.info("Wallet is not synced, going into refresh...");
         }
 
         if (cancelled) {
           return;
         }
 
-        if (
-          isInitialSync &&
-          lastTimeRefreshStartedAt &&
-          lastTimeRefreshedBlocks
-        ) {
+        if (!isSynced && lastTimeRefreshStartedAt && lastTimeRefreshedBlocks) {
           const secondsSinceLastRefresh =
             (new Date().getTime() - lastTimeRefreshStartedAt.getTime()) / 1000;
           const secondsPerBlock =
@@ -330,91 +395,91 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       cancelled = true;
       wallet.set_on_new_block_callback(null);
     };
-  }, [
-    wallet,
-    setRefreshing,
-    setWalletBlockchainCurrentHeight,
-    setDaemonHeight,
-    updateSecondaryAddresses,
-  ]);
+  }, [wallet, setRefreshing, setStatus, updateWalletAddresses]);
 
   const priceInfo = useXmrPrice();
   const price = priceInfo?.price ?? null;
 
-  const primaryAddress = useMemo(() => wallet.get_address(), [wallet]);
-  const [secondaryAddresses, setSecondaryAddresses] = React.useState<
-    | {
-        address: string;
-        label: string;
-        indexMinor: number;
-      }[]
-    | null
-  >(null);
-
   const [secondsPerBlockOnInitialSync, setSecondsPerBlockOnInitialSync] =
     React.useState<number | null>(null);
 
-  const progressBarCompact =
-    daemonHeight === null || walletBlockchainCurrentHeight === null ? (
-      <ProgressBar
-        state={refreshError ? "error" : "loading"}
-        size="sm"
-        text={refreshError || "Connecting..."}
-      />
-    ) : refreshing ? (
-      <ProgressBar
-        size="sm"
-        state={downloadInfo ? "progress" : "loading"}
-        value={
-          downloadInfo
-            ? (downloadInfo.progressLoaded / downloadInfo.progressTotal) * 100
-            : 0
-        }
-        text={
-          daemonHeight > walletBlockchainCurrentHeight
-            ? `${daemonHeight - walletBlockchainCurrentHeight} blocks left` +
-              (secondsPerBlockOnInitialSync
-                ? showEstimatedTime(
-                    secondsPerBlockOnInitialSync,
-                    daemonHeight - walletBlockchainCurrentHeight,
-                  )
-                : "")
-            : "Refreshing..."
-        }
-      />
-    ) : isSynced ? (
-      <SynchronizedWithTimer size="sm" lastSyncTimestamp={lastSyncTimestamp} />
-    ) : refreshError ? (
-      <ProgressBar size="sm" state="error" text={refreshError} />
-    ) : (
-      // When not synced but no error and not syncing
-      // Should not happen, but might occur between initial refreshes
-      <ProgressBar size="sm" state="loading" text="Loading..." />
-    );
+  const isInMultisigSetupProcess =
+    status &&
+    status.multisigStatus.multisig_is_active &&
+    !status.multisigStatus.is_ready;
 
-  const availableAtomic = balance ? balance.nonStrict.unlocked.balance : null;
-  const lockedAtomic = balance
-    ? balance.nonStrict.value - balance.nonStrict.unlocked.balance
+  const progressBarCompact = !status ? (
+    <ProgressBar
+      state={refreshError ? "error" : "loading"}
+      size="sm"
+      text={refreshError || "Connecting..."}
+    />
+  ) : isInMultisigSetupProcess ? (
+    <ProgressBar
+      size="sm"
+      state={"loading"}
+      text={"(kex exchange in progress)"}
+    />
+  ) : refreshing ? (
+    <ProgressBar
+      size="sm"
+      state={downloadInfo ? "progress" : "loading"}
+      value={
+        downloadInfo
+          ? (downloadInfo.progressLoaded / downloadInfo.progressTotal) * 100
+          : 0
+      }
+      text={
+        !status.isSynced && status.daemonHeight > status.walletHeight
+          ? `${status.daemonHeight - status.walletHeight} blocks left` +
+            (secondsPerBlockOnInitialSync
+              ? showEstimatedTime(
+                  secondsPerBlockOnInitialSync,
+                  status.daemonHeight - status.walletHeight,
+                )
+              : "")
+          : "Refreshing..."
+      }
+    />
+  ) : status.isSynced ? (
+    <SynchronizedWithTimer size="sm" lastSyncTimestamp={status.obtainedAt} />
+  ) : refreshError ? (
+    <ProgressBar size="sm" state="error" text={refreshError} />
+  ) : (
+    // When not synced but no error and not syncing
+    // Should not happen, but might occur between initial refreshes
+    <ProgressBar size="sm" state="loading" text="Loading..." />
+  );
+
+  const availableBalance = status
+    ? status.balance.nonStrict.unlocked.balance
+    : null;
+  const lockedBalance = status
+    ? status.balance.nonStrict.value - status.balance.nonStrict.unlocked.balance
     : null;
   const availableXmrText =
-    availableAtomic !== null
-      ? `${balanceToString(availableAtomic)} XMR`
+    availableBalance !== null
+      ? `${balanceToString(availableBalance)} XMR`
       : "Loading...";
   const lockedXmrText =
-    lockedAtomic !== null
-      ? `${balanceToString(lockedAtomic)} XMR`
+    lockedBalance !== null
+      ? `${balanceToString(lockedBalance)} XMR`
       : "Loading...";
   const availableEurText =
-    availableAtomic !== null && price
-      ? `~${toFiat(availableAtomic, price).toFixed(2)} EUR`
+    availableBalance !== null && price
+      ? `~${toFiat(availableBalance, price).toFixed(2)} EUR`
       : "—";
   const lockedEurText =
-    lockedAtomic !== null && price
-      ? `~${toFiat(lockedAtomic, price).toFixed(2)} EUR`
+    lockedBalance !== null && price
+      ? `~${toFiat(lockedBalance, price).toFixed(2)} EUR`
       : "—";
 
-  const isSyncingNow = refreshing || !isSynced;
-  const syncStatusLabel = isSyncingNow ? "Syncing" : "Synced";
+  const isSyncingNow = refreshing || (status && !status.isSynced);
+  const syncStatusLabel = isInMultisigSetupProcess
+    ? "Waiting"
+    : isSyncingNow
+      ? "Syncing"
+      : "Synced";
   const syncStatusTone = isSyncingNow
     ? "bg-amber-500/10 text-amber-200 ring-amber-400/20"
     : "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20";
@@ -425,6 +490,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     wallet,
     price: price,
   });
+  const isShouldHideMultisigTab =
+    !!status &&
+    !!mempoolPayments &&
+    !status.multisigStatus.multisig_is_active &&
+    (status.payments.length > 0 || mempoolPayments.length > 0);
 
   return (
     <div className="space-y-5 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
@@ -433,12 +503,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         <div className="relative space-y-4">
           <div className="flex flex-col gap-3">
             <div className="min-w-0">
-              {/*
-              // TODO: Show something meaningfull here
-              <div className="text-xs tracking-[0.18em] uppercase text-white/45">
-                  Monero wallet
-              </div>
-              */}
+              {
+                <div className="text-xs tracking-[0.18em] uppercase text-white/45">
+                  {status?.multisigStatus.multisig_is_active ? "Multisig" : ""}
+                </div>
+              }
               <h1 className="text-glow text-2xl leading-tight font-bold sm:text-3xl">
                 Amethyst XMR
               </h1>
@@ -454,12 +523,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 >
                   {syncStatusLabel}
                 </div>
-                {daemonHeight !== null &&
-                  walletBlockchainCurrentHeight !== null && (
-                    <span className="text-[11px] text-white/45">
-                      {walletBlockchainCurrentHeight}/{daemonHeight}
-                    </span>
-                  )}
+                {status && (
+                  <span className="text-[11px] text-white/45">
+                    {status.walletHeight}/{status.daemonHeight}
+                  </span>
+                )}
               </div>
               {progressBarCompact}
             </div>
@@ -481,6 +549,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               bottomLabel="locked"
             />
           </div>
+          {status?.hasMultisigPartialKeyImages && (
+            <div className="slow-blink text-center text-xs text-amber-200/95">
+              User action required in multisig tab
+            </div>
+          )}
         </div>
       </SectionPanel>
 
@@ -493,15 +566,16 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               label: "Receive",
               content: (
                 <ReceiveAddresses
-                  primaryAddress={primaryAddress}
-                  secondaryAddresses={secondaryAddresses || undefined}
-                  payments={payments}
+                  addresses={addresses}
+                  payments={status?.payments || null}
                   mempoolPayments={mempoolPayments}
                   price={price}
                   onAddSubaddressAdd={async (newLabel) => {
-                    await wallet.add_subaddress(0, newLabel);
-                    await saveWalletIntoFs(wallet);
-                    updateSecondaryAddresses();
+                    await withFsLock(async () => {
+                      await wallet.add_subaddress(0, newLabel);
+                      await wallet.store();
+                    });
+                    await updateWalletAddresses();
                   }}
                 />
               ),
@@ -516,14 +590,36 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               label: "Transactions",
               content: (
                 <TransactionsTab
-                  payments={payments}
-                  secondaryAddresses={secondaryAddresses}
+                  payments={status?.payments || null}
+                  addresses={addresses}
                   mempoolPayments={mempoolPayments}
-                  daemonLastBlockHeight={daemonHeight}
+                  daemonLastBlockHeight={status?.daemonHeight ?? null}
                   price={price}
                 />
               ),
             },
+            ...(!isShouldHideMultisigTab
+              ? [
+                  {
+                    key: "multisig",
+                    label: "Multisig",
+                    content: (
+                      <MultisigTab
+                        wallet={wallet}
+                        multisigStatus={status?.multisigStatus ?? null}
+                        hasMultisigPartialKeyImages={
+                          status?.hasMultisigPartialKeyImages ?? false
+                        }
+                        onRefresh={stopWaitingOrScheduleNoWait}
+                        payments={status?.payments || null}
+                        mempoolPayments={mempoolPayments}
+                        walletHeight={status?.walletHeight ?? null}
+                        daemonHeight={status?.daemonHeight ?? null}
+                      />
+                    ),
+                  },
+                ]
+              : []),
             {
               key: "other",
               label: "Other",
@@ -532,9 +628,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   onExit={onExit}
                   wallet={wallet}
                   onRefresh={stopWaitingOrScheduleNoWait}
-                  lastRefreshTimestamp={lastSyncTimestamp}
-                  daemonLastBlockHeight={daemonHeight}
-                  payments={payments}
+                  lastRefreshTimestamp={status?.obtainedAt ?? null}
+                  daemonLastBlockHeight={status?.daemonHeight ?? null}
+                  payments={status?.payments || null}
                   priceEur={priceInfo?.price ?? null}
                   priceSource={priceInfo?.source ?? null}
                   priceFetchedAt={priceInfo?.fetchedAt ?? null}

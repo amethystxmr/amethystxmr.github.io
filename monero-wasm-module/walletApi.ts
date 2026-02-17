@@ -17,6 +17,8 @@ export declare class MoneroWasmWallet {
   ): Promise<Uint8Array>;
   is_synced(): Promise<boolean>;
   store(): Promise<void>;
+  set_attribute(key: string, value: string): Promise<boolean>;
+  get_attribute(key: string): Promise<string>;
   load(fileName: string, password: string): Promise<void>;
   refresh(
     isTrustedWallet: boolean,
@@ -25,26 +27,28 @@ export declare class MoneroWasmWallet {
     tryIncremental: boolean,
     maxBlocks: bigint,
   ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
+  rewrite(fileName: string, password: string): Promise<void>;
   set_on_new_block_callback: (
     callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) => void;
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
-  get_address(): string;
-  get_wallet_file(): string;
-  balance(index_major: number, strict: boolean): bigint;
+  get_address(): Promise<string>;
+  get_wallet_file(): Promise<string>;
+  balance(index_major: number, strict: boolean): Promise<bigint>;
   unlocked_balance(
     index_major: number,
     strict: boolean,
-  ): {
+  ): Promise<{
     balance: bigint;
     blocks_to_unlock: bigint;
     time_to_unlock: bigint;
-  };
-  set_refresh_from_block_height(height: bigint): void;
+  }>;
+  set_refresh_from_block_height(height: bigint): Promise<boolean>;
+  set_explicit_refresh_from_block_height(value: boolean): Promise<boolean>;
   /**
    * Current height in the wallet. When it is same as get_daemon_blockchain_height() then it is synced
    */
-  get_blockchain_current_height(): bigint;
+  get_blockchain_current_height(): Promise<bigint>;
   get_blockchain_height_by_date(
     year: number,
     month: number,
@@ -56,9 +60,16 @@ export declare class MoneroWasmWallet {
     maxHeight: bigint,
   ): Promise<EmbindVector<PaymentDetails>>;
   get_payments_mempool(): Promise<EmbindVector<PaymentDetails>>;
-  get_num_subaddresses(index_major: number): number;
-  get_subaddress_as_str(index_major: number, index_minor: number): string;
-  get_subaddress_label(index_major: number, index_minor: number): string;
+  get_num_subaddresses(index_major: number): Promise<number>;
+  get_subaddress_as_str(
+    index_major: number,
+    index_minor: number,
+  ): Promise<string>;
+  get_subaddress_label(
+    index_major: number,
+    index_minor: number,
+  ): Promise<string>;
+  get_wallet_addresses(accountId: number): Promise<EmbindVector<WalletAddress>>;
   add_subaddress(index_major: number, label: string): Promise<void>;
   transfer_prepare(
     destination: string,
@@ -67,6 +78,25 @@ export declare class MoneroWasmWallet {
   ): Promise<PendingTxHandle>;
   transfer_get_fee(handle: PendingTxHandle): bigint;
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
+
+  get_multisig_status(): Promise<MultisigAccountStatus>;
+  has_multisig_partial_key_images(): Promise<boolean>;
+  has_unknown_key_images(): Promise<boolean>;
+  prepare_multisig(): Promise<string>;
+  /** Note: this function saves wallet, .keys and .address.txt files! */
+  make_multisig(
+    password: string,
+    initial_kex_msgs: string[],
+    threshold: number,
+  ): Promise<string>;
+  /**
+   * Note: this also saves files.
+   */
+  exchange_multisig_keys(password: string, kex_msgs: string[]): Promise<string>;
+  export_multisig(): Promise<Uint8Array>;
+  import_multisig(infos: Uint8Array[]): Promise<number>;
+  verify_password(password: string): Promise<boolean>;
+  rescan_blockchain(hard: boolean, keep_key_images: boolean): Promise<boolean>;
 }
 
 export const FeePriority = {
@@ -108,6 +138,26 @@ export interface PaymentDetails {
   index_minor: number;
   note: string;
 }
+
+export interface WalletAddress {
+  address: string;
+  label: string;
+  indexMinor: number;
+}
+
+interface multisig_account_status {
+  // is the multisig account active/initialized?
+  multisig_is_active: boolean;
+  // has the multisig account completed the main key exchange rounds?
+  kex_is_done: boolean;
+  // is the multisig account ready to use?
+  is_ready: boolean;
+  // multisig is: M-of-N
+  threshold: number; // M
+  total: number; // N
+}
+
+export type MultisigAccountStatus = multisig_account_status;
 
 interface ClassHandle {
   delete(): void;
@@ -266,9 +316,13 @@ export function listWalletNames() {
 
 export function deleteWalletFiles(walletName: string) {
   const names = new Set(module.FS.readdir("."));
-  for (const candidate of [walletName, `${walletName}.keys`]) {
-    if (names.has(candidate)) {
-      module.FS.unlink(candidate);
+  for (const name of names) {
+    if (
+      name === walletName ||
+      name === `${walletName}.keys` ||
+      name.startsWith(walletName + ".")
+    ) {
+      module.FS.unlink(name);
     }
   }
 }
@@ -302,28 +356,38 @@ export function renameWallet(oldName: string, newName: string) {
 export function getWalletFilesData(walletName: string) {
   const keysName = `${walletName}.keys`;
   const keysFileData = module.FS.readFile(keysName);
-  let walletFileData: Uint8Array | null = null;
-  if (isWalletFileExists(walletName)) {
-    walletFileData = module.FS.readFile(walletName);
-  }
-  // TODO: Might be other files line address.txt in the future, need to return them as well
-  // TODO the same for import
   let outFiles = [{ name: keysName, data: keysFileData }];
-  if (walletFileData) {
-    outFiles.push({ name: walletName, data: walletFileData });
+
+  for (const name of module.FS.readdir(".")) {
+    if (
+      name === walletName ||
+      (name.startsWith(walletName + ".") && name !== keysName)
+    ) {
+      const data = module.FS.readFile(name);
+      outFiles.push({ name, data });
+    }
   }
   return outFiles;
 }
 
 export function saveWalletFilesData(
-  keysFileData: Uint8Array,
-  walletFileData: Uint8Array | null,
   walletName: string,
+  keysFileData: Uint8Array,
+  otherFilesData: { name: string; data: Uint8Array }[],
 ) {
   const keysName = `${walletName}.keys`;
+  if (module.FS.readdir(".").includes(keysName)) {
+    throw new Error(`File ${keysName} already exists`);
+  }
+  for (const { name, data } of otherFilesData) {
+    if (module.FS.readdir(".").includes(name)) {
+      throw new Error(`File ${name} already exists`);
+    }
+  }
+
   module.FS.writeFile(keysName, keysFileData);
-  if (walletFileData) {
-    module.FS.writeFile(walletName, walletFileData);
+  for (const { name, data } of otherFilesData) {
+    module.FS.writeFile(name, data);
   }
 }
 
@@ -368,5 +432,17 @@ export function transformPayments(
     return Number(b.timestamp - a.timestamp);
   });
 
+  return result;
+}
+
+export function transformWalletAddresses(
+  addresses: EmbindVector<WalletAddress>,
+): WalletAddress[] {
+  const result: WalletAddress[] = [];
+  for (let i = 0; i < addresses.size(); i++) {
+    result.push(addresses.get(i));
+  }
+  addresses.delete();
+  result.sort((a, b) => a.indexMinor - b.indexMinor);
   return result;
 }
