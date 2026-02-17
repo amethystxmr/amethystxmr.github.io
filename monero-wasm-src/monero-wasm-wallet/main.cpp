@@ -28,19 +28,6 @@
 class MoneroWasmWallet : public tools::i_wallet2_callback
 {
 public:
-    static emscripten::val copy_bytes_to_uint8_array(const std::uint8_t *data, size_t size)
-    {
-        auto out = emscripten::val::global("Uint8Array").new_(size);
-        if (size == 0)
-        {
-            return out;
-        }
-
-        // Copy in one call to avoid per-byte embind overhead for large buffers.
-        out.call<void>("set", emscripten::val(emscripten::typed_memory_view(size, data)));
-        return out;
-    }
-
     // Full wallet callbacks
     void on_new_block(uint64_t height, const cryptonote::block &block) override
     {
@@ -771,6 +758,19 @@ public:
     }
 
 private:
+    static emscripten::val copy_bytes_to_uint8_array(const std::uint8_t *data, size_t size)
+    {
+        auto out = emscripten::val::global("Uint8Array").new_(size);
+        if (size == 0)
+        {
+            return out;
+        }
+
+        // Copy in one call to avoid per-byte embind overhead for large buffers.
+        out.call<void>("set", emscripten::val(emscripten::typed_memory_view(size, data)));
+        return out;
+    }
+
     template <class WorkFn, class PackFn>
     emscripten::val promise(WorkFn &&work, PackFn &&pack_to_js)
     {
