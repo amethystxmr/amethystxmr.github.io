@@ -15,49 +15,6 @@ import {
 } from "../ui";
 import { withFsLock } from "../utils";
 
-type MultisigUiState =
-  | { type: "loading" }
-  | {
-      type: "no multisig";
-      prepareMessage:
-        | {
-            type: "loading";
-          }
-        | {
-            type: "ready";
-            message: string;
-          }
-        | {
-            type: "error";
-            error: string;
-          }
-        | {
-            type: "not possible";
-            reason: string;
-          };
-      othersKexMessages: string;
-      participants: number;
-      threshold: number;
-      showAllParticipants: boolean;
-      making: boolean;
-    }
-  | {
-      type: "multisig setup in progress";
-      status: MultisigAccountStatus;
-      myLastKexMessage: string | Error;
-      myLastKexRound: string | Error;
-      othersKexMessages: string;
-      exchanging: boolean;
-    }
-  | {
-      type: "multisig is ready";
-      status: MultisigAccountStatus;
-    }
-  | {
-      type: "error";
-      message: string;
-    };
-
 const PARTICIPANT_OPTIONS = Array.from({ length: 15 }, (_, i) => i + 2);
 
 function MultisigTabWrap({ children }: React.PropsWithChildren) {
@@ -67,8 +24,15 @@ function MultisigTabWrap({ children }: React.PropsWithChildren) {
 const LAST_KEX_MESSAGE_ATTRIBUTE = "amethystxmr_last_kex_message";
 const LAST_MULTISIG_KEX_ROUND_ATTRIBUTE = "amethystxmr_last_multisig_kex_round";
 
+type BusyState = "idle" | "preparing" | "making" | "exchanging";
+type LoadableString =
+  | { type: "loading" }
+  | { type: "ready"; value: string }
+  | { type: "error"; error: string };
+
 export function MultisigTab({
   wallet,
+  multisigStatus,
   onRefresh,
   payments,
   mempoolPayments,
@@ -76,6 +40,7 @@ export function MultisigTab({
   daemonHeight,
 }: {
   wallet: MoneroWasmWallet;
+  multisigStatus: MultisigAccountStatus | null;
   onRefresh: () => void;
   payments: PaymentDetailsTransformed[] | null;
   mempoolPayments: PaymentDetailsTransformed[] | null;
@@ -83,39 +48,47 @@ export function MultisigTab({
   daemonHeight: bigint | null;
 }) {
   const alert = useAlert();
-  const [state, setState] = React.useState<MultisigUiState>({
+  const { promptForWalletPassword, passwordPromptDialog } = usePasswordPrompt();
+
+  // TODO: Make it just a boolean
+  const [busy, setBusy] = React.useState<BusyState>("idle");
+
+  // State model:
+  // 1) `multisigStatus === null` -> initial loading.
+  // 2) `!multisig_is_active` -> prepare flow.
+  // 3) `multisig_is_active && is_ready` -> ready summary.
+  // 4) `multisig_is_active && !is_ready` -> exchange flow.
+
+  // No-multisig flow state
+  const [allowPrepareWhileSyncing, setAllowPrepareWhileSyncing] =
+    React.useState(false);
+  const [myRound1Message, setMyRound1Message] =
+    React.useState<LoadableString | null>(null);
+  const [participants, setParticipants] = React.useState(3);
+  const [threshold, setThreshold] = React.useState(2);
+  const [showAllParticipants, setShowAllParticipants] = React.useState(false);
+  const [othersRound1Messages, setOthersRound1Messages] = React.useState("");
+
+  // Active multisig setup state
+  const [myLastKexMessage, setMyLastKexMessage] =
+    React.useState<LoadableString>({ type: "loading" });
+  const [myLastKexRound, setMyLastKexRound] = React.useState<LoadableString>({
     type: "loading",
   });
+  const [othersRoundMessages, setOthersRoundMessages] = React.useState("");
 
-  // TODO: Refactor and fix this component
-  // - get multisig status from status from root
-  // - if no status then render "loading initial status"
-  // - 3 main cases depending on incoming status:
-  //   - if multisig is not enabled (multisig_is_active === false):
-  //     - show information about multisig (2-3 paragraphs)
-  //     - show button "Prepare multisig"
-  //     - if wallet is not synced then disable button and add label "Wallet is not synced yet"
-  //       - but add a note that it is possiblet to prepare multisig before wallet is fully synced, but it is recommended to wait until it is synced
-  //       - and make it possible to prepare multisig before wallet is fully synced, but show a warning in that case
-  //     - if wallet has payments (includng mempool) then disable button and show "Not possible when wallet has transfers"
-  //     - when user clicks "Prepare multisig" do this:
-  //       - call wallet.prepare_multisig
-  //       - show UI similar to what we have with my round1 message and textinput for others
-  //          - with toggle for participants and threshold of course
-  //       - if prepare_multisig did error show an error in text field with visual error style (red border for example)
-  //       - when user clicks "make multisig" do the same as we do here
-  //   - if multisig.is_ready
-  //     - show multisig information (threshold, members)
-  //   - if multisig is not ready:
-  //      - fetch last message and last round from attributes
-  //        - show "loading" or "error" or "data" in UI fields
-  //      - show UI similar to what we have showing my last message,
-  //          current round, total rounds (members - threshold + 2) and textarea for others
-  //      - on "exchange keys" do the same
-  //  - you can keep "busy, setBusy" state as global state for component
-  //  - all loading side-effects should depend from incoming status and derived contitions (i.e. 3 cases = 2 booleans)
+  const isWalletSyncing =
+    walletHeight !== null &&
+    daemonHeight !== null &&
+    walletHeight < daemonHeight;
+  const hasAnyPayments =
+    payments !== null &&
+    mempoolPayments !== null &&
+    (payments.length > 0 || mempoolPayments.length > 0);
 
-  const { promptForWalletPassword, passwordPromptDialog } = usePasswordPrompt();
+  const isPrepareBlockedByPayments = hasAnyPayments;
+  const isPrepareBlockedBySync = isWalletSyncing && !allowPrepareWhileSyncing;
+
   const requestValidWalletPassword = React.useCallback(async () => {
     if (await wallet.verify_password("")) {
       return "";
@@ -132,546 +105,432 @@ export function MultisigTab({
       message = "Incorrect wallet password. Try again.";
     }
   }, [promptForWalletPassword, wallet]);
-  const isPropsLoading =
-    payments === null ||
-    mempoolPayments === null ||
-    walletHeight === null ||
-    daemonHeight === null;
-  const isWalletSyncing =
-    walletHeight !== null &&
-    daemonHeight !== null &&
-    walletHeight < daemonHeight;
-  const hasAnyPayments =
-    payments !== null &&
-    mempoolPayments !== null &&
-    (payments.length > 0 || mempoolPayments.length > 0);
 
-  // Load first multisig message
+  // Load current setup-round attributes only while multisig is active and not ready.
   React.useEffect(() => {
-    if (state.type !== "no multisig") {
-      return;
-    }
-
-    if (state.prepareMessage.type !== "loading") {
-      return;
-    }
-
-    // TODO: When wallet has no txes but become synced this is not updated
-    if (isPropsLoading || isWalletSyncing) {
-      setState({
-        ...state,
-        prepareMessage: {
-          type: "not possible",
-          reason: "Wallet is still syncing",
-        },
-      });
-      return;
-    }
-    if (hasAnyPayments) {
-      setState({
-        ...state,
-        prepareMessage: {
-          type: "not possible",
-          reason: "Wallet has payments, unable to do multisig",
-        },
-      });
+    if (
+      multisigStatus === null ||
+      !multisigStatus.multisig_is_active ||
+      multisigStatus.is_ready
+    ) {
       return;
     }
 
     let cancelled = false;
+    setMyLastKexMessage({ type: "loading" });
+    setMyLastKexRound({ type: "loading" });
 
-    wallet
-      .prepare_multisig()
-      .then((message) => {
+    Promise.all([
+      wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE),
+      wallet.get_attribute(LAST_MULTISIG_KEX_ROUND_ATTRIBUTE),
+    ])
+      .then(([lastKexMessage, lastKexRound]) => {
         if (cancelled) {
           return;
         }
-        setState((prev) => {
-          if (prev.type !== "no multisig") {
-            return prev;
-          }
-          return {
-            ...prev,
-            prepareMessage: { type: "ready", message },
-          };
-        });
+        setMyLastKexMessage({ type: "ready", value: lastKexMessage });
+        setMyLastKexRound({ type: "ready", value: lastKexRound });
       })
       .catch((e) => {
         if (cancelled) {
           return;
         }
-        const message =
-          (e as Error)?.message || "Unknown error while preparing multisig";
-        setState((prev) => {
-          if (prev.type !== "no multisig") {
-            return prev;
-          }
-          return {
-            ...prev,
-            prepareMessage: { type: "error", error: message },
-          };
-        });
-      });
-
-    if (cancelled) {
-      return;
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [state, isWalletSyncing, hasAnyPayments, isPropsLoading, wallet]);
-
-  React.useEffect(() => {
-    if (state.type !== "loading") {
-      return;
-    }
-
-    let cancelled = false;
-
-    wallet
-      .get_multisig_status()
-      .then((status) => {
-        if (cancelled) {
-          return;
-        }
-
-        if (!status.multisig_is_active) {
-          setState({
-            type: "no multisig",
-            prepareMessage: {
-              type: "loading",
-            },
-            othersKexMessages: "",
-            participants: 3,
-            threshold: 2,
-            showAllParticipants: false,
-            making: false,
-          });
-          return;
-        }
-
-        if (!status.is_ready) {
-          Promise.all([
-            wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE).catch((e) => {
-              console.error("Failed to get last kex message:", e);
-              if (e instanceof Error) {
-                return e;
-              }
-              return new Error("Unknown error");
-            }),
-            wallet
-              .get_attribute(LAST_MULTISIG_KEX_ROUND_ATTRIBUTE)
-              .catch((e) => {
-                console.error("Failed to get last multisig kex round:", e);
-                if (e instanceof Error) {
-                  return e;
-                }
-                return new Error("Unknown error");
-              }),
-          ])
-
-            .then(([lastKexMessage, lastKexRound]) => {
-              if (cancelled) {
-                return;
-              }
-              setState((prev) => {
-                if (prev.type !== "loading") {
-                  return prev;
-                }
-                return {
-                  type: "multisig setup in progress",
-                  status,
-                  myLastKexMessage: lastKexMessage,
-                  myLastKexRound: lastKexRound,
-                  othersKexMessages: "",
-                  exchanging: false,
-                };
-              });
-            });
-        } else {
-          setState({ type: "multisig is ready", status });
-        }
-      })
-      .catch((e) => {
-        if (cancelled) {
-          return;
-        }
-        const message =
-          (e as Error)?.message ||
-          "Unknown error while loading multisig status";
-        setState({ type: "error", message });
+        const message = (e as Error)?.message || "Unknown error";
+        setMyLastKexMessage({ type: "error", error: message });
+        setMyLastKexRound({ type: "error", error: message });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [alert, hasAnyPayments, isPropsLoading, isWalletSyncing, wallet, state]);
+  }, [multisigStatus, wallet]);
+
+  // TODO: Add "cancelled" into all React.useCallback(async () =>
+  // continue operation but do not update state if cancelled) to prevent
+  // updating state after unmounting or after multisig status changes.
+
+  const handlePrepareMultisig = React.useCallback(async () => {
+    if (busy !== "idle") {
+      return;
+    }
+    if (isPrepareBlockedByPayments || isPrepareBlockedBySync) {
+      return;
+    }
+
+    setBusy("preparing");
+    setMyRound1Message({ type: "loading" });
+    try {
+      const message = await wallet.prepare_multisig();
+      setMyRound1Message({ type: "ready", value: message });
+    } catch (e) {
+      const errorMessage =
+        (e as Error)?.message || "Unknown error while preparing multisig";
+      setMyRound1Message({ type: "error", error: errorMessage });
+    } finally {
+      setBusy("idle");
+    }
+  }, [busy, isPrepareBlockedByPayments, isPrepareBlockedBySync, wallet]);
 
   const handleMakeMultisig = React.useCallback(async () => {
-    if (state.type !== "no multisig" || state.making) {
+    if (busy !== "idle") {
       return;
     }
+    if (myRound1Message?.type !== "ready") {
+      return;
+    }
+
     try {
-      setState({ ...state, making: true });
-      const othersKexMessages = state.othersKexMessages;
-      const messages = othersKexMessages
+      setBusy("making");
+      const messages = othersRound1Messages
         .split(/[\s\n]+/)
         .map((m) => m.trim())
         .filter((m) => m.length > 0);
-      if (messages.length !== state.participants) {
-        throw new Error(`Expected ${state.participants} messages`);
+      if (messages.length !== participants) {
+        throw new Error(`Expected ${participants} messages`);
       }
 
       const password = await requestValidWalletPassword();
       if (password === null) {
-        setState({ ...state, making: false });
+        setBusy("idle");
         return;
       }
 
-      const r = await withFsLock(async () => {
+      await withFsLock(async () => {
         const nextKexMessage = await wallet.make_multisig(
           password,
           messages.join(" "),
-          state.threshold,
+          threshold,
         );
         await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
         await wallet.set_attribute(LAST_MULTISIG_KEX_ROUND_ATTRIBUTE, "1");
         await wallet.store();
-        return nextKexMessage;
       });
-      console.log("make_multisig result:", r);
 
       onRefresh();
-      setState({
-        type: "loading",
-      });
     } catch (e) {
       const message =
         (e as Error)?.message || "Unknown error while making multisig";
-      setState({ ...state, making: false });
       await alert(message);
+    } finally {
+      setBusy("idle");
     }
-  }, [alert, onRefresh, requestValidWalletPassword, state]);
+  }, [
+    alert,
+    busy,
+    onRefresh,
+    othersRound1Messages,
+    participants,
+    myRound1Message,
+    requestValidWalletPassword,
+    threshold,
+    wallet,
+  ]);
 
   const handleExchangeMultisigKeys = React.useCallback(async () => {
-    if (state.type !== "multisig setup in progress" || state.exchanging) {
+    if (busy !== "idle") {
       return;
     }
-    try {
-      setState({ ...state, exchanging: true });
 
-      const othersKexMessages = state.othersKexMessages;
-      const messages = othersKexMessages
+    try {
+      setBusy("exchanging");
+
+      const messages = othersRoundMessages
         .split(/[\s\n]+/)
         .map((m) => m.trim())
         .filter((m) => m.length > 0);
 
       const password = await requestValidWalletPassword();
       if (password === null) {
-        setState({ ...state, exchanging: false });
+        setBusy("idle");
         return;
       }
-      const r = await withFsLock(async () => {
+
+      await withFsLock(async () => {
         const nextKexMessage = await wallet.exchange_multisig_keys(
           password,
           messages.join(" "),
         );
         await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
+
+        const nextRound =
+          myLastKexRound.type === "ready" && myLastKexRound.value !== ""
+            ? String(Number(myLastKexRound.value) + 1)
+            : "";
         await wallet.set_attribute(
           LAST_MULTISIG_KEX_ROUND_ATTRIBUTE,
-          state.myLastKexRound instanceof Error
-            ? ""
-            : String(Number(state.myLastKexRound) + 1),
+          nextRound,
         );
         await wallet.store();
-        return nextKexMessage;
       });
-      console.log("exchange_multisig_keys result:", r);
+
       onRefresh();
-      setState({
-        type: "loading",
-      });
     } catch (e) {
       const message =
         (e as Error)?.message || "Unknown error while exchanging multisig keys";
-      setState({ ...state, exchanging: false });
       await alert(`Failed to exchange multisig keys: ${message}`);
+    } finally {
+      setBusy("idle");
     }
-  }, [alert, onRefresh, state]);
+  }, [
+    alert,
+    busy,
+    myLastKexRound,
+    onRefresh,
+    othersRoundMessages,
+    requestValidWalletPassword,
+    wallet,
+  ]);
 
-  /*
-  if (isPropsLoading) {
+  if (multisigStatus === null) {
     return (
       <MultisigTabWrap>
         <SurfaceCard className="text-sm text-white/75">
-          Loading wallet state...
-        </SurfaceCard>
-      </MultisigTabWrap>
-    );
-  }
-  
-  if (isWalletSyncing) {
-    return (
-      <MultisigTabWrap>
-        <SurfaceCard className="text-sm text-white/75">
-          Wallet is still syncing...
-        </SurfaceCard>
-      </MultisigTabWrap>
-    );
-  }
-  if (hasAnyPayments) {
-    return (
-      <MultisigTabWrap>
-        <SurfaceCard className="text-sm text-white/75">
-          Wallet has payments, unable to do multisig
-        </SurfaceCard>
-      </MultisigTabWrap>
-    );
-  }
-    */
-
-  if (state.type === "loading") {
-    return (
-      <MultisigTabWrap>
-        <SurfaceCard className="text-sm text-white/75">
-          Loading multisig status...
+          Loading initial status...
         </SurfaceCard>
       </MultisigTabWrap>
     );
   }
 
-  if (state.type === "no multisig") {
-    if (state.prepareMessage.type === "not possible") {
-      return (
-        <MultisigTabWrap>
-          <SurfaceCard className="text-sm text-white/75">
-            {state.prepareMessage.reason}
-          </SurfaceCard>
-        </MultisigTabWrap>
-      );
-    }
+  if (!multisigStatus.multisig_is_active) {
     return (
       <>
         <MultisigTabWrap>
           <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-            <div className="space-y-1">
-              <Label>Your round 1 message</Label>
-              <TextArea
-                readOnly
-                rows={1}
-                className="resize-none overflow-hidden [field-sizing:content]"
-                value={
-                  state.prepareMessage.type === "loading"
-                    ? "Loading..."
-                    : state.prepareMessage.type === "error"
-                      ? `Error: ${state.prepareMessage.error}`
-                      : state.prepareMessage.type === "ready"
-                        ? state.prepareMessage.message
-                        : (state.prepareMessage satisfies never)
-                }
-              />
-            </div>
+            {myRound1Message === null ? (
+              <>
+                <div className="space-y-2 text-sm text-white/75">
+                  <p>
+                    Multisig lets this wallet require multiple participants to
+                    authorize spending (for example, 2-of-3).
+                  </p>
+                  <p>
+                    {/* // TODO: Change text: there might be multiple rounds of key exchange */}
+                    Start by generating your round 1 message, then collect round
+                    1 messages from all participants and make the multisig
+                    wallet.
+                  </p>
+                  <p>
+                    This is recommended on a wallet with no transfers. If the
+                    wallet is still syncing, waiting is recommended but you can
+                    continue at your own risk.
+                  </p>
+                </div>
 
-            <div className="space-y-1 lg:grid lg:grid-cols-[190px_minmax(0,1fr)] lg:items-start lg:gap-2 lg:space-y-0">
-              <div className="text-sm font-semibold text-white/85">
-                Amount of participants
-              </div>
-              <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-8 lg:gap-1">
-                {(state.showAllParticipants
-                  ? PARTICIPANT_OPTIONS
-                  : [2, 3, 4]
-                ).map((option) => (
-                  <Button
-                    key={option}
-                    type="button"
-                    className="w-full px-2.5 py-1.5 text-xs"
-                    variant={option === state.participants ? "primary" : "soft"}
-                    disabled={state.making}
-                    onClick={() => {
-                      setState((prev) => {
-                        if (prev.type !== "no multisig") {
-                          return prev;
-                        }
-                        const nextThreshold = Math.min(prev.threshold, option);
-                        return {
-                          ...prev,
-                          participants: option,
-                          threshold: nextThreshold,
-                        };
-                      });
-                    }}
-                  >
-                    {option}
-                  </Button>
-                ))}
-                {!state.showAllParticipants && (
-                  <Button
-                    type="button"
-                    className="w-full px-2.5 py-1.5 text-xs"
-                    variant="soft"
-                    disabled={state.making}
-                    onClick={() =>
-                      setState((prev) =>
-                        prev.type !== "no multisig"
-                          ? prev
-                          : { ...prev, showAllParticipants: true },
-                      )
-                    }
-                  >
-                    More
-                  </Button>
+                {isPrepareBlockedByPayments && (
+                  <SurfaceCard className="text-sm text-white/75">
+                    Not possible when wallet has transfers.
+                  </SurfaceCard>
                 )}
-              </div>
-            </div>
 
-            <ButtonRadioRow
-              label="Threshold"
-              options={Array.from(
-                { length: state.participants },
-                (_, i) => i + 1,
-              )}
-              value={state.threshold}
-              compact
-              disabled={state.making}
-              onChange={(threshold) =>
-                setState((prev) =>
-                  prev.type !== "no multisig"
-                    ? prev
-                    : {
-                        ...prev,
-                        threshold,
-                      },
-                )
-              }
-            />
+                {isWalletSyncing && (
+                  <SurfaceCard className="space-y-2 text-sm text-white/75">
+                    <div>Wallet is not synced yet.</div>
+                    <div className="text-white/65">
+                      You can still make multisig now, but it is recommended to
+                      wait until sync completes.
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-white/80">
+                      <input
+                        type="checkbox"
+                        className="accent-white"
+                        checked={allowPrepareWhileSyncing}
+                        onChange={(e) =>
+                          setAllowPrepareWhileSyncing(e.target.checked)
+                        }
+                      />
+                      Allow start multisig while syncing
+                    </label>
+                  </SurfaceCard>
+                )}
 
-            <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-              <Label>All participants round 1 messages</Label>
-              <TextArea
-                rows={10}
-                className="resize-none lg:min-h-0 lg:flex-1"
-                value={state.othersKexMessages}
-                onChange={(e) =>
-                  setState((prev) =>
-                    prev.type !== "no multisig"
-                      ? prev
-                      : { ...prev, othersKexMessages: e.target.value },
-                  )
-                }
-              />
-            </div>
+                <Button
+                  variant="primary"
+                  className="!flex-none w-full py-2.5"
+                  disabled={
+                    busy !== "idle" ||
+                    isPrepareBlockedByPayments ||
+                    isPrepareBlockedBySync
+                  }
+                  onClick={() => {
+                    void handlePrepareMultisig();
+                  }}
+                >
+                  {busy === "preparing"
+                    ? "Preparing multisig..."
+                    : "Prepare multisig"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <Label>Your round 1 message</Label>
+                  <TextArea
+                    readOnly
+                    rows={1}
+                    className={`resize-none overflow-hidden [field-sizing:content] ${myRound1Message.type === "error" ? "border border-red-400/60" : ""}`}
+                    value={
+                      myRound1Message.type === "loading"
+                        ? "Loading..."
+                        : myRound1Message.type === "error"
+                          ? `Error: ${myRound1Message.error}`
+                          : myRound1Message.value
+                    }
+                  />
+                </div>
 
-            <Button
-              variant="primary"
-              className="!flex-none w-full py-2.5"
-              disabled={state.making}
-              onClick={() => {
-                void handleMakeMultisig();
-              }}
-            >
-              {state.making
-                ? `Making ${state.threshold}/${state.participants} multisig...`
-                : `Make ${state.threshold}/${state.participants} multisig`}
-            </Button>
+                <div className="space-y-1 lg:grid lg:grid-cols-[190px_minmax(0,1fr)] lg:items-start lg:gap-2 lg:space-y-0">
+                  <div className="text-sm font-semibold text-white/85">
+                    Amount of participants
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-8 lg:gap-1">
+                    {(showAllParticipants
+                      ? PARTICIPANT_OPTIONS
+                      : [2, 3, 4]
+                    ).map((option) => (
+                      <Button
+                        key={option}
+                        type="button"
+                        className="w-full px-2.5 py-1.5 text-xs"
+                        variant={option === participants ? "primary" : "soft"}
+                        disabled={busy !== "idle"}
+                        onClick={() => {
+                          setParticipants(option);
+                          setThreshold((prev) => Math.min(prev, option));
+                        }}
+                      >
+                        {option}
+                      </Button>
+                    ))}
+                    {!showAllParticipants && (
+                      <Button
+                        type="button"
+                        className="w-full px-2.5 py-1.5 text-xs"
+                        variant="soft"
+                        disabled={busy !== "idle"}
+                        onClick={() => setShowAllParticipants(true)}
+                      >
+                        More
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <ButtonRadioRow
+                  label="Threshold"
+                  options={Array.from(
+                    { length: participants },
+                    (_, i) => i + 1,
+                  )}
+                  value={threshold}
+                  compact
+                  disabled={busy !== "idle"}
+                  onChange={setThreshold}
+                />
+
+                <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                  <Label>All participants round 1 messages</Label>
+                  <TextArea
+                    rows={10}
+                    className="resize-none lg:min-h-0 lg:flex-1"
+                    value={othersRound1Messages}
+                    onChange={(e) => setOthersRound1Messages(e.target.value)}
+                  />
+                </div>
+
+                <Button
+                  variant="primary"
+                  className="!flex-none w-full py-2.5"
+                  disabled={busy !== "idle" || myRound1Message.type !== "ready"}
+                  onClick={() => {
+                    void handleMakeMultisig();
+                  }}
+                >
+                  {busy === "making"
+                    ? `Making ${threshold}/${participants} multisig...`
+                    : `Make ${threshold}/${participants} multisig`}
+                </Button>
+              </>
+            )}
           </SurfaceCard>
         </MultisigTabWrap>
         {passwordPromptDialog}
       </>
     );
   }
-  if (state.type === "multisig setup in progress") {
-    const thisRound =
-      state.myLastKexRound instanceof Error
-        ? `[${state.myLastKexRound.message}]`
-        : state.myLastKexRound === ""
-          ? "[error]"
-          : Number(state.myLastKexRound) + 1;
-    return (
-      <>
-        <MultisigTabWrap>
-          <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-            <div className="text-sm font-semibold text-white/85">
-              Setting up {state.status.threshold}/{state.status.total} multisig,
-              round {thisRound}
-            </div>
-            <div className="space-y-1">
-              <Label>Your message for this round</Label>
-              <TextArea
-                readOnly
-                rows={1}
-                className="resize-none overflow-hidden [field-sizing:content]"
-                value={
-                  state.myLastKexMessage instanceof Error
-                    ? `Error: ${state.myLastKexMessage.message}`
-                    : state.myLastKexMessage === ""
-                      ? "Error: no attribute found"
-                      : state.myLastKexMessage
-                }
-              />
-            </div>
-            <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-              <Label>All participants round {thisRound} messages</Label>
-              <TextArea
-                rows={12}
-                className="resize-none lg:min-h-0 lg:flex-1"
-                value={state.othersKexMessages}
-                onChange={(e) =>
-                  setState((prev) =>
-                    prev.type !== "multisig setup in progress"
-                      ? prev
-                      : { ...prev, othersKexMessages: e.target.value },
-                  )
-                }
-              />
-            </div>
-            <Button
-              variant="primary"
-              className="!flex-none w-full py-2.5"
-              disabled={state.exchanging}
-              onClick={() => {
-                void handleExchangeMultisigKeys();
-              }}
-            >
-              {state.exchanging
-                ? "Exchanging keys..."
-                : "Exchange multisig keys"}
-            </Button>
-          </SurfaceCard>
-        </MultisigTabWrap>
-        {passwordPromptDialog}
-      </>
-    );
-  }
-  if (state.type === "multisig is ready") {
+
+  if (multisigStatus.is_ready) {
     return (
       <MultisigTabWrap>
         <SurfaceCard className="space-y-1 text-sm text-white/75">
           <div className="text-white/90">Wallet is multisig</div>
           <div>
-            {state.status.threshold}-of-{state.status.total}
+            {multisigStatus.threshold}-of-{multisigStatus.total}
           </div>
         </SurfaceCard>
       </MultisigTabWrap>
     );
   }
-  if (state.type === "error") {
-    return (
+
+  const thisRound =
+    myLastKexRound.type === "loading"
+      ? "[...]"
+      : myLastKexRound.type === "error"
+        ? `[${myLastKexRound.error}]`
+        : myLastKexRound.value === ""
+          ? "[error]"
+          : Number(myLastKexRound.value) + 1;
+
+  const totalRounds = multisigStatus.total - multisigStatus.threshold + 2;
+
+  return (
+    <>
       <MultisigTabWrap>
-        <SurfaceCard className="space-y-2">
-          <div className="text-sm text-red-200">
-            {state.message || "Unknown error while loading multisig status"}
+        <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+          <div className="text-sm font-semibold text-white/85">
+            Setting up {multisigStatus.threshold}/{multisigStatus.total}{" "}
+            multisig, round {thisRound} from {totalRounds}
+          </div>
+          <div className="space-y-1">
+            <Label>Your message for this round</Label>
+            <TextArea
+              readOnly
+              rows={1}
+              className="resize-none overflow-hidden [field-sizing:content]"
+              value={
+                myLastKexMessage.type === "loading"
+                  ? "Loading..."
+                  : myLastKexMessage.type === "error"
+                    ? `Error: ${myLastKexMessage.error}`
+                    : myLastKexMessage.value === ""
+                      ? "Error: no attribute found"
+                      : myLastKexMessage.value
+              }
+            />
+          </div>
+          <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+            <Label>All participants round {thisRound} messages</Label>
+            <TextArea
+              rows={12}
+              className="resize-none lg:min-h-0 lg:flex-1"
+              value={othersRoundMessages}
+              onChange={(e) => setOthersRoundMessages(e.target.value)}
+            />
           </div>
           <Button
-            variant="soft"
-            className="w-full"
-            onClick={() => setState((x) => ({ type: "loading" }))}
+            variant="primary"
+            className="!flex-none w-full py-2.5"
+            disabled={busy !== "idle"}
+            onClick={() => {
+              void handleExchangeMultisigKeys();
+            }}
           >
-            Retry
+            {busy === "exchanging"
+              ? "Exchanging keys..."
+              : "Exchange multisig keys"}
           </Button>
         </SurfaceCard>
       </MultisigTabWrap>
-    );
-  }
-  state satisfies never;
-  return null;
+      {passwordPromptDialog}
+    </>
+  );
 }
