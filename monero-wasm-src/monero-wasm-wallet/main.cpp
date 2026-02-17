@@ -1,6 +1,8 @@
 #include <iostream>
 #include <memory>
 #include <algorithm>
+#include <type_traits>
+#include <utility>
 #include "wallet/wallet2.h"
 #include "wallet/api/wallet2_api.h"
 #include "mnemonics/electrum-words.h"
@@ -416,20 +418,10 @@ public:
     };
 
     // TODO: Add support for sub-addresses filtering
-    emscripten::val get_payments(uint64_t min_height, uint64_t max_height)
+    auto get_payments(uint64_t min_height, uint64_t max_height)
     {
-        using R = std::vector<PaymentDetails>;
-        return runAsyncPromise<R>(
-            walletQueue,
-            walletThread,
-            [this, min_height, max_height](R &r)
-            {
-                r = get_payments_impl(min_height, max_height);
-            },
-            [](R &r) -> emscripten::val
-            {
-                return emscripten::val(r);
-            });
+        return promise([this, min_height, max_height]()
+                       { return get_payments_impl(min_height, max_height); });
     }
 
     std::vector<PaymentDetails> get_payments_impl(uint64_t min_height, uint64_t max_height)
@@ -874,6 +866,62 @@ public:
     }
 
 private:
+    template <class WorkFn, class PackFn>
+    emscripten::val promise(WorkFn &&work, PackFn &&pack_to_js)
+    {
+        using ResultT = std::decay_t<std::invoke_result_t<WorkFn>>;
+        static_assert(!std::is_void_v<ResultT>, "promise() requires non-void return type");
+
+        auto p = makePromise();
+        auto result = std::make_shared<std::optional<ResultT>>();
+        auto error = std::make_shared<std::optional<std::string>>();
+
+        walletQueue.proxyCallback(
+            walletThread,
+            [work = std::forward<WorkFn>(work), result, error]() mutable
+            {
+                try
+                {
+                    result->emplace(work());
+                }
+                catch (const std::exception &e)
+                {
+                    *error = e.what();
+                }
+                catch (...)
+                {
+                    *error = "Unknown error";
+                }
+            },
+            [p, result, error, pack_to_js = std::forward<PackFn>(pack_to_js)]() mutable
+            {
+                if (error->has_value())
+                {
+                    p.reject(jsError(error->value()));
+                    return;
+                }
+                p.resolve(pack_to_js(result->value()));
+            },
+            [p]()
+            {
+                p.reject(jsError("Thread error"));
+            });
+
+        return p.promise;
+    }
+
+    template <class WorkFn>
+    emscripten::val promise(WorkFn &&work)
+    {
+        using ResultT = std::decay_t<std::invoke_result_t<WorkFn>>;
+        return promise(
+            std::forward<WorkFn>(work),
+            [](const ResultT &r) -> emscripten::val
+            {
+                return emscripten::val(r);
+            });
+    }
+
     // TODO: Add a callback for onFetching for better UI
     tools::wallet2 m_wallet = tools::wallet2(
         cryptonote::network_type::MAINNET,
