@@ -211,7 +211,7 @@ export function MultisigTab({
       await withFsLock(async () => {
         const nextKexMessage = await wallet.make_multisig(
           password,
-          messages.join(" "),
+          messages,
           threshold,
         );
         await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
@@ -270,7 +270,7 @@ export function MultisigTab({
       await withFsLock(async () => {
         const nextKexMessage = await wallet.exchange_multisig_keys(
           password,
-          messages.join(" "),
+          messages,
         );
         await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
 

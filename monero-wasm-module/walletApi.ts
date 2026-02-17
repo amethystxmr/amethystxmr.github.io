@@ -86,13 +86,13 @@ export declare class MoneroWasmWallet {
   /** Note: this function saves wallet, .keys and .address.txt files! */
   make_multisig(
     password: string,
-    initial_kex_msgs: string,
+    initial_kex_msgs: string[],
     threshold: number,
   ): Promise<string>;
   /**
    * Note: this also saves files.
    */
-  exchange_multisig_keys(password: string, kex_msgs: string): Promise<string>;
+  exchange_multisig_keys(password: string, kex_msgs: string[]): Promise<string>;
   export_multisig(): Promise<Uint8Array>;
   verify_password(password: string): Promise<boolean>;
 }

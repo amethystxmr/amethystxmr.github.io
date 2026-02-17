@@ -101,18 +101,12 @@ public:
     auto generate(
         std::string fileName,
         std::string password,
-        emscripten::val secretStr,
+        emscripten::val secretArrayBuf,
         bool recover,
         bool two_random)
     {
-        if (secretStr["length"].as<unsigned>() != 32)
-            throw std::runtime_error(std::string("Secret must be 32 bytes but got ") + std::to_string(secretStr["length"].as<unsigned>()));
-
         auto secretKey = std::make_shared<crypto::secret_key>();
-        for (size_t i = 0; i < 32; ++i)
-        {
-            secretKey->data[i] = secretStr[i].as<unsigned char>();
-        }
+        copy_js_uint8_array_to(secretArrayBuf, reinterpret_cast<std::uint8_t *>(secretKey->data), 32);
 
         return promise(
             [this,
@@ -671,11 +665,22 @@ public:
     }
 
     auto make_multisig(const std::string &password_str,
-                       const std::string &initial_kex_msgs,
+                       emscripten::val initial_kex_msgs_js,
                        std::uint32_t threshold)
     {
         epee::wipeable_string password(password_str);
-        return promise([this, password, initial_kex_msgs, threshold]()
+        auto initial_kex_msgs = parse_js_array<std::string>(
+            initial_kex_msgs_js,
+            [](const emscripten::val &item, size_t index) -> std::string
+            {
+                if (!item.isString())
+                {
+                    throw std::runtime_error("Expected string at index " + std::to_string(index));
+                }
+                return item.as<std::string>();
+            });
+
+        return promise([this, password, initial_kex_msgs = std::move(initial_kex_msgs), threshold]()
                        {
                            if (!m_wallet.verify_password(password))
                            {
@@ -690,18 +695,24 @@ public:
                            {
                                throw std::runtime_error("Wallet must be empty to create multisig");
                            };
-                           auto kex_msgs = std::vector<std::string>{};
-                           if (!initial_kex_msgs.empty())
-                           {
-                               boost::split(kex_msgs, initial_kex_msgs, boost::is_any_of(" "), boost::token_compress_on);
-                           }
-                           return m_wallet.make_multisig(password, kex_msgs, threshold); });
+                           return m_wallet.make_multisig(password, initial_kex_msgs, threshold); });
     }
 
-    auto exchange_multisig_keys(const std::string &password_str, const std::string &kex_msgs_str)
+    auto exchange_multisig_keys(const std::string &password_str, emscripten::val kex_msgs_js)
     {
         epee::wipeable_string password(password_str);
-        return promise([this, password, kex_msgs_str]()
+        auto kex_msgs = parse_js_array<std::string>(
+            kex_msgs_js,
+            [](const emscripten::val &item, size_t index) -> std::string
+            {
+                if (!item.isString())
+                {
+                    throw std::runtime_error("Expected string at index " + std::to_string(index));
+                }
+                return item.as<std::string>();
+            });
+
+        return promise([this, password, kex_msgs = std::move(kex_msgs)]()
                        {
                            if (!m_wallet.verify_password(password))
                            {
@@ -711,11 +722,6 @@ public:
                            {
                                throw std::runtime_error("Wallet is not multisig");
                            };
-                           auto kex_msgs = std::vector<std::string>{};
-                           if (!kex_msgs_str.empty())
-                           {
-                               boost::split(kex_msgs, kex_msgs_str, boost::is_any_of(" "), boost::token_compress_on);
-                           }
                            return m_wallet.exchange_multisig_keys(password, kex_msgs); });
     }
 
@@ -757,7 +763,81 @@ public:
             });
     }
 
+    auto import_multisig()
+    {
+    }
+
 private:
+    template <typename T, typename ParseItemFn>
+    static std::vector<T> parse_js_array(const emscripten::val &js_array, ParseItemFn &&parse_item)
+    {
+        if (!js_array.instanceof(emscripten::val::global("Array")))
+        {
+            throw std::runtime_error("Expected array");
+        }
+
+        const auto len = js_array["length"].as<size_t>();
+        auto out = std::vector<T>{};
+        out.reserve(len);
+        for (size_t i = 0; i < len; ++i)
+        {
+            out.push_back(parse_item(js_array[i], i));
+        }
+        return out;
+    }
+
+    static std::vector<std::uint8_t> parse_js_uint8_array(const emscripten::val &js_uint8_array)
+    {
+        if (!js_uint8_array.instanceof(emscripten::val::global("Uint8Array")))
+        {
+            throw std::runtime_error("Expected Uint8Array");
+        }
+
+        const auto len = js_uint8_array["length"].as<size_t>();
+        auto out = std::vector<std::uint8_t>(len);
+        copy_js_uint8_array_to_heap_ptr(js_uint8_array, out.data(), len);
+        return out;
+    }
+
+    static void copy_js_uint8_array_to(const emscripten::val &js_uint8_array, unsigned char *out, size_t expected_len)
+    {
+        if (!js_uint8_array.instanceof(emscripten::val::global("Uint8Array")))
+        {
+            throw std::runtime_error("Expected Uint8Array");
+        }
+
+        const auto len = js_uint8_array["length"].as<size_t>();
+        if (len != expected_len)
+        {
+            throw std::runtime_error("Expected " + std::to_string(expected_len) + " bytes but got " + std::to_string(len));
+        }
+
+        copy_js_uint8_array_to_heap_ptr(js_uint8_array, out, expected_len);
+    }
+
+    static std::vector<std::vector<std::uint8_t>> parse_js_uint8_array_array(const emscripten::val &js_array)
+    {
+        return parse_js_array<std::vector<std::uint8_t>>(
+            js_array,
+            [&](const emscripten::val &item, size_t /*index*/) -> std::vector<std::uint8_t>
+            {
+                return parse_js_uint8_array(item);
+            });
+    }
+
+    static void copy_js_uint8_array_to_heap_ptr(const emscripten::val &src, std::uint8_t *dst, size_t len)
+    {
+        if (len == 0)
+        {
+            return;
+        }
+
+        const auto dst_ptr = reinterpret_cast<std::uintptr_t>(dst);
+        auto heap_u8 = emscripten::val::module_property("HEAPU8");
+        auto dst_view = heap_u8.call<emscripten::val>("subarray", dst_ptr, dst_ptr + len);
+        dst_view.call<void>("set", src);
+    }
+
     static emscripten::val copy_bytes_to_uint8_array(const std::uint8_t *data, size_t size)
     {
         auto out = emscripten::val::global("Uint8Array").new_(size);
