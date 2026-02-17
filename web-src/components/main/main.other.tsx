@@ -12,7 +12,7 @@ import {
   Toggle,
   useAlert,
 } from "../ui";
-import { formatWalletTimestamp } from "../utils";
+import { formatWalletTimestamp, withFsLock } from "../utils";
 
 type SeedRevealState =
   | { type: "hidden-idle" }
@@ -168,10 +168,13 @@ export function OtherTab({
 
     setRescanState((prev) => ({ ...prev, busy: true }));
     try {
-      await wallet.rescan_blockchain(
-        rescanState.hard,
-        rescanState.keepKeyImages,
-      );
+      await withFsLock(async () => {
+        await wallet.rescan_blockchain(
+          rescanState.hard,
+          rescanState.keepKeyImages,
+        );
+        await wallet.store();
+      });
       onRefresh();
     } catch (e) {
       void alert(
