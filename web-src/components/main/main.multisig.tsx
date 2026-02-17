@@ -24,7 +24,6 @@ function MultisigTabWrap({ children }: React.PropsWithChildren) {
 const LAST_KEX_MESSAGE_ATTRIBUTE = "amethystxmr_last_kex_message";
 const LAST_MULTISIG_KEX_ROUND_ATTRIBUTE = "amethystxmr_last_multisig_kex_round";
 
-type BusyState = "idle" | "preparing" | "making" | "exchanging";
 type LoadableString =
   | { type: "loading" }
   | { type: "ready"; value: string }
@@ -50,14 +49,22 @@ export function MultisigTab({
   const alert = useAlert();
   const { promptForWalletPassword, passwordPromptDialog } = usePasswordPrompt();
 
-  // TODO: Make it just a boolean
-  const [busy, setBusy] = React.useState<BusyState>("idle");
-
   // State model:
   // 1) `multisigStatus === null` -> initial loading.
   // 2) `!multisig_is_active` -> prepare flow.
   // 3) `multisig_is_active && is_ready` -> ready summary.
   // 4) `multisig_is_active && !is_ready` -> exchange flow.
+
+  const [busy, setBusy] = React.useState(false);
+
+  const isUnmountedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    isUnmountedRef.current = false;
+    return () => {
+      isUnmountedRef.current = true;
+    };
+  }, []);
 
   // No-multisig flow state
   const [allowPrepareWhileSyncing, setAllowPrepareWhileSyncing] =
@@ -145,34 +152,38 @@ export function MultisigTab({
     };
   }, [multisigStatus, wallet]);
 
-  // TODO: Add "cancelled" into all React.useCallback(async () =>
-  // continue operation but do not update state if cancelled) to prevent
-  // updating state after unmounting or after multisig status changes.
-
   const handlePrepareMultisig = React.useCallback(async () => {
-    if (busy !== "idle") {
+    if (busy) {
       return;
     }
     if (isPrepareBlockedByPayments || isPrepareBlockedBySync) {
       return;
     }
 
-    setBusy("preparing");
+    setBusy(true);
     setMyRound1Message({ type: "loading" });
     try {
       const message = await wallet.prepare_multisig();
+      if (isUnmountedRef.current) {
+        return;
+      }
       setMyRound1Message({ type: "ready", value: message });
     } catch (e) {
+      if (isUnmountedRef.current) {
+        return;
+      }
       const errorMessage =
         (e as Error)?.message || "Unknown error while preparing multisig";
       setMyRound1Message({ type: "error", error: errorMessage });
     } finally {
-      setBusy("idle");
+      if (!isUnmountedRef.current) {
+        setBusy(false);
+      }
     }
   }, [busy, isPrepareBlockedByPayments, isPrepareBlockedBySync, wallet]);
 
   const handleMakeMultisig = React.useCallback(async () => {
-    if (busy !== "idle") {
+    if (busy) {
       return;
     }
     if (myRound1Message?.type !== "ready") {
@@ -180,7 +191,7 @@ export function MultisigTab({
     }
 
     try {
-      setBusy("making");
+      setBusy(true);
       const messages = othersRound1Messages
         .split(/[\s\n]+/)
         .map((m) => m.trim())
@@ -191,7 +202,9 @@ export function MultisigTab({
 
       const password = await requestValidWalletPassword();
       if (password === null) {
-        setBusy("idle");
+        if (!isUnmountedRef.current) {
+          setBusy(false);
+        }
         return;
       }
 
@@ -206,13 +219,20 @@ export function MultisigTab({
         await wallet.store();
       });
 
+      if (isUnmountedRef.current) {
+        return;
+      }
       onRefresh();
     } catch (e) {
       const message =
         (e as Error)?.message || "Unknown error while making multisig";
-      await alert(message);
+      if (!isUnmountedRef.current) {
+        await alert(message);
+      }
     } finally {
-      setBusy("idle");
+      if (!isUnmountedRef.current) {
+        setBusy(false);
+      }
     }
   }, [
     alert,
@@ -227,12 +247,12 @@ export function MultisigTab({
   ]);
 
   const handleExchangeMultisigKeys = React.useCallback(async () => {
-    if (busy !== "idle") {
+    if (busy) {
       return;
     }
 
     try {
-      setBusy("exchanging");
+      setBusy(true);
 
       const messages = othersRoundMessages
         .split(/[\s\n]+/)
@@ -241,7 +261,9 @@ export function MultisigTab({
 
       const password = await requestValidWalletPassword();
       if (password === null) {
-        setBusy("idle");
+        if (!isUnmountedRef.current) {
+          setBusy(false);
+        }
         return;
       }
 
@@ -263,13 +285,20 @@ export function MultisigTab({
         await wallet.store();
       });
 
+      if (isUnmountedRef.current) {
+        return;
+      }
       onRefresh();
     } catch (e) {
       const message =
         (e as Error)?.message || "Unknown error while exchanging multisig keys";
-      await alert(`Failed to exchange multisig keys: ${message}`);
+      if (!isUnmountedRef.current) {
+        await alert(`Failed to exchange multisig keys: ${message}`);
+      }
     } finally {
-      setBusy("idle");
+      if (!isUnmountedRef.current) {
+        setBusy(false);
+      }
     }
   }, [
     alert,
@@ -304,10 +333,10 @@ export function MultisigTab({
                     authorize spending (for example, 2-of-3).
                   </p>
                   <p>
-                    {/* // TODO: Change text: there might be multiple rounds of key exchange */}
-                    Start by generating your round 1 message, then collect round
-                    1 messages from all participants and make the multisig
-                    wallet.
+                    Start by generating your initial key exchange message, then
+                    collect messages from all participants. Depending on
+                    threshold and participants, multiple rounds of key exchange
+                    may be required.
                   </p>
                   <p>
                     This is recommended on a wallet with no transfers. If the
@@ -347,17 +376,13 @@ export function MultisigTab({
                   variant="primary"
                   className="!flex-none w-full py-2.5"
                   disabled={
-                    busy !== "idle" ||
-                    isPrepareBlockedByPayments ||
-                    isPrepareBlockedBySync
+                    busy || isPrepareBlockedByPayments || isPrepareBlockedBySync
                   }
                   onClick={() => {
                     void handlePrepareMultisig();
                   }}
                 >
-                  {busy === "preparing"
-                    ? "Preparing multisig..."
-                    : "Prepare multisig"}
+                  {busy ? "Preparing multisig..." : "Prepare multisig"}
                 </Button>
               </>
             ) : (
@@ -392,7 +417,7 @@ export function MultisigTab({
                         type="button"
                         className="w-full px-2.5 py-1.5 text-xs"
                         variant={option === participants ? "primary" : "soft"}
-                        disabled={busy !== "idle"}
+                        disabled={busy}
                         onClick={() => {
                           setParticipants(option);
                           setThreshold((prev) => Math.min(prev, option));
@@ -406,7 +431,7 @@ export function MultisigTab({
                         type="button"
                         className="w-full px-2.5 py-1.5 text-xs"
                         variant="soft"
-                        disabled={busy !== "idle"}
+                        disabled={busy}
                         onClick={() => setShowAllParticipants(true)}
                       >
                         More
@@ -423,7 +448,7 @@ export function MultisigTab({
                   )}
                   value={threshold}
                   compact
-                  disabled={busy !== "idle"}
+                  disabled={busy}
                   onChange={setThreshold}
                 />
 
@@ -440,12 +465,12 @@ export function MultisigTab({
                 <Button
                   variant="primary"
                   className="!flex-none w-full py-2.5"
-                  disabled={busy !== "idle" || myRound1Message.type !== "ready"}
+                  disabled={busy || myRound1Message.type !== "ready"}
                   onClick={() => {
                     void handleMakeMultisig();
                   }}
                 >
-                  {busy === "making"
+                  {busy
                     ? `Making ${threshold}/${participants} multisig...`
                     : `Make ${threshold}/${participants} multisig`}
                 </Button>
@@ -519,14 +544,12 @@ export function MultisigTab({
           <Button
             variant="primary"
             className="!flex-none w-full py-2.5"
-            disabled={busy !== "idle"}
+            disabled={busy}
             onClick={() => {
               void handleExchangeMultisigKeys();
             }}
           >
-            {busy === "exchanging"
-              ? "Exchanging keys..."
-              : "Exchange multisig keys"}
+            {busy ? "Exchanging keys..." : "Exchange multisig keys"}
           </Button>
         </SurfaceCard>
       </MultisigTabWrap>
