@@ -1,6 +1,9 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { PaymentDetailsTransformed } from "../../../monero-wasm-module/walletApi";
+import {
+  PaymentDetailsTransformed,
+  WalletAddress,
+} from "../../../monero-wasm-module/walletApi";
 import {
   balanceToString,
   shortenAddress,
@@ -9,15 +12,8 @@ import {
 } from "../utils";
 import { Button, Input, SurfaceCard } from "../ui";
 
-type AddressItem = {
-  address: string; // full Monero address
-  label?: string; // optional
-  indexMinor: number;
-};
-
 type ReceiveAddressesProps = {
-  primaryAddress: string; // starts with "4"
-  secondaryAddresses?: AddressItem[]; // 0..many
+  addresses: WalletAddress[] | null;
   payments: PaymentDetailsTransformed[] | null;
   mempoolPayments: PaymentDetailsTransformed[] | null;
   onAddSubaddressAdd: (newLabel: string) => Promise<void>;
@@ -201,24 +197,21 @@ function AddressRow({
 }
 
 export function ReceiveAddresses({
-  primaryAddress,
-  secondaryAddresses,
+  addresses,
   payments,
   mempoolPayments,
   onAddSubaddressAdd,
   price,
 }: ReceiveAddressesProps) {
-  const rows = useMemo(() => {
-    const cleanedSecondary = secondaryAddresses
-      ?.filter((a) => a?.address?.trim())
-      ?.map((a) => ({
-        address: a.address.trim(),
-        label: a.label,
-        indexMinor: a.indexMinor,
-      }));
-
-    return cleanedSecondary;
-  }, [secondaryAddresses]);
+  const rows = addresses
+    ? addresses
+        .filter((a) => a?.address)
+        .map((a) => ({
+          address: a.address,
+          label: a.label,
+          indexMinor: a.indexMinor,
+        }))
+    : null;
 
   const incomingStatsByIndexMinor = useMemo(() => {
     const stats = new Map<number, { amount: bigint; txCount: number }>();
@@ -265,41 +258,18 @@ export function ReceiveAddresses({
   return (
     <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
       <div className="space-y-3 pb-2">
-        <AddressRow
-          title="Primary address"
-          address={primaryAddress}
-          label={shortenAddress(primaryAddress)}
-          totalReceivedAtomic={incomingStatsByIndexMinor.get(0)?.amount || 0n}
-          incomingTxCount={incomingStatsByIndexMinor.get(0)?.txCount || 0}
-          isQrOpen={activeQrAddress === primaryAddress}
-          onToggleQr={() =>
-            setActiveQrAddress((current) =>
-              current === primaryAddress ? null : primaryAddress,
-            )
-          }
-          qrValue={buildMoneroQrValue(primaryAddress, qrAmountAtomic)}
-          qrAmountInput={qrAmountInput}
-          onQrAmountInputChange={setQrAmountInput}
-          hasQrAmountError={hasQrAmountError}
-          qrAmount={qrAmountAtomic}
-          price={price}
-        />
-
         {rows && rows.length > 0 ? (
           <div className="pt-1">
-            {/*
-            <div className="mb-2 text-xs font-semibold text-white/70">
-              Subaddresses ({rows.length})
-            </div>
-              */}
             <div className="space-y-3">
               {rows.map((a, i) => (
                 <AddressRow
                   key={`${a.address}-${i}`}
                   title={
-                    a.label
-                      ? `${a.label} (#${a.indexMinor})`
-                      : `Subaddress #${a.indexMinor}`
+                    a.indexMinor === 0
+                      ? "Primary address"
+                      : a.label
+                        ? `${a.label} (#${a.indexMinor})`
+                        : `Subaddress #${a.indexMinor}`
                   }
                   address={a.address}
                   label={shortenAddress(a.address)}
@@ -327,7 +297,7 @@ export function ReceiveAddresses({
           </div>
         ) : (
           <SurfaceCard className="text-xs text-white/60">
-            {rows === null ? "Loading subaddresses..." : "No subaddresses yet."}
+            {rows === null ? "Loading addresses..." : "No addresses yet."}
           </SurfaceCard>
         )}
 

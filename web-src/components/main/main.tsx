@@ -4,7 +4,9 @@ import {
   MoneroWasmWallet,
   MultisigAccountStatus,
   PaymentDetailsTransformed,
+  WalletAddress,
   transformPayments,
+  transformWalletAddresses,
 } from "../../../monero-wasm-module/walletApi";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
@@ -64,16 +66,14 @@ export function WalletMain({
     null | PaymentDetailsTransformed[]
   >(null);
 
-  const updateSecondaryAddresses = React.useCallback(async () => {
-    const accounts = [];
-    const numAccounts = await wallet.get_num_subaddresses(0);
-    for (let i = 1; i < numAccounts; i++) {
-      // start from 1 because 0 is primary
-      const address = await wallet.get_subaddress_as_str(0, i);
-      const label = await wallet.get_subaddress_label(0, i);
-      accounts.push({ address, label, indexMinor: i });
-    }
-    setSecondaryAddresses(accounts);
+  const [addresses, setAddresses] = React.useState<WalletAddress[] | null>(
+    null,
+  );
+
+  const updateWalletAddresses = React.useCallback(async () => {
+    const addressesVector = await wallet.get_wallet_addresses(0);
+    const nextAddresses = transformWalletAddresses(addressesVector);
+    setAddresses(nextAddresses);
   }, [wallet]);
 
   React.useEffect(() => {
@@ -286,7 +286,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         setRefreshError(null);
 
         try {
-          await updateSecondaryAddresses();
+          await updateWalletAddresses();
 
           const freshStatus = await getStatus();
           if (!freshStatus) {
@@ -371,36 +371,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       cancelled = true;
       wallet.set_on_new_block_callback(null);
     };
-  }, [wallet, setRefreshing, setStatus, updateSecondaryAddresses]);
+  }, [wallet, setRefreshing, setStatus, updateWalletAddresses]);
 
   const priceInfo = useXmrPrice();
   const price = priceInfo?.price ?? null;
-
-  const [primaryAddress, setPrimaryAddress] = React.useState("");
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const address = await wallet.get_address();
-        if (!cancelled) {
-          setPrimaryAddress(address);
-        }
-      } catch (e) {
-        console.error("Failed to get primary address:", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [wallet]);
-  const [secondaryAddresses, setSecondaryAddresses] = React.useState<
-    | {
-        address: string;
-        label: string;
-        indexMinor: number;
-      }[]
-    | null
-  >(null);
 
   const [secondsPerBlockOnInitialSync, setSecondsPerBlockOnInitialSync] =
     React.useState<number | null>(null);
@@ -562,15 +536,14 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               label: "Receive",
               content: (
                 <ReceiveAddresses
-                  primaryAddress={primaryAddress}
-                  secondaryAddresses={secondaryAddresses || undefined}
+                  addresses={addresses}
                   payments={status?.payments || null}
                   mempoolPayments={mempoolPayments}
                   price={price}
                   onAddSubaddressAdd={async (newLabel) => {
                     await wallet.add_subaddress(0, newLabel);
                     await saveWalletIntoFs(wallet);
-                    await updateSecondaryAddresses();
+                    await updateWalletAddresses();
                   }}
                 />
               ),
@@ -586,7 +559,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               content: (
                 <TransactionsTab
                   payments={status?.payments || null}
-                  secondaryAddresses={secondaryAddresses}
+                  addresses={addresses}
                   mempoolPayments={mempoolPayments}
                   daemonLastBlockHeight={status?.daemonHeight ?? null}
                   price={price}

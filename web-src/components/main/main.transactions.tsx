@@ -1,6 +1,7 @@
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   PaymentDetailsTransformed,
+  WalletAddress,
 } from "../../../monero-wasm-module/walletApi";
 import React from "react";
 import { balanceToString, formatWalletTimestamp, toFiat } from "../utils";
@@ -9,13 +10,13 @@ import { MonoScrollPanel, SurfaceCard } from "../ui";
 export function TransactionsTab({
   payments,
   mempoolPayments,
-  secondaryAddresses,
+  addresses,
   price,
   daemonLastBlockHeight,
 }: {
   mempoolPayments: PaymentDetailsTransformed[] | null;
   payments: PaymentDetailsTransformed[] | null;
-  secondaryAddresses: { address: string; label: string }[] | null;
+  addresses: WalletAddress[] | null;
   price: number | null;
   daemonLastBlockHeight: bigint | null;
 }) {
@@ -23,6 +24,13 @@ export function TransactionsTab({
     () => (payments ? [...(mempoolPayments || []), ...payments] : null),
     [mempoolPayments, payments],
   );
+  const addressLabelByMinor = React.useMemo(() => {
+    const map = new Map<number, string>();
+    for (const item of addresses || []) {
+      map.set(item.indexMinor, item.label);
+    }
+    return map;
+  }, [addresses]);
 
   return (
     <MonoScrollPanel>
@@ -49,7 +57,7 @@ export function TransactionsTab({
                   */ ""
                 : p.index_minor === 0
                   ? "Primary address"
-                  : secondaryAddresses?.[p.index_minor - 1]?.label ||
+                  : addressLabelByMinor.get(p.index_minor) ||
                     `Subaddress #${p.index_minor}`;
             const typeTone = getTypeToneClass(p.type);
             const amountTone = getAmountToneClass(p.type);
