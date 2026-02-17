@@ -616,16 +616,16 @@ function MultisigReady({
 
   const handleImportMultisigFiles = React.useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = event.target.files;
+      const files = event.target.files ? Array.from(event.target.files) : [];
       event.target.value = "";
-      if (!files || files.length === 0 || isBusy) {
+      if (files.length === 0 || isBusy) {
         return;
       }
 
       setBusyAction("import");
       try {
         const infos = await Promise.all(
-          Array.from(files).map(async (file) => {
+          files.map(async (file) => {
             const buf = await file.arrayBuffer();
             return new Uint8Array(buf);
           }),
