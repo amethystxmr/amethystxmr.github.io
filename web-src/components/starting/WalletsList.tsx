@@ -1288,13 +1288,13 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
           }
 
           for (const [
-            keyFileNameName,
+            keyFileName,
             keysEntry,
           ] of filesByBaseName.entries()) {
-            if (keysEntry.isDirectory || !keyFileNameName.endsWith(".keys")) {
+            if (keysEntry.isDirectory || !keyFileName.endsWith(".keys")) {
               continue;
             }
-            const walletName = keyFileNameName.slice(0, -5);
+            const walletName = keyFileName.slice(0, -5);
             if (!walletName) {
               continue;
             }
