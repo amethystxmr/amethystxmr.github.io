@@ -13,7 +13,7 @@ import {
   useAlert,
   usePasswordPrompt,
 } from "../ui";
-import { withFsLock } from "../utils";
+import { downloadBlob, withFsLock } from "../utils";
 
 const PARTICIPANT_OPTIONS = Array.from({ length: 15 }, (_, i) => i + 2);
 
@@ -37,6 +37,7 @@ export function MultisigTab({
   mempoolPayments,
   walletHeight,
   daemonHeight,
+  hasMultisigPartialKeyImages,
 }: {
   wallet: MoneroWasmWallet;
   multisigStatus: MultisigAccountStatus | null;
@@ -45,6 +46,7 @@ export function MultisigTab({
   mempoolPayments: PaymentDetailsTransformed[] | null;
   walletHeight: bigint | null;
   daemonHeight: bigint | null;
+  hasMultisigPartialKeyImages: boolean;
 }) {
   const alert = useAlert();
   const { promptForWalletPassword, passwordPromptDialog } = usePasswordPrompt();
@@ -495,7 +497,14 @@ export function MultisigTab({
   }
 
   if (multisigStatus.is_ready) {
-    return <MultisigReady wallet={wallet} multisigStatus={multisigStatus} />;
+    return (
+      <MultisigReady
+        wallet={wallet}
+        multisigStatus={multisigStatus}
+        hasMultisigPartialKeyImages={hasMultisigPartialKeyImages}
+        onRefresh={onRefresh}
+      />
+    );
   }
 
   const thisRound =
@@ -561,18 +570,129 @@ export function MultisigTab({
 }
 
 function MultisigReady({
-  wallet: _wallet,
+  wallet,
   multisigStatus,
+  hasMultisigPartialKeyImages,
+  onRefresh,
 }: {
   wallet: MoneroWasmWallet;
   multisigStatus: MultisigAccountStatus;
+  hasMultisigPartialKeyImages: boolean;
+  onRefresh: () => void;
 }) {
+  const alert = useAlert();
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [busyAction, setBusyAction] = React.useState<
+    "idle" | "export" | "import"
+  >("idle");
+  const isBusy = busyAction !== "idle";
+
+  const handleExportMultisig = React.useCallback(async () => {
+    if (isBusy) {
+      return;
+    }
+
+    setBusyAction("export");
+    try {
+      const [data, walletFile, currentHeight] = await Promise.all([
+        wallet.export_multisig(),
+        wallet.get_wallet_file(),
+        wallet.get_blockchain_current_height(),
+      ]);
+
+      const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
+      downloadBlob(
+        new Blob([data], { type: "application/octet-stream" }),
+        `${walletName}-${currentHeight.toString()}`,
+      );
+    } catch (e) {
+      await alert((e as Error)?.message || "Failed to export multisig info");
+    } finally {
+      setBusyAction("idle");
+    }
+  }, [alert, isBusy, wallet]);
+
+  const handleImportMultisigFiles = React.useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = event.target.files;
+      event.target.value = "";
+      if (!files || files.length === 0 || isBusy) {
+        return;
+      }
+
+      setBusyAction("import");
+      try {
+        const infos = await Promise.all(
+          Array.from(files).map(async (file) => {
+            const buf = await file.arrayBuffer();
+            return new Uint8Array(buf);
+          }),
+        );
+
+        const updatedOutputs = await withFsLock(async () => {
+          const imported = await wallet.import_multisig(infos);
+          await wallet.store();
+          return imported;
+        });
+
+        await alert(
+          `Multisig info imported. Number of outputs updated: ${updatedOutputs}`,
+        );
+        onRefresh();
+      } catch (e) {
+        await alert((e as Error)?.message || "Failed to import multisig info");
+      } finally {
+        setBusyAction("idle");
+      }
+    },
+    [alert, isBusy, onRefresh, wallet],
+  );
+
   return (
     <MultisigTabWrap>
-      <SurfaceCard className="space-y-1 text-sm text-white/75">
-        <div className="text-white/90">Wallet is multisig</div>
-        <div>
-          {multisigStatus.threshold}-of-{multisigStatus.total}
+      <SurfaceCard className="space-y-3 text-sm text-white/75 lg:h-full">
+        <div className="space-y-1">
+          <div className="text-base font-semibold text-white/90">
+            Wallet is multisig
+          </div>
+          <div>
+            {multisigStatus.threshold}-of-{multisigStatus.total}
+          </div>
+        </div>
+        {hasMultisigPartialKeyImages && (
+          <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-100/95 ring-1 ring-amber-200/20">
+            Some owned outputs have partial key images - import_multisig_info
+            needed
+          </div>
+        )}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            variant="primary"
+            className="w-full py-2.5"
+            disabled={isBusy}
+            onClick={() => {
+              void handleExportMultisig();
+            }}
+          >
+            {busyAction === "export" ? "Exporting..." : "Export multisig"}
+          </Button>
+          <Button
+            variant="primary"
+            className="w-full py-2.5"
+            disabled={isBusy}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {busyAction === "import" ? "Importing..." : "Import multisig"}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              void handleImportMultisigFiles(event);
+            }}
+          />
         </div>
       </SurfaceCard>
     </MultisigTabWrap>

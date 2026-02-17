@@ -607,6 +607,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                       <MultisigTab
                         wallet={wallet}
                         multisigStatus={status?.multisigStatus ?? null}
+                        hasMultisigPartialKeyImages={
+                          status?.hasMultisigPartialKeyImages ?? false
+                        }
                         onRefresh={stopWaitingOrScheduleNoWait}
                         payments={status?.payments || null}
                         mempoolPayments={mempoolPayments}
