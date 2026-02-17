@@ -571,7 +571,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   mempoolPayments={mempoolPayments}
                   price={price}
                   onAddSubaddressAdd={async (newLabel) => {
-                    withFsLock(async () => {
+                    await withFsLock(async () => {
                       await wallet.add_subaddress(0, newLabel);
                       await wallet.store();
                     });
