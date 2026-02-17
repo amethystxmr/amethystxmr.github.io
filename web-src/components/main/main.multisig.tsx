@@ -495,16 +495,7 @@ export function MultisigTab({
   }
 
   if (multisigStatus.is_ready) {
-    return (
-      <MultisigTabWrap>
-        <SurfaceCard className="space-y-1 text-sm text-white/75">
-          <div className="text-white/90">Wallet is multisig</div>
-          <div>
-            {multisigStatus.threshold}-of-{multisigStatus.total}
-          </div>
-        </SurfaceCard>
-      </MultisigTabWrap>
-    );
+    return <MultisigReady wallet={wallet} multisigStatus={multisigStatus} />;
   }
 
   const thisRound =
@@ -566,5 +557,24 @@ export function MultisigTab({
       </MultisigTabWrap>
       {passwordPromptDialog}
     </>
+  );
+}
+
+function MultisigReady({
+  wallet: _wallet,
+  multisigStatus,
+}: {
+  wallet: MoneroWasmWallet;
+  multisigStatus: MultisigAccountStatus;
+}) {
+  return (
+    <MultisigTabWrap>
+      <SurfaceCard className="space-y-1 text-sm text-white/75">
+        <div className="text-white/90">Wallet is multisig</div>
+        <div>
+          {multisigStatus.threshold}-of-{multisigStatus.total}
+        </div>
+      </SurfaceCard>
+    </MultisigTabWrap>
   );
 }
