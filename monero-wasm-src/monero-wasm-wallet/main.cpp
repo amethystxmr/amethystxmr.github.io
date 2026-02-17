@@ -763,8 +763,35 @@ public:
             });
     }
 
-    auto import_multisig()
+    auto import_multisig(emscripten::val others_multisig_info_js)
     {
+
+        auto info_uint = parse_js_uint8_array_array(others_multisig_info_js);
+        std::vector<cryptonote::blobdata> info;
+        info.reserve(info_uint.size());
+        for (const auto &i : info_uint)
+        {
+            info.emplace_back(reinterpret_cast<const char *>(i.data()), i.size());
+        }
+        return promise(
+            [this, info = std::move(info)]()
+            {
+                auto status = m_wallet.get_multisig_status();
+                if (!status.multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is not multisig");
+                }
+                if (!status.is_ready)
+                {
+                    throw std::runtime_error("Multisig wallet is not ready");
+                }
+                if (info.size() + 1 < status.threshold)
+                {
+                    throw std::runtime_error("Not enough multisig info provided");
+                }
+                size_t n_outputs = m_wallet.import_multisig(info);
+                return n_outputs;
+            });
     }
 
     auto rescan_blockchain(bool hard, bool keep_key_images)
