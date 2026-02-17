@@ -52,6 +52,8 @@ export function WalletMain({
     >;
     isSynced: Boolean;
     multisigStatus: MultisigAccountStatus;
+    hasMultisigPartialKeyImages: boolean;
+    hasUnknownKeyImages: boolean;
     payments: PaymentDetailsTransformed[];
   } | null>(null);
   const [downloadInfo, setDownloadInfo] = React.useState<null | {
@@ -180,6 +182,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       };
 
       const newMultisigStatus = await wallet.get_multisig_status();
+      const hasMultisigPartialKeyImages =
+        await wallet.has_multisig_partial_key_images();
+      const hasUnknownKeyImages = await wallet.has_unknown_key_images();
       if (cancelled) {
         return;
       }
@@ -203,6 +208,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         isSynced,
         obtainedAt: new Date(),
         multisigStatus: newMultisigStatus,
+        hasMultisigPartialKeyImages,
+        hasUnknownKeyImages,
         payments: transformedPayments,
       };
 
@@ -469,6 +476,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   const isShouldHideMultisigTab =
     !!status &&
     !!mempoolPayments &&
+    !status.multisigStatus.multisig_is_active &&
     (status.payments.length > 0 || mempoolPayments.length > 0);
 
   return (
@@ -524,6 +532,12 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               bottomLabel="locked"
             />
           </div>
+          {status?.hasMultisigPartialKeyImages && (
+            <div className="text-xs text-amber-200/95">
+              Some owned outputs have partial key images - import_multisig_info
+              needed
+            </div>
+          )}
         </div>
       </SectionPanel>
 

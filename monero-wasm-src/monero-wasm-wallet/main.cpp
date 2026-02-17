@@ -665,6 +665,18 @@ public:
                        { return m_wallet.get_multisig_status(); });
     }
 
+    auto has_multisig_partial_key_images()
+    {
+        return promise([this]()
+                       { return m_wallet.has_multisig_partial_key_images(); });
+    }
+
+    auto has_unknown_key_images()
+    {
+        return promise([this]()
+                       { return m_wallet.has_unknown_key_images(); });
+    }
+
     auto verify_password(const std::string &password_str)
     {
         epee::wipeable_string password(password_str);
@@ -850,6 +862,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("transfer_get_fee", &MoneroWasmWallet::transfer_get_fee)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
+        .function("has_multisig_partial_key_images", &MoneroWasmWallet::has_multisig_partial_key_images)
+        .function("has_unknown_key_images", &MoneroWasmWallet::has_unknown_key_images)
         .function("prepare_multisig", &MoneroWasmWallet::prepare_multisig)
         .function("make_multisig", &MoneroWasmWallet::make_multisig)
         .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)
