@@ -117,6 +117,9 @@ export function MultisigTab({
 
   const { promptForWalletPassword, passwordPromptDialog } = usePasswordPrompt();
   const requestValidWalletPassword = React.useCallback(async () => {
+    if (await wallet.verify_password("")) {
+      return "";
+    }
     let message = "Enter wallet password";
     while (true) {
       const password = await promptForWalletPassword(message);
