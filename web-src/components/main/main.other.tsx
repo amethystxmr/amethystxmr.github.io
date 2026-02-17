@@ -168,7 +168,10 @@ export function OtherTab({
 
     setRescanState((prev) => ({ ...prev, busy: true }));
     try {
-      await wallet.rescan_blockchain(rescanState.hard, rescanState.keepKeyImages);
+      await wallet.rescan_blockchain(
+        rescanState.hard,
+        rescanState.keepKeyImages,
+      );
       onRefresh();
     } catch (e) {
       void alert(
@@ -295,7 +298,9 @@ export function OtherTab({
                 setRescanState((prev) => ({ ...prev, hard: next }));
               }}
               label="hard"
-              className={rescanState.busy ? "pointer-events-none opacity-60" : ""}
+              className={
+                rescanState.busy ? "pointer-events-none opacity-60" : ""
+              }
             />
             <Toggle
               checked={rescanState.keepKeyImages}
@@ -304,7 +309,9 @@ export function OtherTab({
                 setRescanState((prev) => ({ ...prev, keepKeyImages: next }));
               }}
               label="keep_key_images"
-              className={rescanState.busy ? "pointer-events-none opacity-60" : ""}
+              className={
+                rescanState.busy ? "pointer-events-none opacity-60" : ""
+              }
             />
             <ButtonsHolder>
               <Button
@@ -317,8 +324,12 @@ export function OtherTab({
               >
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" disabled={rescanState.busy}>
-                {rescanState.busy ? "Rescanning..." : "OK"}
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={rescanState.busy}
+              >
+                {rescanState.busy ? "Scheduling..." : "OK"}
               </Button>
             </ButtonsHolder>
           </form>

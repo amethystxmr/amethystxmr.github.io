@@ -771,7 +771,7 @@ public:
     {
         return promise([this, hard, keep_key_images]()
                        {
-                           m_wallet.rescan_blockchain(hard, keep_key_images);
+                           m_wallet.rescan_blockchain(hard, false, keep_key_images);
                            return true; });
     }
 
