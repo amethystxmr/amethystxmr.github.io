@@ -601,8 +601,10 @@ function MultisigReady({
       ]);
 
       const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
+      const dataForBlob = new Uint8Array(data.length);
+      dataForBlob.set(data);
       downloadBlob(
-        new Blob([data], { type: "application/octet-stream" }),
+        new Blob([dataForBlob], { type: "application/octet-stream" }),
         `${walletName}-${currentHeight.toString()}`,
       );
     } catch (e) {
