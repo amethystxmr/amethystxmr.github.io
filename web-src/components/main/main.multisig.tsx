@@ -663,7 +663,7 @@ function MultisigReady({
         </div>
         {hasMultisigPartialKeyImages && (
           <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-100/95 ring-1 ring-amber-200/20">
-            Some owned outputs have partial key images - import_multisig_info
+            Some owned outputs have partial key images - import multisig info
             needed
           </div>
         )}
