@@ -94,8 +94,7 @@ public:
                            {
                                throw std::runtime_error(err);
                            }
-                           return blockchain_height;
-                       });
+                           return blockchain_height; });
     }
 
     auto generate(
@@ -145,8 +144,7 @@ public:
         return promise([this]()
                        {
                            m_wallet.store();
-                           return true;
-                       });
+                           return true; });
     }
 
     auto set_attribute(std::string key, std::string value)
@@ -154,8 +152,7 @@ public:
         return promise([this, key = std::move(key), value = std::move(value)]()
                        {
                            m_wallet.set_attribute(key, value);
-                           return true;
-                       });
+                           return true; });
     }
 
     auto get_attribute(std::string key)
@@ -164,8 +161,7 @@ public:
                        {
                            auto r = std::string{};
                            m_wallet.get_attribute(key, r);
-                           return r;
-                       });
+                           return r; });
     }
 
     auto load(
@@ -176,8 +172,7 @@ public:
         return promise([this, fileName = std::move(fileName), password = std::move(password)]()
                        {
                            m_wallet.load(fileName, epee::wipeable_string(password));
-                           return true;
-                       });
+                           return true; });
     }
 
     // TODO: This actually not needed because it will close in destructor
@@ -187,8 +182,7 @@ public:
                        {
                            m_wallet.stop();
                            m_wallet.deinit();
-                           return true;
-                       });
+                           return true; });
     }
 
     auto words_to_bytes(std::string words,
@@ -227,8 +221,7 @@ public:
         return promise([this, m_current_subaddress_account, index]()
                        {
                            auto subaddr_index = cryptonote::subaddress_index{m_current_subaddress_account, index};
-                           return m_wallet.get_subaddress_as_str(subaddr_index);
-                       });
+                           return m_wallet.get_subaddress_as_str(subaddr_index); });
     }
     auto get_subaddress_label(uint32_t m_current_subaddress_account, uint32_t index)
     {
@@ -259,16 +252,14 @@ public:
                                    .indexMinor = indexMinor,
                                });
                            }
-                           return result;
-                       });
+                           return result; });
     }
     auto add_subaddress(uint32_t index_major, const std::string &label)
     {
         return promise([this, index_major, label]()
                        {
                            m_wallet.add_subaddress(index_major, label);
-                           return true;
-                       });
+                           return true; });
     }
 
     auto is_synced()
@@ -304,8 +295,7 @@ public:
         return promise([this, wallet_file, password]()
                        {
                            m_wallet.rewrite(wallet_file, password);
-                           return true;
-                       });
+                           return true; });
     }
 
     struct RefreshResult
@@ -320,8 +310,7 @@ public:
                        {
                            auto r = RefreshResult{};
                            m_wallet.refresh(trusted_daemon, start_height, r.blocksFetched, r.receivedMoney, check_pool, try_incremental, max_blocks);
-                           return r;
-                       });
+                           return r; });
     }
 
     void set_on_new_block_callback(emscripten::val callback)
@@ -560,8 +549,7 @@ public:
         return promise([this, ptx_vector = std::move(ptx_vector)]()
                        {
                            m_wallet.commit_tx(*ptx_vector);
-                           return true;
-                       });
+                           return true; });
     }
 
     std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(std::string dst_address, uint64_t amount, uint32_t priority)
@@ -617,8 +605,7 @@ public:
         return promise([this, height]()
                        {
                            m_wallet.set_refresh_from_block_height(height);
-                           return true;
-                       });
+                           return true; });
     }
 
     auto set_explicit_refresh_from_block_height(bool value)
@@ -626,8 +613,7 @@ public:
         return promise([this, value]()
                        {
                            m_wallet.explicit_refresh_from_block_height(value);
-                           return true;
-                       });
+                           return true; });
     }
 
     auto get_blockchain_current_height()
@@ -649,8 +635,7 @@ public:
                        {
                            auto r = UnlockedBalanceResult{};
                            r.balance = m_wallet.unlocked_balance(index_major, strict, &r.blocks_to_unlock, &r.time_to_unlock);
-                           return r;
-                       });
+                           return r; });
     }
 
     auto get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
@@ -709,8 +694,7 @@ public:
                            {
                                boost::split(kex_msgs, initial_kex_msgs, boost::is_any_of(" "), boost::token_compress_on);
                            }
-                           return m_wallet.make_multisig(password, kex_msgs, threshold);
-                       });
+                           return m_wallet.make_multisig(password, kex_msgs, threshold); });
     }
 
     auto exchange_multisig_keys(const std::string &password_str, const std::string &kex_msgs_str)
@@ -731,8 +715,7 @@ public:
                            {
                                boost::split(kex_msgs, kex_msgs_str, boost::is_any_of(" "), boost::token_compress_on);
                            }
-                           return m_wallet.exchange_multisig_keys(password, kex_msgs);
-                       });
+                           return m_wallet.exchange_multisig_keys(password, kex_msgs); });
     }
 
     auto prepare_multisig()
@@ -747,8 +730,27 @@ public:
                            {
                                throw std::runtime_error("Wallet is already multisig");
                            }
-                           return m_wallet.get_multisig_first_kex_msg();
-                       });
+                           return m_wallet.get_multisig_first_kex_msg(); });
+    }
+
+    auto export_multisig()
+    {
+        return promise([this]()
+                       {
+                        auto status = m_wallet.get_multisig_status();
+                           if (!status.multisig_is_active)
+                           {
+                               throw std::runtime_error("Wallet is not multisig");
+                           }
+                           if (!status.is_ready)
+                           {
+                               throw std::runtime_error("Multisig wallet is not ready");
+                           }
+                           cryptonote::blobdata ciphertext = m_wallet.export_multisig();
+                            // TODO: This returns std::string which might be serialized incorrectly 
+                            // into javascript
+                            // We need to return Uint8Array instead
+                           return ciphertext; });
     }
 
 private:
@@ -867,6 +869,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("prepare_multisig", &MoneroWasmWallet::prepare_multisig)
         .function("make_multisig", &MoneroWasmWallet::make_multisig)
         .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)
+        .function("export_multisig", &MoneroWasmWallet::export_multisig)
         .function("verify_password", &MoneroWasmWallet::verify_password)
         .constructor();
 
