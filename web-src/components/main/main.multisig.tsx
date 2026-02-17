@@ -86,6 +86,34 @@ export function MultisigTab({
   const [state, setState] = React.useState<MultisigUiState>({
     type: "loading",
   });
+
+  // TODO: Refactor and fix this component
+  // - get multisig status from status from root
+  // - if no status then render "loading initial status"
+  // - 3 main cases depending on incoming status:
+  //   - if multisig is not enabled (multisig_is_active === false):  
+  //     - show information about multisig (2-3 paragraphs)
+  //     - show button "Prepare multisig"
+  //     - if wallet is not synced then disable button and add label "Wallet is not synced yet"
+  //     - if wallet has payments (includng mempool) then disable button and show "Not possible when wallet has transfers"
+  //     - when user clicks "Prepare multisig" do this:
+  //       - call wallet.prepare_multisig
+  //       - show UI similar to what we have with my round1 message and textinput for others
+  //          - with toggle for participants and threshold of course
+  //       - if prepare_multisig did error show an error in text field with visual error style (red border for example)
+  //       - when user clicks "make multisig" do the same as we do here
+  //   - if multisig.is_ready
+  //     - show multisig information (threshold, members)
+  //   - if multisig is not ready:
+  //      - fetch last message and last round from attributes
+  //        - show "loading" or "error" or "data" in UI fields
+  //      - show UI similar to what we have showing my last message, 
+  //          current round, total rounds (members - threshold + 2) and textarea for others
+  //      - on "exchange keys" do the same
+  //  - you can keep "busy, setBusy" state as global state for component
+  //  - all loading side-effects should depend from incoming status and derived contitions (i.e. 3 cases = 2 booleans)
+  
+
   const { promptForWalletPassword, passwordPromptDialog } = usePasswordPrompt();
   const requestValidWalletPassword = React.useCallback(async () => {
     let message = "Enter wallet password";
