@@ -235,6 +235,33 @@ public:
         return promise([this, m_current_subaddress_account, index]()
                        { return m_wallet.get_subaddress_label({m_current_subaddress_account, index}); });
     }
+
+    struct WalletAddress
+    {
+        std::string address;
+        std::string label;
+        uint32_t indexMinor;
+    };
+
+    auto get_wallet_addresses(uint32_t accountId)
+    {
+        return promise([this, accountId]()
+                       {
+                           auto result = std::vector<WalletAddress>{};
+                           auto count = m_wallet.get_num_subaddresses(accountId);
+                           result.reserve(count);
+                           for (uint32_t indexMinor = 0; indexMinor < count; ++indexMinor)
+                           {
+                               auto subaddr_index = cryptonote::subaddress_index{accountId, indexMinor};
+                               result.push_back({
+                                   .address = m_wallet.get_subaddress_as_str(subaddr_index),
+                                   .label = m_wallet.get_subaddress_label(subaddr_index),
+                                   .indexMinor = indexMinor,
+                               });
+                           }
+                           return result;
+                       });
+    }
     auto add_subaddress(uint32_t index_major, const std::string &label)
     {
         return promise([this, index_major, label]()
@@ -798,6 +825,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_num_subaddresses", &MoneroWasmWallet::get_num_subaddresses)
         .function("get_subaddress_as_str", &MoneroWasmWallet::get_subaddress_as_str)
         .function("get_subaddress_label", &MoneroWasmWallet::get_subaddress_label)
+        .function("get_wallet_addresses", &MoneroWasmWallet::get_wallet_addresses)
         .function("add_subaddress", &MoneroWasmWallet::add_subaddress)
         .function("is_synced", &MoneroWasmWallet::is_synced)
         .function("set_on_new_block_callback", &MoneroWasmWallet::set_on_new_block_callback)
@@ -851,6 +879,7 @@ emscripten::value_object<tools::wallet2::transfer_details>("TransferDetails")
 emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVector");
 */
     emscripten::register_vector<struct MoneroWasmWallet::PaymentDetails>("PaymentDetailsVector");
+    emscripten::register_vector<struct MoneroWasmWallet::WalletAddress>("WalletAddressVector");
     emscripten::value_object<struct MoneroWasmWallet::PaymentDetails>("PaymentDetails")
         .field("payment_id", &MoneroWasmWallet::PaymentDetails::payment_id)
         .field("type", &MoneroWasmWallet::PaymentDetails::type)
@@ -865,6 +894,11 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
         .field("index_major", &MoneroWasmWallet::PaymentDetails::index_major)
         .field("index_minor", &MoneroWasmWallet::PaymentDetails::index_minor)
         .field("note", &MoneroWasmWallet::PaymentDetails::note);
+
+    emscripten::value_object<struct MoneroWasmWallet::WalletAddress>("WalletAddress")
+        .field("address", &MoneroWasmWallet::WalletAddress::address)
+        .field("label", &MoneroWasmWallet::WalletAddress::label)
+        .field("indexMinor", &MoneroWasmWallet::WalletAddress::indexMinor);
 
     emscripten::value_object<MoneroWasmWallet::RefreshResult>("RefreshResult")
         .field("blocksFetched", &MoneroWasmWallet::RefreshResult::blocksFetched)

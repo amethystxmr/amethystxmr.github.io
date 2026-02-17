@@ -69,6 +69,7 @@ export declare class MoneroWasmWallet {
     index_major: number,
     index_minor: number,
   ): Promise<string>;
+  get_wallet_addresses(accountId: number): Promise<EmbindVector<WalletAddress>>;
   add_subaddress(index_major: number, label: string): Promise<void>;
   transfer_prepare(
     destination: string,
@@ -131,6 +132,12 @@ export interface PaymentDetails {
   index_major: number;
   index_minor: number;
   note: string;
+}
+
+export interface WalletAddress {
+  address: string;
+  label: string;
+  indexMinor: number;
 }
 
 interface multisig_account_status {
@@ -420,5 +427,17 @@ export function transformPayments(
     return Number(b.timestamp - a.timestamp);
   });
 
+  return result;
+}
+
+export function transformWalletAddresses(
+  addresses: EmbindVector<WalletAddress>,
+): WalletAddress[] {
+  const result: WalletAddress[] = [];
+  for (let i = 0; i < addresses.size(); i++) {
+    result.push(addresses.get(i));
+  }
+  addresses.delete();
+  result.sort((a, b) => a.indexMinor - b.indexMinor);
   return result;
 }
