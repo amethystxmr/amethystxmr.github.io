@@ -1324,7 +1324,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
             ] of filesByBaseName.entries()) {
               if (
                 otherEntry.isDirectory ||
-                otherBaseName === keyFileNameName ||
+                otherBaseName === keyFileName ||
                 otherBaseName === walletName
               ) {
                 continue;
