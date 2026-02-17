@@ -95,6 +95,7 @@ export declare class MoneroWasmWallet {
   exchange_multisig_keys(password: string, kex_msgs: string[]): Promise<string>;
   export_multisig(): Promise<Uint8Array>;
   verify_password(password: string): Promise<boolean>;
+  rescan_blockchain(hard: boolean, keep_key_images: boolean): Promise<boolean>;
 }
 
 export const FeePriority = {

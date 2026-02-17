@@ -767,6 +767,14 @@ public:
     {
     }
 
+    auto rescan_blockchain(bool hard, bool keep_key_images)
+    {
+        return promise([this, hard, keep_key_images]()
+                       {
+                           m_wallet.rescan_blockchain(hard, keep_key_images);
+                           return true; });
+    }
+
 private:
     template <typename T, typename ParseItemFn>
     static std::vector<T> parse_js_array(const emscripten::val &js_array, ParseItemFn &&parse_item)
