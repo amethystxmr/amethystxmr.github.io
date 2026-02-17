@@ -284,6 +284,7 @@ function RestoreView({
   onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   const alert = useAlert();
+  // TODO: Remove this hardcoded values
   const [fileName, setFileName] = React.useState("kek");
   const [moneroSeed, setMoneroSeed] = React.useState(
     `verification italics saved under upper fetches answers masterful general ` +
