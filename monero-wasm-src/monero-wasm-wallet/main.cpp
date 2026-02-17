@@ -212,22 +212,28 @@ public:
         }
     }
 
-    std::string get_address()
+    auto get_address()
     {
-        return m_wallet.get_address_as_str();
+        return promise([this]()
+                       { return m_wallet.get_address_as_str(); });
     }
-    size_t get_num_subaddresses(uint32_t index_major) const
+    auto get_num_subaddresses(uint32_t index_major)
     {
-        return m_wallet.get_num_subaddresses(index_major);
+        return promise([this, index_major]()
+                       { return m_wallet.get_num_subaddresses(index_major); });
     }
-    std::string get_subaddress_as_str(uint32_t m_current_subaddress_account, uint32_t index)
+    auto get_subaddress_as_str(uint32_t m_current_subaddress_account, uint32_t index)
     {
-        auto subaddr_index = cryptonote::subaddress_index{m_current_subaddress_account, index};
-        return m_wallet.get_subaddress_as_str(subaddr_index);
+        return promise([this, m_current_subaddress_account, index]()
+                       {
+                           auto subaddr_index = cryptonote::subaddress_index{m_current_subaddress_account, index};
+                           return m_wallet.get_subaddress_as_str(subaddr_index);
+                       });
     }
-    std::string get_subaddress_label(uint32_t m_current_subaddress_account, uint32_t index)
+    auto get_subaddress_label(uint32_t m_current_subaddress_account, uint32_t index)
     {
-        return m_wallet.get_subaddress_label({m_current_subaddress_account, index});
+        return promise([this, m_current_subaddress_account, index]()
+                       { return m_wallet.get_subaddress_label({m_current_subaddress_account, index}); });
     }
     auto add_subaddress(uint32_t index_major, const std::string &label)
     {
@@ -567,29 +573,40 @@ public:
         return std::make_shared<std::vector<tools::wallet2::pending_tx>>(std::move(ptx_vector));
     }
 
-    std::string get_wallet_file()
+    auto get_wallet_file()
     {
-        return m_wallet.get_wallet_file();
+        return promise([this]()
+                       { return m_wallet.get_wallet_file(); });
     }
 
-    uint64_t balance(uint32_t index_major, bool strict)
+    auto balance(uint32_t index_major, bool strict)
     {
-        return m_wallet.balance(index_major, strict);
+        return promise([this, index_major, strict]()
+                       { return m_wallet.balance(index_major, strict); });
     }
 
-    void set_refresh_from_block_height(uint64_t height)
+    auto set_refresh_from_block_height(uint64_t height)
     {
-        m_wallet.set_refresh_from_block_height(height);
+        return promise([this, height]()
+                       {
+                           m_wallet.set_refresh_from_block_height(height);
+                           return true;
+                       });
     }
 
-    void set_explicit_refresh_from_block_height(bool value)
+    auto set_explicit_refresh_from_block_height(bool value)
     {
-        m_wallet.explicit_refresh_from_block_height(value);
+        return promise([this, value]()
+                       {
+                           m_wallet.explicit_refresh_from_block_height(value);
+                           return true;
+                       });
     }
 
-    uint64_t get_blockchain_current_height()
+    auto get_blockchain_current_height()
     {
-        return m_wallet.get_blockchain_current_height();
+        return promise([this]()
+                       { return m_wallet.get_blockchain_current_height(); });
     }
 
     struct UnlockedBalanceResult
@@ -599,11 +616,14 @@ public:
         uint64_t time_to_unlock;
     };
 
-    struct UnlockedBalanceResult unlocked_balance(uint32_t index_major, bool strict)
+    auto unlocked_balance(uint32_t index_major, bool strict)
     {
-        UnlockedBalanceResult r;
-        r.balance = m_wallet.unlocked_balance(index_major, strict, &r.blocks_to_unlock, &r.time_to_unlock);
-        return r;
+        return promise([this, index_major, strict]()
+                       {
+                           auto r = UnlockedBalanceResult{};
+                           r.balance = m_wallet.unlocked_balance(index_major, strict, &r.blocks_to_unlock, &r.time_to_unlock);
+                           return r;
+                       });
     }
 
     auto get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)

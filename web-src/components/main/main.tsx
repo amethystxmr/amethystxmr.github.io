@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React from "react";
 import {
   max64,
   MoneroWasmWallet,
@@ -26,9 +26,7 @@ export function WalletMain({
 }) {
   (window as any).wallet = wallet;
 
-  const walletFileName = React.useMemo(() => {
-    return wallet.get_wallet_file();
-  }, [wallet]);
+  const [walletFileName, setWalletFileName] = React.useState("Loading...");
 
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -66,16 +64,36 @@ export function WalletMain({
     null | PaymentDetailsTransformed[]
   >(null);
 
-  const updateSecondaryAddresses = React.useCallback(() => {
+  const updateSecondaryAddresses = React.useCallback(async () => {
     const accounts = [];
-    const numAccounts = wallet.get_num_subaddresses(0);
+    const numAccounts = await wallet.get_num_subaddresses(0);
     for (let i = 1; i < numAccounts; i++) {
       // start from 1 because 0 is primary
-      const address = wallet.get_subaddress_as_str(0, i);
-      const label = wallet.get_subaddress_label(0, i);
+      const address = await wallet.get_subaddress_as_str(0, i);
+      const label = await wallet.get_subaddress_label(0, i);
       accounts.push({ address, label, indexMinor: i });
     }
     setSecondaryAddresses(accounts);
+  }, [wallet]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const file = await wallet.get_wallet_file();
+        if (!cancelled) {
+          setWalletFileName(file);
+        }
+      } catch (e) {
+        console.error("Failed to get wallet file name:", e);
+        if (!cancelled) {
+          setWalletFileName("Unknown wallet");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [wallet]);
 
   /*
@@ -143,15 +161,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       ),
     );
 
-    console.info("Address=", wallet.get_address());
-
     const getStatus = async () => {
-      const walletHeight = wallet.get_blockchain_current_height();
+      const walletHeight = await wallet.get_blockchain_current_height();
 
-      const balanceStrict = wallet.balance(0, true);
-      const balanceNonStrict = wallet.balance(0, false);
-      const unlockedBalanceStrict = wallet.unlocked_balance(0, true);
-      const unlockedBalanceNonStrict = wallet.unlocked_balance(0, false);
+      const balanceStrict = await wallet.balance(0, true);
+      const balanceNonStrict = await wallet.balance(0, false);
+      const unlockedBalanceStrict = await wallet.unlocked_balance(0, true);
+      const unlockedBalanceNonStrict = await wallet.unlocked_balance(0, false);
       const balance = {
         strict: {
           value: balanceStrict,
@@ -270,7 +286,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         setRefreshError(null);
 
         try {
-          updateSecondaryAddresses();
+          await updateSecondaryAddresses();
 
           const freshStatus = await getStatus();
           if (!freshStatus) {
@@ -360,7 +376,23 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   const priceInfo = useXmrPrice();
   const price = priceInfo?.price ?? null;
 
-  const primaryAddress = useMemo(() => wallet.get_address(), [wallet]);
+  const [primaryAddress, setPrimaryAddress] = React.useState("");
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const address = await wallet.get_address();
+        if (!cancelled) {
+          setPrimaryAddress(address);
+        }
+      } catch (e) {
+        console.error("Failed to get primary address:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wallet]);
   const [secondaryAddresses, setSecondaryAddresses] = React.useState<
     | {
         address: string;
@@ -538,7 +570,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   onAddSubaddressAdd={async (newLabel) => {
                     await wallet.add_subaddress(0, newLabel);
                     await saveWalletIntoFs(wallet);
-                    updateSecondaryAddresses();
+                    await updateSecondaryAddresses();
                   }}
                 />
               ),

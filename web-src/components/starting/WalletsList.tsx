@@ -89,10 +89,14 @@ export function WalletsList() {
   const handleRestoreDone = React.useCallback(
     (openedWallet: OpenedWallet | null) => {
       if (openedWallet) {
-        options.setValue(
-          "lastWalletName",
-          openedWallet.wallet.get_wallet_file(),
-        );
+        void (async () => {
+          try {
+            const walletFile = await openedWallet.wallet.get_wallet_file();
+            options.setValue("lastWalletName", walletFile);
+          } catch (e) {
+            console.error("Failed to read opened wallet file name:", e);
+          }
+        })();
         setView({ type: "opened", openedWallet });
       } else {
         backToList();
@@ -103,10 +107,14 @@ export function WalletsList() {
   const handleCreateDone = React.useCallback(
     (openedWallet: OpenedWallet | null) => {
       if (openedWallet) {
-        options.setValue(
-          "lastWalletName",
-          openedWallet.wallet.get_wallet_file(),
-        );
+        void (async () => {
+          try {
+            const walletFile = await openedWallet.wallet.get_wallet_file();
+            options.setValue("lastWalletName", walletFile);
+          } catch (e) {
+            console.error("Failed to read opened wallet file name:", e);
+          }
+        })();
         setView({ type: "opened", openedWallet });
       } else {
         backToList();
@@ -117,10 +125,14 @@ export function WalletsList() {
   const handleOpenDone = React.useCallback(
     (openedWallet: OpenedWallet | null) => {
       if (openedWallet) {
-        options.setValue(
-          "lastWalletName",
-          openedWallet.wallet.get_wallet_file(),
-        );
+        void (async () => {
+          try {
+            const walletFile = await openedWallet.wallet.get_wallet_file();
+            options.setValue("lastWalletName", walletFile);
+          } catch (e) {
+            console.error("Failed to read opened wallet file name:", e);
+          }
+        })();
         setView({ type: "opened", openedWallet });
       } else {
         options.setValue("lastWalletName", null);

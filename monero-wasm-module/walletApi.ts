@@ -32,23 +32,23 @@ export declare class MoneroWasmWallet {
     callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) => void;
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
-  get_address(): string;
-  get_wallet_file(): string;
-  balance(index_major: number, strict: boolean): bigint;
+  get_address(): Promise<string>;
+  get_wallet_file(): Promise<string>;
+  balance(index_major: number, strict: boolean): Promise<bigint>;
   unlocked_balance(
     index_major: number,
     strict: boolean,
-  ): {
+  ): Promise<{
     balance: bigint;
     blocks_to_unlock: bigint;
     time_to_unlock: bigint;
-  };
-  set_refresh_from_block_height(height: bigint): void;
-  set_explicit_refresh_from_block_height(value: boolean): void;
+  }>;
+  set_refresh_from_block_height(height: bigint): Promise<boolean>;
+  set_explicit_refresh_from_block_height(value: boolean): Promise<boolean>;
   /**
    * Current height in the wallet. When it is same as get_daemon_blockchain_height() then it is synced
    */
-  get_blockchain_current_height(): bigint;
+  get_blockchain_current_height(): Promise<bigint>;
   get_blockchain_height_by_date(
     year: number,
     month: number,
@@ -60,9 +60,15 @@ export declare class MoneroWasmWallet {
     maxHeight: bigint,
   ): Promise<EmbindVector<PaymentDetails>>;
   get_payments_mempool(): Promise<EmbindVector<PaymentDetails>>;
-  get_num_subaddresses(index_major: number): number;
-  get_subaddress_as_str(index_major: number, index_minor: number): string;
-  get_subaddress_label(index_major: number, index_minor: number): string;
+  get_num_subaddresses(index_major: number): Promise<number>;
+  get_subaddress_as_str(
+    index_major: number,
+    index_minor: number,
+  ): Promise<string>;
+  get_subaddress_label(
+    index_major: number,
+    index_minor: number,
+  ): Promise<string>;
   add_subaddress(index_major: number, label: string): Promise<void>;
   transfer_prepare(
     destination: string,
