@@ -3,6 +3,7 @@
     "ms-vscode.cpptools",
     "bradlc.vscode-tailwindcss",
     "eamodio.gitlens",
-    "esbenp.prettier-vscode"
+    "esbenp.prettier-vscode",
+    "ms-vscode.cmake-tools"
   ]
 }
