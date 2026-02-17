@@ -241,10 +241,10 @@ public:
                            for (uint32_t indexMinor = 0; indexMinor < count; ++indexMinor)
                            {
                                auto subaddr_index = cryptonote::subaddress_index{accountId, indexMinor};
-                               result.push_back({
-                                   .address = m_wallet.get_subaddress_as_str(subaddr_index),
-                                   .label = m_wallet.get_subaddress_label(subaddr_index),
-                                   .indexMinor = indexMinor,
+                               result.push_back(WalletAddress{
+                                   m_wallet.get_subaddress_as_str(subaddr_index),
+                                   m_wallet.get_subaddress_label(subaddr_index),
+                                   indexMinor,
                                });
                            }
                            return result; });
