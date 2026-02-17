@@ -325,8 +325,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
         // The point of having delay here is to allow to get fresh statuses right after refresh
         // If we have refresh in the end of the loop then we will just wait
-
-        const isSynced = await wallet.is_synced();
+        const isSynced = await wallet.is_synced().catch(() => null);
         if (isSynced) {
           lastTimeRefreshStartedAt = null;
           lastTimeRefreshedBlocks = null;
@@ -334,11 +333,21 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           console.info("Wallet is synced, fetching mempool...");
           {
             // On non-initial refresh also get mempool payments
-            const mempoolPayments = await wallet.get_payments_mempool();
-            const transformedMempoolPayments =
-              transformPayments(mempoolPayments);
-            console.log("Mempool payments:", transformedMempoolPayments);
-            setMempoolPayments(transformedMempoolPayments);
+            const mempoolPayments = await wallet
+              .get_payments_mempool()
+              .catch(() => null);
+            if (mempoolPayments) {
+              const transformedMempoolPayments =
+                transformPayments(mempoolPayments);
+              console.log("Mempool payments:", transformedMempoolPayments);
+              setMempoolPayments(transformedMempoolPayments);
+            } else {
+              console.warn("Failed to fetch mempool payments");
+              setMempoolPayments(null);
+              setRefreshError("Failed to fetch mempool payments");
+              await interruptableDelay(30_000);
+              continue;
+            }
           }
           await interruptableDelay(60_000);
           continue;
