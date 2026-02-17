@@ -830,7 +830,11 @@ private:
 
         const auto len = js_uint8_array["length"].as<size_t>();
         auto out = std::vector<std::uint8_t>(len);
-        copy_js_uint8_array_to_heap_ptr(js_uint8_array, out.data(), len);
+        if (len > 0)
+        {
+            auto out_view = emscripten::val(emscripten::typed_memory_view(len, out.data()));
+            out_view.call<void>("set", js_uint8_array);
+        }
         return out;
     }
 
@@ -847,7 +851,11 @@ private:
             throw std::runtime_error("Expected " + std::to_string(expected_len) + " bytes but got " + std::to_string(len));
         }
 
-        copy_js_uint8_array_to_heap_ptr(js_uint8_array, out, expected_len);
+        if (expected_len > 0)
+        {
+            auto out_view = emscripten::val(emscripten::typed_memory_view(expected_len, out));
+            out_view.call<void>("set", js_uint8_array);
+        }
     }
 
     static std::vector<std::vector<std::uint8_t>> parse_js_uint8_array_array(const emscripten::val &js_array)
@@ -858,19 +866,6 @@ private:
             {
                 return parse_js_uint8_array(item);
             });
-    }
-
-    static void copy_js_uint8_array_to_heap_ptr(const emscripten::val &src, std::uint8_t *dst, size_t len)
-    {
-        if (len == 0)
-        {
-            return;
-        }
-
-        const auto dst_ptr = reinterpret_cast<std::uintptr_t>(dst);
-        auto heap_u8 = emscripten::val::module_property("HEAPU8");
-        auto dst_view = heap_u8.call<emscripten::val>("subarray", dst_ptr, dst_ptr + len);
-        dst_view.call<void>("set", src);
     }
 
     static emscripten::val copy_bytes_to_uint8_array(const std::uint8_t *data, size_t size)
