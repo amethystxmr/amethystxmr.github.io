@@ -193,12 +193,6 @@ export async function withFsLock<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-export async function saveWalletIntoFs(wallet: MoneroWasmWallet) {
-  return withFsLock(async () => {
-    await wallet.store();
-  });
-}
-
 export function downloadBlob(
   blob: Blob,
   fileName: string,

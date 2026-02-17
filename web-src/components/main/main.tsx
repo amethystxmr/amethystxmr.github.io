@@ -13,7 +13,7 @@ import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
 import { NiceTabs } from "./tabs";
 import { ReceiveAddresses } from "./main.receive";
-import { balanceToString, saveWalletIntoFs, toFiat } from "../utils";
+import { balanceToString, toFiat, withFsLock } from "../utils";
 import { TransactionsTab } from "./main.transactions";
 import { SendTab } from "./main.send";
 import { OtherTab } from "./main.other";
@@ -220,19 +220,27 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       setRefreshError(null);
 
       try {
-        const refreshStatus = await wallet.refresh(
-          false,
-          0n,
-          true,
-          true,
-          2000n,
-        );
+        const refreshStatus = await withFsLock(async () => {
+          if (cancelled) {
+            return;
+          }
+          const refreshStatusLocal = await wallet.refresh(
+            false,
+            0n,
+            true,
+            true,
+            2000n,
+          );
+          await wallet.store();
+          return refreshStatusLocal;
+        });
+        if (!refreshStatus) {
+          return;
+        }
         console.info("Refresh status:", refreshStatus);
         if (cancelled) {
           return;
         }
-        await saveWalletIntoFs(wallet);
-        console.info("Refresh saved");
 
         if (cancelled) {
           return;
@@ -564,8 +572,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   mempoolPayments={mempoolPayments}
                   price={price}
                   onAddSubaddressAdd={async (newLabel) => {
-                    await wallet.add_subaddress(0, newLabel);
-                    await saveWalletIntoFs(wallet);
+                    withFsLock(async () => {
+                      await wallet.add_subaddress(0, newLabel);
+                      await wallet.store();
+                    });
                     await updateWalletAddresses();
                   }}
                 />

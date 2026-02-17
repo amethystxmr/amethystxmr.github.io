@@ -35,12 +35,7 @@ import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { getDefaultOptions, options } from "../options";
 import { NiceTabs } from "../main/tabs";
-import {
-  acquireWalletOpenLock,
-  downloadBlob,
-  saveWalletIntoFs,
-  withFsLock,
-} from "../utils";
+import { acquireWalletOpenLock, downloadBlob, withFsLock } from "../utils";
 
 type OpenedWallet = {
   wallet: MoneroWasmWallet;
@@ -653,32 +648,34 @@ function CreateNewWalletView({
         );
       }
 
-      wallet = createWallet();
-      await wallet.init();
+      const seed = await withFsLock(async () => {
+        wallet = createWallet();
+        await wallet.init();
 
-      const generatedSecret32 = await withFsLock(async () => {
-        if (!wallet) {
-          throw new Error("Wallet was unexpectedly undefined");
-        }
-        const r = await wallet.generate(
+        const generatedSecret32 = await wallet.generate(
           fileName,
           password,
           new Uint8Array(32).fill(0),
           false,
           false,
         );
-        return r;
+
+        if (!generatedSecret32 || generatedSecret32.length !== 32) {
+          throw new Error("Generated secret is invalid");
+        }
+        if (generatedSecret32.every((byte) => byte === 0)) {
+          throw new Error("Generated secret is all zeroes, which is invalid");
+        }
+
+        const seedLocal = await wallet.get_seed("English", "");
+
+        await wallet.store();
+
+        return seedLocal;
       });
-      if (!generatedSecret32 || generatedSecret32.length !== 32) {
-        throw new Error("Generated secret is invalid");
+      if (!wallet) {
+        throw new Error("Wallet was unexpectedly undefined after creation");
       }
-      if (generatedSecret32.every((byte) => byte === 0)) {
-        throw new Error("Generated secret is all zeroes, which is invalid");
-      }
-
-      const seed = await wallet.get_seed("English", "");
-
-      await saveWalletIntoFs(wallet);
       await persistNavigatorStorage();
       if (!releaseWalletOpenLock) {
         throw new Error("Wallet lock release callback is missing");
