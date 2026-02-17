@@ -17,6 +17,7 @@
 
 #include <emscripten/val.h>
 #include <optional>
+#include <cstdint>
 
 #include "multisig/multisig.h"
 #include "multisig/multisig_account.h"
@@ -27,6 +28,19 @@
 class MoneroWasmWallet : public tools::i_wallet2_callback
 {
 public:
+    static emscripten::val copy_bytes_to_uint8_array(const std::uint8_t *data, size_t size)
+    {
+        auto out = emscripten::val::global("Uint8Array").new_(size);
+        if (size == 0)
+        {
+            return out;
+        }
+
+        // Copy in one call to avoid per-byte embind overhead for large buffers.
+        out.call<void>("set", emscripten::val(emscripten::typed_memory_view(size, data)));
+        return out;
+    }
+
     // Full wallet callbacks
     void on_new_block(uint64_t height, const cryptonote::block &block) override
     {
@@ -735,22 +749,25 @@ public:
 
     auto export_multisig()
     {
-        return promise([this]()
-                       {
-                        auto status = m_wallet.get_multisig_status();
-                           if (!status.multisig_is_active)
-                           {
-                               throw std::runtime_error("Wallet is not multisig");
-                           }
-                           if (!status.is_ready)
-                           {
-                               throw std::runtime_error("Multisig wallet is not ready");
-                           }
-                           cryptonote::blobdata ciphertext = m_wallet.export_multisig();
-                            // TODO: This returns std::string which might be serialized incorrectly 
-                            // into javascript
-                            // We need to return Uint8Array instead
-                           return ciphertext; });
+        return promise(
+            [this]()
+            {
+                auto status = m_wallet.get_multisig_status();
+                if (!status.multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is not multisig");
+                }
+                if (!status.is_ready)
+                {
+                    throw std::runtime_error("Multisig wallet is not ready");
+                }
+                return m_wallet.export_multisig();
+            },
+            [](const cryptonote::blobdata &ciphertext) -> emscripten::val
+            {
+                auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
+                return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes, ciphertext.size());
+            });
     }
 
 private:
