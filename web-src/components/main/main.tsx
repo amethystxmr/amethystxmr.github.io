@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   max64,
   MoneroWasmWallet,
@@ -144,7 +144,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   }, [wallet]);
 
   const stopWaitingRef = React.useRef<null | (() => void) | "no-wait">(null);
-  const stopWaitingOrScheduleNoWait = () => {
+  const stopWaitingOrScheduleNoWait = useCallback(() => {
     if (stopWaitingRef.current === "no-wait") {
       return;
     }
@@ -153,7 +153,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     } else {
       stopWaitingRef.current = "no-wait";
     }
-  };
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
