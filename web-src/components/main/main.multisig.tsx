@@ -222,6 +222,8 @@ export function MultisigTab({
       if (isUnmountedRef.current) {
         return;
       }
+      setOthersRound1Messages("");
+      setMyRound1Message({ type: "loading" });
       onRefresh();
     } catch (e) {
       const message =
@@ -288,6 +290,8 @@ export function MultisigTab({
       if (isUnmountedRef.current) {
         return;
       }
+      setOthersRoundMessages("");
+      setMyLastKexMessage({ type: "loading" });
       onRefresh();
     } catch (e) {
       const message =
