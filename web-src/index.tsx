@@ -22,14 +22,17 @@ function MyApp() {
 
   return (
     <div className="scrollbar-hidden-mobile mx-auto h-dvh w-full max-w-[1200px] overflow-y-auto overflow-x-hidden p-0 sm:h-auto sm:overflow-visible sm:p-6">
-      <div className="card min-h-full sm:h-auto">
-        <AlertProvider>
-          {loading ? (
-            <div className="text-center">Loading...</div>
-          ) : (
-            <WalletsList />
-          )}
-        </AlertProvider>
+      <div className="card relative min-h-full overflow-hidden sm:h-auto">
+        <div className="ambient-pane-overlay" />
+        <div className="relative z-10">
+          <AlertProvider>
+            {loading ? (
+              <div className="text-center">Loading...</div>
+            ) : (
+              <WalletsList />
+            )}
+          </AlertProvider>
+        </div>
       </div>
     </div>
   );

@@ -89,6 +89,71 @@
     animation: slow-blink 2.2s ease-in-out infinite;
   }
 
+  @keyframes ambient-drift {
+    0% {
+      transform: translate3d(-2%, -1%, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(2%, 1.5%, 0) scale(1.05);
+    }
+    100% {
+      transform: translate3d(-2%, -1%, 0) scale(1);
+    }
+  }
+
+  @keyframes ambient-orb {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+      opacity: 0.42;
+    }
+    50% {
+      transform: translate3d(6%, -4%, 0) scale(1.08);
+      opacity: 0.6;
+    }
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+      opacity: 0.42;
+    }
+  }
+
+  .ambient-pane-overlay {
+    position: absolute;
+    inset: -18%;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 14% 18%, rgba(198, 162, 255, 0.2), transparent 42%),
+      radial-gradient(circle at 82% 15%, rgba(104, 198, 255, 0.09), transparent 40%),
+      radial-gradient(circle at 85% 88%, rgba(250, 144, 208, 0.13), transparent 42%);
+    filter: saturate(112%);
+    animation: ambient-drift 15s ease-in-out infinite;
+  }
+
+  .ambient-pane-overlay::before,
+  .ambient-pane-overlay::after {
+    content: "";
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(26px);
+    animation: ambient-orb 7.2s ease-in-out infinite;
+  }
+
+  .ambient-pane-overlay::before {
+    width: 190px;
+    height: 190px;
+    top: 12%;
+    right: 14%;
+    background: rgba(182, 142, 255, 0.15);
+  }
+
+  .ambient-pane-overlay::after {
+    width: 180px;
+    height: 180px;
+    left: 4%;
+    bottom: 5%;
+    background: rgba(102, 194, 255, 0.2);
+    animation-delay: -2.8s;
+  }
+
   @media (max-width: 639px) {
     .scrollbar-hidden-mobile {
       scrollbar-width: none;
