@@ -1,4 +1,5 @@
 import React, { useId, useMemo, useState } from "react";
+import { useSwipeable } from "react-swipeable";
 import { SectionPanel } from "../ui";
 
 type TabItem = {
@@ -75,6 +76,14 @@ export function NiceTabs({
       }
     }
   }
+  const swipeHandlers = useSwipeable({
+    onSwipedLeft: () => moveFocus(activeIndex, +1),
+    onSwipedRight: () => moveFocus(activeIndex, -1),
+    delta: 56,
+    preventScrollOnSwipe: false,
+    trackTouch: true,
+    trackMouse: false,
+  });
 
   return (
     <div className={className}>
@@ -128,6 +137,7 @@ export function NiceTabs({
           id={`${uid}-panel-${activeTab.key}`}
           role="tabpanel"
           aria-labelledby={`${uid}-tab-${activeTab.key}`}
+          {...swipeHandlers}
           className="lg:min-h-0 lg:flex-1 lg:overflow-hidden"
         >
           {activeTab.content}
