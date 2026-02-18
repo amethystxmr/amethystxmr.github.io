@@ -671,7 +671,7 @@ function MultisigReady({
         )}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Button
-            variant="primary"
+            variant="neutral"
             className="w-full py-2.5"
             disabled={isBusy}
             onClick={() => {
@@ -681,7 +681,7 @@ function MultisigReady({
             {busyAction === "export" ? "Exporting..." : "Export multisig"}
           </Button>
           <Button
-            variant="primary"
+            variant="neutral"
             className="w-full py-2.5"
             disabled={isBusy}
             onClick={() => fileInputRef.current?.click()}
