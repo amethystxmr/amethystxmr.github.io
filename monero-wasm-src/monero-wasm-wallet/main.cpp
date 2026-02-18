@@ -523,10 +523,41 @@ public:
         return result;
     }
 
-    auto transfer_prepare(std::string dst_address, uint64_t amount, uint32_t priority)
+    auto transfer_prepare(emscripten::val dst_addresses_js, emscripten::val amounts_js, uint32_t priority)
     {
-        return promise([this, dst_address = std::move(dst_address), amount, priority]()
-                       { return transfer_impl(dst_address, amount, priority); });
+        auto dst_addresses = parse_js_array<std::string>(
+            dst_addresses_js,
+            [](const emscripten::val &item, size_t index) -> std::string
+            {
+                if (!item.isString())
+                {
+                    throw std::runtime_error("Expected destination address string at index " + std::to_string(index));
+                }
+                return item.as<std::string>();
+            });
+        auto amounts = parse_js_array<uint64_t>(
+            amounts_js,
+            [](const emscripten::val &item, size_t index) -> uint64_t
+            {
+                const auto type = item.typeOf().as<std::string>();
+                if (type != "number" && type != "bigint")
+                {
+                    throw std::runtime_error("Expected amount number at index " + std::to_string(index));
+                }
+                return item.as<uint64_t>();
+            });
+
+        if (dst_addresses.empty())
+        {
+            throw std::runtime_error("Destination addresses list is empty");
+        }
+        if (dst_addresses.size() != amounts.size())
+        {
+            throw std::runtime_error("Destination addresses and amounts must have the same length");
+        }
+
+        return promise([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority]()
+                       { return transfer_impl(dst_addresses, amounts, priority); });
     }
 
     uint64_t transfer_get_fee(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
@@ -547,23 +578,36 @@ public:
                            return true; });
     }
 
-    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(std::string dst_address, uint64_t amount, uint32_t priority)
+    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(const std::vector<std::string> &dst_addresses, const std::vector<uint64_t> &amounts, uint32_t priority)
     {
-
-        cryptonote::address_parse_info info;
-        auto r = cryptonote::get_account_address_from_str(info, m_wallet.nettype(), dst_address);
-        if (!r)
+        if (dst_addresses.empty())
         {
-            throw std::runtime_error("Invalid destination address");
-        };
+            throw std::runtime_error("Destination addresses list is empty");
+        }
+        if (dst_addresses.size() != amounts.size())
+        {
+            throw std::runtime_error("Destination addresses and amounts must have the same length");
+        }
 
-        cryptonote::tx_destination_entry de;
-        de.addr = info.address;
-        de.is_subaddress = info.is_subaddress;
-        de.is_integrated = info.has_payment_id;
-        de.amount = amount;
+        std::vector<cryptonote::tx_destination_entry> dsts;
+        dsts.reserve(dst_addresses.size());
+        for (size_t i = 0; i < dst_addresses.size(); ++i)
+        {
+            cryptonote::address_parse_info info;
+            auto r = cryptonote::get_account_address_from_str(info, m_wallet.nettype(), dst_addresses[i]);
+            if (!r)
+            {
+                throw std::runtime_error("Invalid destination address at index " + std::to_string(i));
+            };
 
-        std::vector<cryptonote::tx_destination_entry> dsts = {de};
+            cryptonote::tx_destination_entry de;
+            de.addr = info.address;
+            de.is_subaddress = info.is_subaddress;
+            de.is_integrated = info.has_payment_id;
+            de.amount = amounts[i];
+
+            dsts.push_back(de);
+        }
 
         const size_t min_ring_size = m_wallet.get_min_ring_size();
         size_t fake_outs_count = min_ring_size - 1;

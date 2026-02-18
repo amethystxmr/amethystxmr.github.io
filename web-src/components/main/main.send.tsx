@@ -130,7 +130,7 @@ export function SendTab({
     }
 
     setState({ type: "estimating" });
-    wallet.transfer_prepare(normalizedAddress, parsedAmount, feePriority).then(
+    wallet.transfer_prepare([normalizedAddress], [parsedAmount], feePriority).then(
       (txHandle) => {
         const fee = wallet.transfer_get_fee(txHandle);
         setState({ type: "confirming", fee, txHandle });

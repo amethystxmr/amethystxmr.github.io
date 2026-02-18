@@ -72,8 +72,8 @@ export declare class MoneroWasmWallet {
   get_wallet_addresses(accountId: number): Promise<EmbindVector<WalletAddress>>;
   add_subaddress(index_major: number, label: string): Promise<void>;
   transfer_prepare(
-    destination: string,
-    amount: bigint,
+    destinations: string[],
+    amounts: bigint[],
     priority: FeePriority,
   ): Promise<PendingTxHandle>;
   transfer_get_fee(handle: PendingTxHandle): bigint;
