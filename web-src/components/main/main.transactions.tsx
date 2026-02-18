@@ -86,7 +86,7 @@ export function TransactionsTab({
                 className="py-2.5"
                 onClick={() =>
                   setExpandedIndexFromEnd((prev) =>
-                    prev === indexFromEnd ? null : indexFromEnd,
+                    prev === indexFromEnd ? prev : indexFromEnd,
                   )
                 }
               >
