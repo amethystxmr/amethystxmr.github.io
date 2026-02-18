@@ -459,19 +459,17 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     : null;
   const availableXmrText =
     availableBalance !== null
-      ? `${balanceToString(availableBalance)} XMR`
+      ? `${balanceToString(availableBalance)}`
       : "Loading...";
   const lockedXmrText =
-    lockedBalance !== null
-      ? `${balanceToString(lockedBalance)} XMR`
-      : "Loading...";
+    lockedBalance !== null ? `${balanceToString(lockedBalance)}` : "Loading...";
   const availableEurText =
     availableBalance !== null && price
-      ? `~${toFiat(availableBalance, price).toFixed(2)} EUR`
+      ? `~${toFiat(availableBalance, price).toFixed(2)}`
       : "—";
   const lockedEurText =
     lockedBalance !== null && price
-      ? `~${toFiat(lockedBalance, price).toFixed(2)} EUR`
+      ? `~${toFiat(lockedBalance, price).toFixed(2)}`
       : "—";
 
   const isSyncingNow = refreshing || (status && !status.isSynced);
