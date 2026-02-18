@@ -222,6 +222,37 @@ export function SendTab({
           torchAvailable:
             hasTorchCapability && typeof controls.switchTorch === "function",
         }));
+
+        // Refresh camera list after stream start (permission already granted),
+        // otherwise mobile browsers may expose only a single/default device.
+        void navigator.mediaDevices
+          .enumerateDevices()
+          .then((devices) => {
+            if (isClosed) {
+              return;
+            }
+            const cameraIds = devices
+              .filter((d) => d.kind === "videoinput")
+              .map((d) => d.deviceId)
+              .filter((id) => id.length > 0);
+            const streamDeviceId =
+              controls.streamVideoSettingsGet?.((track) => [track])?.deviceId;
+            setCameraState((prev) => ({
+              ...prev,
+              deviceIds: cameraIds,
+              activeDeviceId:
+                cameraIds.length === 0
+                  ? undefined
+                  : streamDeviceId && cameraIds.includes(streamDeviceId)
+                    ? streamDeviceId
+                    : prev.activeDeviceId && cameraIds.includes(prev.activeDeviceId)
+                      ? prev.activeDeviceId
+                      : cameraIds[0],
+            }));
+          })
+          .catch((e) => {
+            console.error("Failed to refresh camera devices:", e);
+          });
       })
       .catch((e) => {
         console.error("Failed to start QR scanner:", e);
@@ -235,40 +266,6 @@ export function SendTab({
       scannerControlsRef.current = null;
     };
   }, [cameraState.activeDeviceId, scannerOpen]);
-
-  React.useEffect(() => {
-    if (!scannerOpen) {
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        if (cancelled) {
-          return;
-        }
-        const cameraIds = devices
-          .filter((d) => d.kind === "videoinput")
-          .map((d) => d.deviceId)
-          .filter((id) => id.length > 0);
-        setCameraState((prev) => ({
-          ...prev,
-          deviceIds: cameraIds,
-          activeDeviceId:
-            cameraIds.length === 0
-              ? undefined
-              : prev.activeDeviceId && cameraIds.includes(prev.activeDeviceId)
-                ? prev.activeDeviceId
-                : cameraIds[0],
-        }));
-      } catch (e) {
-        console.error("Failed to enumerate camera devices:", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [scannerOpen]);
 
   const toggleCamera = React.useCallback(() => {
     if (cameraState.deviceIds.length < 2) {
