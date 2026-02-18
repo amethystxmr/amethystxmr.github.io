@@ -594,11 +594,13 @@ function MultisigReady({
 
     setBusyAction("export");
     try {
-      const [data, walletFile, currentHeight] = await Promise.all([
-        wallet.export_multisig(),
-        wallet.get_wallet_file(),
-        wallet.get_blockchain_current_height(),
-      ]);
+      const [data, walletFile, currentHeight] = await withFsLock(async () => {
+        const dataLocal = await wallet.export_multisig();
+        const fileNameLocal = await wallet.get_wallet_file();
+        const heightLocal = await wallet.get_blockchain_current_height();
+        await wallet.store();
+        return [dataLocal, fileNameLocal, heightLocal] as const;
+      });
 
       const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
       const dataForBlob = new Uint8Array(data.length);
