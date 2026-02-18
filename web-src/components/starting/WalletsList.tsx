@@ -285,6 +285,61 @@ async function getBlockchainHeightByDateUsingTempWallet(
   }
 }
 
+function DoublePasswordInput({
+  password,
+  passwordConfirm,
+  disabled,
+  onPasswordChange,
+  onPasswordConfirmChange,
+}: {
+  password: string;
+  passwordConfirm: string;
+  disabled: boolean;
+  onPasswordChange: (value: string) => void;
+  onPasswordConfirmChange: (value: string) => void;
+}) {
+  return (
+    <FormRow>
+      <div className="sm:hidden">
+        <Label>Password (optional), confirm password</Label>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <div className="hidden sm:block">
+            <Label>Password (optional)</Label>
+          </div>
+          <Input
+            type="password"
+            autoComplete="off"
+            placeholder="Password (optional)"
+            value={password}
+            disabled={disabled}
+            onChange={(e) => onPasswordChange(e.target.value)}
+          />
+        </div>
+        <div>
+          <div className="hidden sm:block">
+            <Label>{"\u00A0"}</Label>
+          </div>
+          <Input
+            type="password"
+            autoComplete="off"
+            placeholder="Confirm password"
+            value={passwordConfirm}
+            disabled={disabled}
+            onChange={(e) => onPasswordConfirmChange(e.target.value)}
+          />
+        </div>
+      </div>
+      {passwordConfirm && password !== passwordConfirm && (
+        <div className="mt-1 text-[11px] text-red-300">
+          Password confirmation does not match.
+        </div>
+      )}
+    </FormRow>
+  );
+}
+
 function RestoreView({
   onDone,
 }: {
@@ -535,32 +590,13 @@ function RestoreView({
           ]}
         />
 
-        <FormRow>
-          <Label>Password (optional)</Label>
-          <Input
-            type="password"
-            autoComplete="off"
-            value={password}
-            disabled={restoring}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </FormRow>
-
-        <FormRow>
-          <Label>Confirm password</Label>
-          <Input
-            type="password"
-            autoComplete="off"
-            value={passwordConfirm}
-            disabled={restoring}
-            onChange={(e) => setPasswordConfirm(e.target.value)}
-          />
-          {passwordConfirm && password !== passwordConfirm && (
-            <div className="mt-1 text-[11px] text-red-300">
-              Password confirmation does not match.
-            </div>
-          )}
-        </FormRow>
+        <DoublePasswordInput
+          password={password}
+          passwordConfirm={passwordConfirm}
+          disabled={restoring}
+          onPasswordChange={setPassword}
+          onPasswordConfirmChange={setPasswordConfirm}
+        />
 
         <ButtonsHolder>
           <Button
@@ -832,37 +868,17 @@ function CreateNewWalletView({
               />
             </FormRow>
 
-            <FormRow>
-              <Label>Password (optional)</Label>
-              <Input
-                type="password"
-                autoComplete="off"
-                value={state.password}
-                disabled={isBusy}
-                onChange={(e) =>
-                  setState({ ...state, password: e.target.value })
-                }
-              />
-            </FormRow>
-
-            <FormRow>
-              <Label>Confirm password</Label>
-              <Input
-                type="password"
-                autoComplete="off"
-                value={state.passwordConfirm}
-                disabled={isBusy}
-                onChange={(e) =>
-                  setState({ ...state, passwordConfirm: e.target.value })
-                }
-              />
-              {state.passwordConfirm &&
-                state.password !== state.passwordConfirm && (
-                  <div className="mt-1 text-[11px] text-red-300">
-                    Password confirmation does not match.
-                  </div>
-                )}
-            </FormRow>
+            <DoublePasswordInput
+              password={state.password}
+              passwordConfirm={state.passwordConfirm}
+              disabled={isBusy}
+              onPasswordChange={(value) =>
+                setState({ ...state, password: value })
+              }
+              onPasswordConfirmChange={(value) =>
+                setState({ ...state, passwordConfirm: value })
+              }
+            />
 
             <ButtonsHolder>
               <Button
