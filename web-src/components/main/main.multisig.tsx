@@ -8,6 +8,7 @@ import {
   Button,
   ButtonRadioRow,
   Label,
+  OverlayDialog,
   SurfaceCard,
   TextArea,
   useAlert,
@@ -501,6 +502,8 @@ export function MultisigTab({
       <MultisigReady
         wallet={wallet}
         multisigStatus={multisigStatus}
+        walletHeight={walletHeight}
+        daemonHeight={daemonHeight}
         hasMultisigPartialKeyImages={hasMultisigPartialKeyImages}
         onRefresh={onRefresh}
       />
@@ -572,11 +575,15 @@ export function MultisigTab({
 function MultisigReady({
   wallet,
   multisigStatus,
+  walletHeight,
+  daemonHeight,
   hasMultisigPartialKeyImages,
   onRefresh,
 }: {
   wallet: MoneroWasmWallet;
   multisigStatus: MultisigAccountStatus;
+  walletHeight: bigint | null;
+  daemonHeight: bigint | null;
   hasMultisigPartialKeyImages: boolean;
   onRefresh: () => void;
 }) {
@@ -586,6 +593,10 @@ function MultisigReady({
     "idle" | "export" | "import"
   >("idle");
   const isBusy = busyAction !== "idle";
+  const heightText =
+    walletHeight !== null && daemonHeight !== null
+      ? `${walletHeight.toString()}/${daemonHeight.toString()}`
+      : ".../...";
 
   const handleExportMultisig = React.useCallback(async () => {
     if (isBusy) {
@@ -653,52 +664,68 @@ function MultisigReady({
   );
 
   return (
-    <MultisigTabWrap>
-      <SurfaceCard className="space-y-3 text-sm text-white/75 lg:h-full">
-        <div className="space-y-1">
-          <div className="text-base font-semibold text-white/90">
-            Wallet is multisig
+    <>
+      <MultisigTabWrap>
+        <SurfaceCard className="space-y-3 text-sm text-white/75 lg:h-full">
+          <div className="space-y-1">
+            <div className="text-base font-semibold text-white/90">
+              Wallet is multisig
+            </div>
+            <div>
+              {multisigStatus.threshold}-of-{multisigStatus.total}
+            </div>
           </div>
-          <div>
-            {multisigStatus.threshold}-of-{multisigStatus.total}
+          {hasMultisigPartialKeyImages && (
+            <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-100/95 ring-1 ring-amber-200/20">
+              Some owned outputs have partial key images - import multisig info
+              needed
+            </div>
+          )}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              variant="neutral"
+              className="w-full py-2.5"
+              disabled={isBusy}
+              onClick={() => {
+                void handleExportMultisig();
+              }}
+            >
+              {busyAction === "export" ? "Exporting..." : "Export multisig"}
+            </Button>
+            <Button
+              variant="neutral"
+              className="w-full py-2.5"
+              disabled={isBusy}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {busyAction === "import" ? "Importing..." : "Import multisig"}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                void handleImportMultisigFiles(event);
+              }}
+            />
           </div>
-        </div>
-        {hasMultisigPartialKeyImages && (
-          <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-100/95 ring-1 ring-amber-200/20">
-            Some owned outputs have partial key images - import multisig info
-            needed
+        </SurfaceCard>
+      </MultisigTabWrap>
+      {busyAction === "import" && (
+        <OverlayDialog
+          onClose={() => {
+            // Prevent closing while import_multisig is running.
+          }}
+        >
+          <div className="space-y-2 text-sm text-white/80">
+            <div className="text-base font-semibold text-white/90">
+              Importing multisig data. This may take a while.
+            </div>
+            <div className="font-mono text-white/75">{heightText}</div>
           </div>
-        )}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            variant="neutral"
-            className="w-full py-2.5"
-            disabled={isBusy}
-            onClick={() => {
-              void handleExportMultisig();
-            }}
-          >
-            {busyAction === "export" ? "Exporting..." : "Export multisig"}
-          </Button>
-          <Button
-            variant="neutral"
-            className="w-full py-2.5"
-            disabled={isBusy}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {busyAction === "import" ? "Importing..." : "Import multisig"}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              void handleImportMultisigFiles(event);
-            }}
-          />
-        </div>
-      </SurfaceCard>
-    </MultisigTabWrap>
+        </OverlayDialog>
+      )}
+    </>
   );
 }
