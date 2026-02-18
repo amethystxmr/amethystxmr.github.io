@@ -29,6 +29,22 @@ type SendState =
   | { type: "sent"; txFee: bigint }
   | { type: "error"; message: string };
 
+type CameraState = {
+  deviceIds: string[];
+  activeDeviceId: string | undefined;
+  torchAvailable: boolean;
+  torchOn: boolean;
+  torchBusy: boolean;
+};
+
+const INITIAL_CAMERA_STATE: CameraState = {
+  deviceIds: [],
+  activeDeviceId: undefined,
+  torchAvailable: false,
+  torchOn: false,
+  torchBusy: false,
+};
+
 const FEE_PRIORITY_LABELS = {
   [FeePriority.Default]: "Default",
   [FeePriority.Unimportant]: "Unimportant",
@@ -83,6 +99,8 @@ export function SendTab({
   const [state, setState] = React.useState<SendState>({ type: "entering" });
   const [scannerOpen, setScannerOpen] = React.useState(false);
   const [scannerError, setScannerError] = React.useState<string | null>(null);
+  const [cameraState, setCameraState] =
+    React.useState<CameraState>(INITIAL_CAMERA_STATE);
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const scannerControlsRef = React.useRef<IScannerControls | null>(null);
 
@@ -145,6 +163,7 @@ export function SendTab({
     setState({ type: "entering" });
     setScannerOpen(false);
     setScannerError(null);
+    setCameraState(INITIAL_CAMERA_STATE);
   }
 
   React.useEffect(() => {
@@ -159,11 +178,16 @@ export function SendTab({
     }
 
     setScannerError(null);
+    setCameraState((prev) => ({
+      ...prev,
+      torchOn: false,
+      torchAvailable: false,
+    }));
     let isClosed = false;
     const reader = new BrowserMultiFormatReader();
 
     reader
-      .decodeFromVideoDevice(undefined, videoElement, (result) => {
+      .decodeFromVideoDevice(cameraState.activeDeviceId, videoElement, (result) => {
         if (isClosed || !result) {
           return;
         }
@@ -182,7 +206,22 @@ export function SendTab({
         setScannerError(null);
       })
       .then((controls) => {
+        if (isClosed) {
+          controls.stop();
+          return;
+        }
         scannerControlsRef.current = controls;
+        const capabilities =
+          controls.streamVideoCapabilitiesGet?.((track) => [track]) ?? null;
+        const hasTorchCapability =
+          !!capabilities &&
+          "torch" in capabilities &&
+          capabilities.torch === true;
+        setCameraState((prev) => ({
+          ...prev,
+          torchAvailable:
+            hasTorchCapability && typeof controls.switchTorch === "function",
+        }));
       })
       .catch((e) => {
         console.error("Failed to start QR scanner:", e);
@@ -191,10 +230,83 @@ export function SendTab({
 
     return () => {
       isClosed = true;
+      setCameraState((prev) => ({ ...prev, torchOn: false }));
       scannerControlsRef.current?.stop();
       scannerControlsRef.current = null;
     };
+  }, [cameraState.activeDeviceId, scannerOpen]);
+
+  React.useEffect(() => {
+    if (!scannerOpen) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        if (cancelled) {
+          return;
+        }
+        const cameraIds = devices
+          .filter((d) => d.kind === "videoinput")
+          .map((d) => d.deviceId)
+          .filter((id) => id.length > 0);
+        setCameraState((prev) => ({
+          ...prev,
+          deviceIds: cameraIds,
+          activeDeviceId:
+            cameraIds.length === 0
+              ? undefined
+              : prev.activeDeviceId && cameraIds.includes(prev.activeDeviceId)
+                ? prev.activeDeviceId
+                : cameraIds[0],
+        }));
+      } catch (e) {
+        console.error("Failed to enumerate camera devices:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [scannerOpen]);
+
+  const toggleCamera = React.useCallback(() => {
+    if (cameraState.deviceIds.length < 2) {
+      return;
+    }
+    setCameraState((prev) => {
+      const currentIndex = prev.activeDeviceId
+        ? prev.deviceIds.indexOf(prev.activeDeviceId)
+        : -1;
+      const nextIndex = (currentIndex + 1) % prev.deviceIds.length;
+      return {
+        ...prev,
+        activeDeviceId: prev.deviceIds[nextIndex],
+      };
+    });
+  }, [cameraState.deviceIds.length]);
+
+  const toggleTorch = React.useCallback(async () => {
+    const controls = scannerControlsRef.current;
+    if (
+      !controls?.switchTorch ||
+      !cameraState.torchAvailable ||
+      cameraState.torchBusy
+    ) {
+      return;
+    }
+    const next = !cameraState.torchOn;
+    setCameraState((prev) => ({ ...prev, torchBusy: true }));
+    try {
+      await controls.switchTorch(next);
+      setCameraState((prev) => ({ ...prev, torchOn: next }));
+    } catch (e) {
+      console.error("Failed to toggle torch:", e);
+      setScannerError((e as Error).message || "Cannot toggle camera light.");
+    } finally {
+      setCameraState((prev) => ({ ...prev, torchBusy: false }));
+    }
+  }, [cameraState.torchAvailable, cameraState.torchBusy, cameraState.torchOn]);
 
   return (
     <SectionPanel className="space-y-4 lg:h-full lg:overflow-y-auto">
@@ -231,6 +343,30 @@ export function SendTab({
                     playsInline
                     muted
                   />
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="soft"
+                      className="w-full text-xs"
+                      onClick={toggleCamera}
+                      disabled={cameraState.deviceIds.length < 2}
+                    >
+                      Switch camera
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="soft"
+                      className="w-full text-xs"
+                      onClick={() => {
+                        void toggleTorch();
+                      }}
+                      disabled={
+                        !cameraState.torchAvailable || cameraState.torchBusy
+                      }
+                    >
+                      {cameraState.torchOn ? "Light off" : "Light on"}
+                    </Button>
+                  </div>
                   <div className="text-xs text-white/55">
                     Scan a QR with either a plain address or a{" "}
                     <span className="font-mono">monero:</span> URI.

@@ -7,7 +7,9 @@ import {
 import {
   Button,
   ButtonRadioRow,
+  ConfirmDialog,
   Label,
+  OverlayDialog,
   SurfaceCard,
   TextArea,
   useAlert,
@@ -501,6 +503,8 @@ export function MultisigTab({
       <MultisigReady
         wallet={wallet}
         multisigStatus={multisigStatus}
+        walletHeight={walletHeight}
+        daemonHeight={daemonHeight}
         hasMultisigPartialKeyImages={hasMultisigPartialKeyImages}
         onRefresh={onRefresh}
       />
@@ -572,11 +576,15 @@ export function MultisigTab({
 function MultisigReady({
   wallet,
   multisigStatus,
+  walletHeight,
+  daemonHeight,
   hasMultisigPartialKeyImages,
   onRefresh,
 }: {
   wallet: MoneroWasmWallet;
   multisigStatus: MultisigAccountStatus;
+  walletHeight: bigint | null;
+  daemonHeight: bigint | null;
   hasMultisigPartialKeyImages: boolean;
   onRefresh: () => void;
 }) {
@@ -585,7 +593,12 @@ function MultisigReady({
   const [busyAction, setBusyAction] = React.useState<
     "idle" | "export" | "import"
   >("idle");
+  const [isExportConfirmOpen, setIsExportConfirmOpen] = React.useState(false);
   const isBusy = busyAction !== "idle";
+  const heightText =
+    walletHeight !== null && daemonHeight !== null
+      ? `${walletHeight.toString()}/${daemonHeight.toString()}`
+      : ".../...";
 
   const handleExportMultisig = React.useCallback(async () => {
     if (isBusy) {
@@ -594,11 +607,13 @@ function MultisigReady({
 
     setBusyAction("export");
     try {
-      const [data, walletFile, currentHeight] = await Promise.all([
-        wallet.export_multisig(),
-        wallet.get_wallet_file(),
-        wallet.get_blockchain_current_height(),
-      ]);
+      const [data, walletFile, currentHeight] = await withFsLock(async () => {
+        const dataLocal = await wallet.export_multisig();
+        const fileNameLocal = await wallet.get_wallet_file();
+        const heightLocal = await wallet.get_blockchain_current_height();
+        await wallet.store();
+        return [dataLocal, fileNameLocal, heightLocal] as const;
+      });
 
       const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
       const dataForBlob = new Uint8Array(data.length);
@@ -651,52 +666,123 @@ function MultisigReady({
   );
 
   return (
-    <MultisigTabWrap>
-      <SurfaceCard className="space-y-3 text-sm text-white/75 lg:h-full">
-        <div className="space-y-1">
-          <div className="text-base font-semibold text-white/90">
-            Wallet is multisig
+    <>
+      <MultisigTabWrap>
+        <SurfaceCard className="space-y-3 text-sm text-white/75 lg:h-full">
+          <div className="flex flex-wrap items-start justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
+            <div className="space-y-1">
+              <div className="text-base font-semibold text-white/90">
+                Multisig coordination
+              </div>
+              <div className="text-white/70">
+                Exchange latest participant data before signing or checking
+                spent outputs.
+              </div>
+            </div>
+            <div className="inline-flex h-7 items-center rounded-full bg-white/10 px-3 text-xs font-semibold text-white/85 ring-1 ring-white/15">
+              {multisigStatus.threshold}-of-{multisigStatus.total} active
+            </div>
           </div>
-          <div>
-            {multisigStatus.threshold}-of-{multisigStatus.total}
+          <div className="rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
+            <div className="text-white/75">
+              For {multisigStatus.threshold}-of-{multisigStatus.total}: import
+              at least {multisigStatus.threshold - 1} files from other
+              participants.
+            </div>
+            <div className="mt-1 text-white/75">
+              Equivalent rule: have {multisigStatus.threshold} latest files in
+              total, including your own export.
+            </div>
+            <div className="mt-1 text-white/65">
+              Participants are the wallet owners who co-sign spending
+              transactions.
+            </div>
           </div>
-        </div>
-        {hasMultisigPartialKeyImages && (
-          <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-100/95 ring-1 ring-amber-200/20">
-            Some owned outputs have partial key images - import multisig info
-            needed
+          <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-amber-100/95 ring-1 ring-amber-200/20">
+            Always use the latest export from each participant. When someone
+            exports again, their previous file becomes outdated for subsequent
+            signing rounds.
           </div>
-        )}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            variant="primary"
-            className="w-full py-2.5"
-            disabled={isBusy}
-            onClick={() => {
-              void handleExportMultisig();
-            }}
+          <div
+            className={`rounded-lg px-3 py-2 text-sm ring-1 ${
+              hasMultisigPartialKeyImages
+                ? "bg-amber-500/10 text-amber-100/95 ring-amber-200/20"
+                : "bg-emerald-500/10 text-emerald-100/95 ring-emerald-200/20"
+            }`}
           >
-            {busyAction === "export" ? "Exporting..." : "Export multisig"}
-          </Button>
-          <Button
-            variant="primary"
-            className="w-full py-2.5"
-            disabled={isBusy}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {busyAction === "import" ? "Importing..." : "Import multisig"}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              void handleImportMultisigFiles(event);
-            }}
-          />
-        </div>
-      </SurfaceCard>
-    </MultisigTabWrap>
+            {hasMultisigPartialKeyImages
+              ? "Status: partial key images detected. Import updated participant files before signing."
+              : "Status: no partial key images pending right now."}
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              variant="neutral"
+              className="w-full py-2.5"
+              disabled={isBusy}
+              onClick={() => {
+                setIsExportConfirmOpen(true);
+              }}
+            >
+              {busyAction === "export"
+                ? "Exporting..."
+                : "Export latest multisig data"}
+            </Button>
+            <Button
+              variant="neutral"
+              className="w-full py-2.5"
+              disabled={isBusy}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {busyAction === "import"
+                ? "Importing..."
+                : "Import participant data"}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                void handleImportMultisigFiles(event);
+              }}
+            />
+          </div>
+        </SurfaceCard>
+      </MultisigTabWrap>
+      {busyAction === "import" && (
+        <OverlayDialog
+          onClose={() => {
+            // Prevent closing while import_multisig is running.
+          }}
+        >
+          <div className="space-y-2 text-sm text-white/80">
+            <div className="text-base font-semibold text-white/90">
+              Importing multisig data. This may take a while.
+            </div>
+            <div className="font-mono text-white/75">{heightText}</div>
+          </div>
+        </OverlayDialog>
+      )}
+      <ConfirmDialog
+        open={isExportConfirmOpen}
+        title="Create a new multisig export?"
+        message={
+          <>
+            This will create a new latest export file for this wallet.
+            <br />
+            Older export files from this wallet should be treated as outdated
+            for future signing rounds.
+          </>
+        }
+        confirmText="Yes, export"
+        cancelText="Cancel"
+        busy={busyAction === "export"}
+        onCancel={() => setIsExportConfirmOpen(false)}
+        onConfirm={() => {
+          setIsExportConfirmOpen(false);
+          void handleExportMultisig();
+        }}
+      />
+    </>
   );
 }

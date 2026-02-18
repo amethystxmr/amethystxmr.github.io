@@ -1000,7 +1000,15 @@ function OpenWalletView({
             <ProgressBar state="loading" text="Loading wallet..." />
           </div>
         ) : (
-          <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
+          <form
+            autoComplete="off"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!isBusy) {
+                doOpen(false, password);
+              }
+            }}
+          >
             {phase === "opening-user" && (
               <div className="mb-3">
                 <ProgressBar
@@ -1024,6 +1032,7 @@ function OpenWalletView({
 
             <ButtonsHolder>
               <Button
+                type="button"
                 className="w-full"
                 variant="soft"
                 onClick={() => {
@@ -1041,7 +1050,6 @@ function OpenWalletView({
                 type="submit"
                 className="w-full"
                 variant="primary"
-                onClick={() => doOpen(false, password)}
                 disabled={isBusy}
               >
                 {isBusy ? "Opening..." : "Open wallet"}
