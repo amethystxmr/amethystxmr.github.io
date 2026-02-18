@@ -10,7 +10,7 @@ import {
   splitAddressBy6,
   toFiat,
 } from "../utils";
-import { MonoScrollPanel, SurfaceCard } from "../ui";
+import { SurfaceCard } from "../ui";
 
 export function TransactionsTab({
   payments,
@@ -41,11 +41,15 @@ export function TransactionsTab({
   }, [addresses]);
 
   return (
-    <MonoScrollPanel>
+    <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
       {allPayments === null ? (
-        "Loading transactions..."
+        <SurfaceCard className="text-xs text-white/60">
+          Loading transactions...
+        </SurfaceCard>
       ) : allPayments.length === 0 ? (
-        "No transactions yet"
+        <SurfaceCard className="text-xs text-white/60">
+          No transactions yet.
+        </SurfaceCard>
       ) : (
         <div className="space-y-3">
           {allPayments.map((p, i) => {
@@ -194,7 +198,7 @@ export function TransactionsTab({
           })}
         </div>
       )}
-    </MonoScrollPanel>
+    </div>
   );
 }
 

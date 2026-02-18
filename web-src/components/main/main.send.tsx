@@ -15,7 +15,6 @@ import {
   Input,
   Label,
   Select,
-  SectionPanel,
   ShimmerStatus,
   SurfaceCard,
 } from "../ui";
@@ -344,7 +343,7 @@ export function SendTab({
   }, [cameraState.torchAvailable, cameraState.torchBusy, cameraState.torchOn]);
 
   return (
-    <SectionPanel className="space-y-4 lg:h-full lg:overflow-y-auto">
+    <div className="space-y-4 lg:h-full lg:overflow-y-auto">
       {/* ENTERING */}
       {state.type === "entering" && (
         <>
@@ -570,7 +569,7 @@ export function SendTab({
           </Button>
         </div>
       )}
-    </SectionPanel>
+    </div>
   );
 }
 
