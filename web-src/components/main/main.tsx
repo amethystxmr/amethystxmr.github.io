@@ -537,7 +537,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               hideBottom={lockedBalance === 0n}
             />
             <WalletSplitMetricCard
-              title="EUR"
+              title={
+                price ? `EUR (1 XMR = ${price.toFixed(2)} EUR)` : "EUR"
+              }
               topValue={availableEurText}
               topLabel="available"
               bottomValue={lockedEurText}
