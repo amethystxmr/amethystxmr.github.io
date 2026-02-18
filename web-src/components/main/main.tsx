@@ -534,6 +534,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               topLabel="available"
               bottomValue={lockedXmrText}
               bottomLabel="locked"
+              hideBottom={lockedBalance === 0n}
             />
             <WalletSplitMetricCard
               title="EUR"
@@ -541,6 +542,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               topLabel="available"
               bottomValue={lockedEurText}
               bottomLabel="locked"
+              hideBottom={lockedBalance === 0n}
             />
           </div>
           {status?.hasMultisigPartialKeyImages && (
@@ -644,12 +646,14 @@ function WalletSplitMetricCard({
   topLabel,
   bottomValue,
   bottomLabel,
+  hideBottom = false,
 }: {
   title: string;
   topValue: string;
   topLabel: string;
   bottomValue: string;
   bottomLabel: string;
+  hideBottom?: boolean;
 }) {
   return (
     <SurfaceCard className="min-w-0 space-y-0 bg-white/6 px-3 py-2.5">
@@ -665,15 +669,19 @@ function WalletSplitMetricCard({
       <div className="-mt-0.5 text-[11px] leading-none text-white/45">
         {topLabel}
       </div>
-      <div
-        className="mt-1.5 min-w-0 text-sm leading-tight font-semibold text-white/75 break-words sm:text-base"
-        title={bottomValue}
-      >
-        {bottomValue}
-      </div>
-      <div className="-mt-0.5 text-[11px] leading-none text-white/45">
-        {bottomLabel}
-      </div>
+      {!hideBottom && (
+        <>
+          <div
+            className="mt-1.5 min-w-0 text-sm leading-tight font-semibold text-white/75 break-words sm:text-base"
+            title={bottomValue}
+          >
+            {bottomValue}
+          </div>
+          <div className="-mt-0.5 text-[11px] leading-none text-white/45">
+            {bottomLabel}
+          </div>
+        </>
+      )}
     </SurfaceCard>
   );
 }
