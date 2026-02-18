@@ -381,7 +381,7 @@ public:
             m_wallet.get_payments_out(payments, min_height, max_height);
             for (auto i = payments.begin(); i != payments.end(); ++i)
             {
-                auto &payment_id = i->first;
+                auto &tx_hash = i->first;
                 /** Payment details */
                 auto &pd = i->second;
                 const std::string type = "out";
@@ -409,7 +409,7 @@ public:
                                   .unlock_time = pd.m_unlock_time,
                                   .timestamp = pd.m_timestamp,
                                   .amount = pd.m_amount_in - change - fee,
-                                  .tx_hash = std::string(""),
+                                  .tx_hash = epee::string_tools::pod_to_hex(tx_hash),
                                   .fee = fee,
                                   .destinationsStr = destinationsStr,
                                   .index_major = pd.m_subaddr_account,
