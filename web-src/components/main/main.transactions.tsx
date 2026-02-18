@@ -154,7 +154,9 @@ export function TransactionsTab({
                         {p.tx_hash}
                       </div>
                     )}
-                    {(p.type === "in" || p.type === "mempool" || p.type === "block") && (
+                    {(p.type === "in" ||
+                      p.type === "mempool" ||
+                      p.type === "block") && (
                       <div className="mt-1 break-all whitespace-normal">
                         <span className="text-white/45">Address:</span>{" "}
                         {incomingAddress?.address
@@ -170,18 +172,18 @@ export function TransactionsTab({
                       p.type === "failed" ||
                       p.type === "pending") &&
                       p.destinations.length > 0 && (
-                      <div className="mt-1">
-                        <div className="text-white/45">Destinations:</div>
-                        {p.destinations.map((d, destI) => (
-                          <div
-                            key={`${d.address}-${destI}`}
-                            className="break-all whitespace-normal"
-                          >
-                            {splitAddressBy6(d.address)}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                        <div className="mt-1">
+                          <div className="text-white/45">Destinations:</div>
+                          {p.destinations.map((d, destI) => (
+                            <div
+                              key={`${d.address}-${destI}`}
+                              className="break-all whitespace-normal"
+                            >
+                              {splitAddressBy6(d.address)}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     {p.note.trim() && (
                       <div className="mt-1 break-all whitespace-normal">
                         <span className="text-white/45">Note:</span> {p.note}
@@ -247,7 +249,7 @@ function getLockStateText(
   }
 
   if (blockSinceConfirmed !== null) {
-    return `${blockSinceConfirmed + 1n}/${CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE}`;
+    return `${blockSinceConfirmed}/${CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE}`;
   }
 
   return `0/${CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE}`;
