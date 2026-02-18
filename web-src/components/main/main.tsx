@@ -220,23 +220,19 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       setRefreshError(null);
 
       try {
-        const refreshStatus = await withFsLock(async () => {
-          if (cancelled) {
-            return;
-          }
-          const refreshStatusLocal = await wallet.refresh(
-            false,
-            0n,
-            true,
-            true,
-            2000n,
-          );
-          await wallet.store();
-          return refreshStatusLocal;
-        });
-        if (!refreshStatus) {
+        if (cancelled) {
           return;
         }
+        const refreshStatus = await wallet.refresh(
+          false,
+          0n,
+          true,
+          true,
+          2000n,
+        );
+        await withFsLock(async () => {
+          await wallet.store();
+        });
         console.info("Refresh status:", refreshStatus);
         if (cancelled) {
           return;
