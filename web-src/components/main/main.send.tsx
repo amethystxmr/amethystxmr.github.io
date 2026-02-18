@@ -417,7 +417,8 @@ export function SendTab({
   }
 
   return (
-    <div className="space-y-4 lg:h-full lg:overflow-y-auto">
+    <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
+      <div className="space-y-4 pb-2">
       {/* ENTERING */}
       {state.type === "entering" && (
         <>
@@ -702,6 +703,7 @@ export function SendTab({
           </Button>
         </div>
       )}
+      </div>
     </div>
   );
 }
