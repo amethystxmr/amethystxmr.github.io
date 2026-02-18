@@ -3,7 +3,12 @@ import {
   BrowserMultiFormatReader,
   type IScannerControls,
 } from "@zxing/browser";
-import { balanceToString, stringToBalance, toFiat } from "../utils";
+import {
+  balanceToString,
+  splitAddressBy6,
+  stringToBalance,
+  toFiat,
+} from "../utils";
 import {
   Button,
   ButtonsHolder,
@@ -107,10 +112,14 @@ export function SendTab({
   const scannerControlsRef = React.useRef<IScannerControls | null>(null);
 
   const parsedAmount = React.useMemo(() => parseXmrToAtomic(amount), [amount]);
+  const normalizedAddress = React.useMemo(
+    () => address.replace(/\s+/g, "").trim(),
+    [address],
+  );
   const fiatValue = parsedAmount && price ? toFiat(parsedAmount, price) : null;
 
   const isValid =
-    address.trim().length > 20 &&
+    normalizedAddress.length > 20 &&
     parsedAmount !== null &&
     parsedAmount > 0n &&
     state.type === "entering";
@@ -122,7 +131,7 @@ export function SendTab({
     }
 
     setState({ type: "estimating" });
-    wallet.transfer_prepare(address.trim(), parsedAmount, feePriority).then(
+    wallet.transfer_prepare(normalizedAddress, parsedAmount, feePriority).then(
       (txHandle) => {
         const fee = wallet.transfer_get_fee(txHandle);
         setState({ type: "confirming", fee, txHandle });
@@ -495,7 +504,7 @@ export function SendTab({
             <div>
               <div className="text-xs text-white/60 pt-2">To address</div>
               <div className="break-all font-mono text-xs text-white/80">
-                {address}
+                {splitAddressBy6(normalizedAddress)}
               </div>
             </div>
           </SurfaceCard>

@@ -7,6 +7,7 @@ import {
 import {
   balanceToString,
   shortenAddress,
+  splitAddressBy6,
   stringToBalance,
   toFiat,
 } from "../utils";
@@ -85,6 +86,7 @@ function AddressRow({
   }
   const hasIncomingStats = totalReceivedAtomic > 0n || incomingTxCount > 0;
   const txWord = incomingTxCount === 1 ? "tx" : "txes";
+  const formattedAddress = splitAddressBy6(address);
 
   return (
     <SurfaceCard>
@@ -143,7 +145,7 @@ function AddressRow({
       <div className="relative">
         <Input
           readOnly
-          value={address}
+          value={formattedAddress}
           onFocus={(e) => e.currentTarget.select()}
           className="rounded-lg border-white/10 bg-black/20 py-2 font-mono text-xs text-white/85 overflow-x-auto whitespace-nowrap focus-visible:ring-white/30"
           style={

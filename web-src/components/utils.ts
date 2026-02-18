@@ -47,6 +47,14 @@ export function shortenAddress(address: string): string {
   return `${address.slice(0, 8)}...${address.slice(-8)}`;
 }
 
+export function splitAddressBy6(address: string): string {
+  const compact = address.replace(/\s+/g, "").trim();
+  if (!compact) {
+    return "";
+  }
+  return compact.replace(/(.{6})/g, "$1 ").trim();
+}
+
 export function formatWalletTimestamp(
   timestamp: bigint,
   options: {
