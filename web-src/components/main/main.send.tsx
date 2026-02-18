@@ -88,6 +88,18 @@ function formatAtomicToXmr(amount: bigint): string {
   return `${whole}.${fraction.replace(/0+$/, "") || "0"}`;
 }
 
+type RecipientInput = {
+  address: string;
+  amount: string;
+};
+
+type ParsedRecipient = {
+  index: number;
+  normalizedAddress: string;
+  parsedAmount: bigint | null;
+  isValid: boolean;
+};
+
 export function SendTab({
   wallet,
   scheduleRefresh,
@@ -97,8 +109,9 @@ export function SendTab({
   scheduleRefresh: () => void;
   price: number | null;
 }) {
-  const [address, setAddress] = React.useState("");
-  const [amount, setAmount] = React.useState("");
+  const [recipients, setRecipients] = React.useState<RecipientInput[]>([
+    { address: "", amount: "" },
+  ]);
   const [feePriority, setFeePriority] = React.useState<FeePriorityValue>(
     FeePriority.Default,
   );
@@ -110,27 +123,54 @@ export function SendTab({
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const scannerControlsRef = React.useRef<IScannerControls | null>(null);
 
-  const parsedAmount = React.useMemo(() => parseXmrToAtomic(amount), [amount]);
-  const normalizedAddress = React.useMemo(
-    () => address.replace(/\s+/g, "").trim(),
-    [address],
+  const parsedRecipients = React.useMemo<ParsedRecipient[]>(
+    () =>
+      recipients.map((recipient, index) => {
+        const normalizedAddress = recipient.address.replace(/\s+/g, "").trim();
+        const parsedAmount = parseXmrToAtomic(recipient.amount);
+        return {
+          index,
+          normalizedAddress,
+          parsedAmount,
+          isValid:
+            normalizedAddress.length > 20 &&
+            parsedAmount !== null &&
+            parsedAmount > 0n,
+        };
+      }),
+    [recipients],
   );
-  const fiatValue = parsedAmount && price ? toFiat(parsedAmount, price) : null;
+  const totalParsedAmount = React.useMemo(
+    () =>
+      parsedRecipients.reduce(
+        (sum, recipient) => sum + (recipient.parsedAmount ?? 0n),
+        0n,
+      ),
+    [parsedRecipients],
+  );
+  const totalFiatValue =
+    totalParsedAmount > 0n && price ? toFiat(totalParsedAmount, price) : null;
 
   const isValid =
-    normalizedAddress.length > 20 &&
-    parsedAmount !== null &&
-    parsedAmount > 0n &&
+    recipients.length > 0 &&
+    parsedRecipients.every((recipient) => recipient.isValid) &&
     state.type === "entering";
 
   async function handleCreateTx() {
-    if (!parsedAmount) return;
     if (state.type !== "entering") {
       throw new Error("Invalid state for creating transaction");
     }
+    if (parsedRecipients.length === 0 || parsedRecipients.some((r) => !r.isValid)) {
+      return;
+    }
+
+    const destinations = parsedRecipients.map(
+      (recipient) => recipient.normalizedAddress,
+    );
+    const amounts = parsedRecipients.map((recipient) => recipient.parsedAmount as bigint);
 
     setState({ type: "estimating" });
-    wallet.transfer_prepare([normalizedAddress], [parsedAmount], feePriority).then(
+    wallet.transfer_prepare(destinations, amounts, feePriority).then(
       (txHandle) => {
         const fee = wallet.transfer_get_fee(txHandle);
         setState({ type: "confirming", fee, txHandle });
@@ -167,8 +207,7 @@ export function SendTab({
   }
 
   function reset() {
-    setAddress("");
-    setAmount("");
+    setRecipients([{ address: "", amount: "" }]);
     setFeePriority(FeePriority.Default);
     setState({ type: "entering" });
     setScannerOpen(false);
@@ -260,16 +299,30 @@ export function SendTab({
           return;
         }
         const parsed = parseMoneroQrPayload(result.getText());
-        if (!parsed) {
+        if (!parsed || parsed.length === 0) {
           setScannerError(
             "Unsupported QR format. Expected Monero address or monero: URI.",
           );
           return;
         }
-        setAddress(parsed.address);
-        if (parsed.amount) {
-          setAmount(parsed.amount);
-        }
+        setRecipients((prevRecipients) => {
+          const nextRecipients = [...prevRecipients];
+          while (
+            nextRecipients.length > 0 &&
+            isRecipientEmpty(nextRecipients[nextRecipients.length - 1])
+          ) {
+            nextRecipients.pop();
+          }
+          for (const recipient of parsed) {
+            nextRecipients.push({
+              address: recipient.address,
+              amount: recipient.amount ?? "",
+            });
+          }
+          return nextRecipients.length > 0
+            ? nextRecipients
+            : [{ address: "", amount: "" }];
+        });
         setScannerOpen(false);
         setScannerError(null);
       })
@@ -342,15 +395,44 @@ export function SendTab({
     }
   }, [cameraState.torchAvailable, cameraState.torchBusy, cameraState.torchOn]);
 
+  function updateRecipient(index: number, next: Partial<RecipientInput>) {
+    setRecipients((prevRecipients) =>
+      prevRecipients.map((recipient, i) =>
+        i === index ? { ...recipient, ...next } : recipient,
+      ),
+    );
+  }
+
+  function addRecipient() {
+    setRecipients((prevRecipients) => [...prevRecipients, { address: "", amount: "" }]);
+  }
+
+  function removeRecipient(index: number) {
+    setRecipients((prevRecipients) => {
+      if (prevRecipients.length <= 1) {
+        return prevRecipients;
+      }
+      return prevRecipients.filter((_, i) => i !== index);
+    });
+  }
+
   return (
     <div className="space-y-4 lg:h-full lg:overflow-y-auto">
       {/* ENTERING */}
       {state.type === "entering" && (
         <>
           <div className="space-y-3">
-            <div>
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <Label>Recipient address</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label>Recipients</Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="soft"
+                  type="button"
+                  onClick={addRecipient}
+                  className="!flex-none px-2.5 py-1 text-xs"
+                >
+                  Add destination
+                </Button>
                 <Button
                   variant="soft"
                   type="button"
@@ -360,77 +442,110 @@ export function SendTab({
                   {scannerOpen ? "Close scanner" : "Scan QR"}
                 </Button>
               </div>
-              <Input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Enter Monero address"
-                autoComplete="off"
-                spellCheck={false}
-                className="font-mono text-sm"
-              />
-              {scannerOpen && (
-                <SurfaceCard className="mt-2 space-y-2 p-2.5">
-                  <video
-                    ref={videoRef}
-                    className="w-full rounded-lg bg-black/30"
-                    autoPlay
-                    playsInline
-                    muted
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="soft"
-                      className="w-full text-xs"
-                      onClick={toggleCamera}
-                      disabled={cameraState.deviceIds.length < 2}
-                    >
-                      Switch camera
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="soft"
-                      className="w-full text-xs"
-                      onClick={() => {
-                        void toggleTorch();
-                      }}
-                      disabled={
-                        !cameraState.torchAvailable || cameraState.torchBusy
-                      }
-                    >
-                      {cameraState.torchOn ? "Light off" : "Light on"}
-                    </Button>
-                  </div>
-                  <div className="text-xs text-white/55">
-                    Scan a QR with either a plain address or a{" "}
-                    <span className="font-mono">monero:</span> URI.
-                  </div>
-                  {scannerError && (
-                    <div className="rounded-md bg-red-500/10 p-2 text-xs text-red-300 ring-1 ring-red-500/30">
-                      {scannerError}
-                    </div>
-                  )}
-                </SurfaceCard>
-              )}
             </div>
 
-            <div>
-              <Label>Amount (XMR)</Label>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.000000000000"
-                autoComplete="off"
-              />
-
-              {fiatValue !== null && (
-                <div className="mt-1 text-xs text-white/50">
-                  ≈ {fiatValue.toFixed(2)} EUR
+            {scannerOpen && (
+              <SurfaceCard className="space-y-2 p-2.5">
+                <video
+                  ref={videoRef}
+                  className="w-full rounded-lg bg-black/30"
+                  autoPlay
+                  playsInline
+                  muted
+                />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="soft"
+                    className="w-full text-xs"
+                    onClick={toggleCamera}
+                    disabled={cameraState.deviceIds.length < 2}
+                  >
+                    Switch camera
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="soft"
+                    className="w-full text-xs"
+                    onClick={() => {
+                      void toggleTorch();
+                    }}
+                    disabled={!cameraState.torchAvailable || cameraState.torchBusy}
+                  >
+                    {cameraState.torchOn ? "Light off" : "Light on"}
+                  </Button>
                 </div>
-              )}
-            </div>
+                <div className="text-xs text-white/55">
+                  Scan a QR with one or many recipients as plain addresses or{" "}
+                  <span className="font-mono">monero:</span> URIs.
+                </div>
+                {scannerError && (
+                  <div className="rounded-md bg-red-500/10 p-2 text-xs text-red-300 ring-1 ring-red-500/30">
+                    {scannerError}
+                  </div>
+                )}
+              </SurfaceCard>
+            )}
+
+            {recipients.map((recipient, index) => {
+              const parsedAmount = parseXmrToAtomic(recipient.amount);
+              const fiatValue =
+                parsedAmount !== null && parsedAmount > 0n && price
+                  ? toFiat(parsedAmount, price)
+                  : null;
+
+              return (
+                <SurfaceCard key={index} className="space-y-3 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-white/60">
+                      Recipient #{index + 1}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="soft"
+                      className="!flex-none px-2.5 py-1 text-xs"
+                      onClick={() => removeRecipient(index)}
+                      disabled={recipients.length <= 1}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+
+                  <div>
+                    <Label>Recipient address</Label>
+                    <Input
+                      value={recipient.address}
+                      onChange={(e) =>
+                        updateRecipient(index, { address: e.target.value })
+                      }
+                      placeholder="Enter Monero address"
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Amount (XMR)</Label>
+                    <Input
+                      type="text"
+                      inputMode="decimal"
+                      value={recipient.amount}
+                      onChange={(e) =>
+                        updateRecipient(index, { amount: e.target.value })
+                      }
+                      placeholder="0.000000000000"
+                      autoComplete="off"
+                    />
+                    {fiatValue !== null && (
+                      <div className="mt-1 text-xs text-white/50">
+                        ≈ {fiatValue.toFixed(2)} EUR
+                      </div>
+                    )}
+                  </div>
+                </SurfaceCard>
+              );
+            })}
 
             <div>
               <Label>Priority</Label>
@@ -473,17 +588,17 @@ export function SendTab({
       )}
 
       {/* CONFIRMING */}
-      {state.type === "confirming" && parsedAmount && (
+      {state.type === "confirming" && parsedRecipients.length > 0 && (
         <div className="space-y-4">
           <SurfaceCard className="space-y-3">
             <div>
-              <div className="text-xs text-white/60">Amount</div>
+              <div className="text-xs text-white/60">Total outgoing</div>
               <div className="text-lg font-semibold text-white">
-                {amount} XMR
+                {formatAtomicToXmr(totalParsedAmount)} XMR
               </div>
-              {fiatValue !== null && (
+              {totalFiatValue !== null && (
                 <div className="text-sm text-white/60">
-                  ≈ {fiatValue.toFixed(2)} EUR
+                  ≈ {totalFiatValue.toFixed(2)} EUR
                 </div>
               )}
             </div>
@@ -500,12 +615,30 @@ export function SendTab({
               )}
             </div>
 
-            <div>
-              <div className="text-xs text-white/60 pt-2">To address</div>
-              <div className="break-all font-mono text-xs text-white/80">
-                {splitAddressBy6(normalizedAddress)}
+            {parsedRecipients.length === 1 && (
+              <div>
+                <div className="text-xs text-white/60 pt-2">To address</div>
+                <div className="break-all font-mono text-xs text-white/80">
+                  {splitAddressBy6(parsedRecipients[0].normalizedAddress)}
+                </div>
               </div>
-            </div>
+            )}
+
+            {parsedRecipients.length > 1 && (
+              <div className="space-y-2 pt-2">
+                <div className="text-xs text-white/60">Recipients</div>
+                {parsedRecipients.map((recipient) => (
+                  <div key={recipient.index} className="rounded-lg bg-white/5 p-2">
+                    <div className="break-all font-mono text-[11px] text-white/75">
+                      {splitAddressBy6(recipient.normalizedAddress)}
+                    </div>
+                    <div className="mt-1 text-xs text-white">
+                      {formatAtomicToXmr(recipient.parsedAmount ?? 0n)} XMR
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </SurfaceCard>
 
           <ButtonsHolder>
@@ -575,32 +708,109 @@ export function SendTab({
 
 function parseMoneroQrPayload(
   raw: string,
-): { address: string; amount?: string } | null {
+): { address: string; amount?: string }[] | null {
   const text = raw.trim();
   if (!text) {
     return null;
   }
 
-  if (isLikelyMoneroAddress(text)) {
-    return { address: text };
+  const direct = parseMoneroRecipientEntries(text);
+  if (direct && direct.length > 0) {
+    return direct;
   }
 
-  if (text.toLowerCase().startsWith("monero:")) {
-    const afterScheme = text.slice(text.indexOf(":") + 1).replace(/^\/\//, "");
-    const [addressPart, query = ""] = afterScheme.split("?");
-    const encodedAddress = addressPart?.trim() || "";
-    const decodedAddress = safeDecodeURIComponent(encodedAddress);
-    if (isLikelyMoneroAddress(decodedAddress)) {
-      const params = new URLSearchParams(query);
-      const rawAmount = params.get("tx_amount") || params.get("amount");
-      const amountAtomic = parseMoneroAmountAtomic(rawAmount);
-      return amountAtomic !== undefined
-        ? { address: decodedAddress, amount: balanceToString(amountAtomic) }
-        : { address: decodedAddress };
+  const lines = text
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (lines.length > 1) {
+    const recipients: { address: string; amount?: string }[] = [];
+    for (const line of lines) {
+      const parsedLine = parseMoneroRecipientEntries(line);
+      if (!parsedLine || parsedLine.length === 0) {
+        return null;
+      }
+      recipients.push(...parsedLine);
     }
+    return recipients.length > 0 ? recipients : null;
   }
 
   return null;
+}
+
+function parseMoneroRecipientEntries(
+  text: string,
+): { address: string; amount?: string }[] | null {
+  if (isLikelyMoneroAddress(text)) {
+    return [{ address: text }];
+  }
+
+  if (!text.toLowerCase().startsWith("monero:")) {
+    return null;
+  }
+
+  const afterScheme = text.slice(text.indexOf(":") + 1).replace(/^\/\//, "");
+  const [addressPart, query = ""] = afterScheme.split("?");
+  const encodedAddress = addressPart?.trim() || "";
+  const decodedAddress = safeDecodeURIComponent(encodedAddress);
+  if (!isLikelyMoneroAddress(decodedAddress)) {
+    return null;
+  }
+
+  const params = new URLSearchParams(query);
+  const baseRecipient = toRecipient(
+    decodedAddress,
+    params.get("tx_amount") || params.get("amount"),
+  );
+  const recipients = [baseRecipient];
+
+  const nestedEntries = Array.from(params.entries())
+    .filter(([key]) => /^uri_\d+$/i.test(key))
+    .sort((a, b) => toUriIndex(a[0]) - toUriIndex(b[0]));
+  for (const [, value] of nestedEntries) {
+    const nestedRecipients = parseMoneroRecipientEntries(
+      safeDecodeURIComponent(value),
+    );
+    if (!nestedRecipients || nestedRecipients.length === 0) {
+      continue;
+    }
+    recipients.push(...nestedRecipients);
+  }
+
+  const extraAddressEntries = Array.from(params.entries())
+    .filter(([key]) => /^address_\d+$/i.test(key))
+    .sort((a, b) => toUriIndex(a[0]) - toUriIndex(b[0]));
+  for (const [key, value] of extraAddressEntries) {
+    const decodedNestedAddress = safeDecodeURIComponent(value).trim();
+    if (!isLikelyMoneroAddress(decodedNestedAddress)) {
+      continue;
+    }
+    const suffix = key.split("_")[1];
+    const amountValue =
+      params.get(`tx_amount_${suffix}`) ?? params.get(`amount_${suffix}`);
+    recipients.push(toRecipient(decodedNestedAddress, amountValue));
+  }
+
+  return recipients.length > 0 ? recipients : null;
+}
+
+function toRecipient(
+  address: string,
+  rawAmount: string | null,
+): { address: string; amount?: string } {
+  const amountAtomic = parseMoneroAmountAtomic(rawAmount);
+  return amountAtomic !== undefined
+    ? { address, amount: balanceToString(amountAtomic) }
+    : { address };
+}
+
+function toUriIndex(key: string): number {
+  const [, numeric] = key.split("_");
+  return Number(numeric);
+}
+
+function isRecipientEmpty(recipient: Pick<RecipientInput, "address" | "amount">) {
+  return recipient.address.trim() === "" && recipient.amount.trim() === "";
 }
 
 function isLikelyMoneroAddress(value: string): boolean {
