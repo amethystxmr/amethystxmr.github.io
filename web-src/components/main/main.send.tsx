@@ -30,6 +30,7 @@ type SendState =
   | { type: "error"; message: string };
 
 type CameraState = {
+  didProbe: boolean;
   deviceIds: string[];
   activeDeviceId: string | undefined;
   torchAvailable: boolean;
@@ -38,6 +39,7 @@ type CameraState = {
 };
 
 const INITIAL_CAMERA_STATE: CameraState = {
+  didProbe: false,
   deviceIds: [],
   activeDeviceId: undefined,
   torchAvailable: false,
@@ -170,6 +172,64 @@ export function SendTab({
     if (!scannerOpen) {
       return;
     }
+    let cancelled = false;
+    void (async () => {
+      let tempStream: MediaStream | null = null;
+      try {
+        tempStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        if (cancelled) {
+          return;
+        }
+        const videoInputs = devices.filter((d) => d.kind === "videoinput");
+        const deviceIds = videoInputs
+          .map((d) => d.deviceId)
+          .filter((id) => id.length > 0);
+        const preferredEnvDeviceId = videoInputs.find((d) =>
+          /(back|rear|environment)/i.test(d.label),
+        )?.deviceId;
+        setCameraState((prev) => ({
+          ...prev,
+          didProbe: true,
+          deviceIds,
+          activeDeviceId:
+            deviceIds.length === 0
+              ? undefined
+              : prev.activeDeviceId && deviceIds.includes(prev.activeDeviceId)
+                ? prev.activeDeviceId
+                : preferredEnvDeviceId && deviceIds.includes(preferredEnvDeviceId)
+                  ? preferredEnvDeviceId
+                  : deviceIds[0],
+        }));
+      } catch (e) {
+        console.error("Failed to probe camera devices:", e);
+        if (!cancelled) {
+          setScannerError((e as Error).message || "Cannot access camera.");
+          setCameraState((prev) => ({
+            ...prev,
+            didProbe: true,
+          }));
+        }
+      } finally {
+        tempStream?.getTracks().forEach((track) => track.stop());
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [scannerOpen]);
+
+  React.useEffect(() => {
+    if (!scannerOpen) {
+      return;
+    }
+    if (!cameraState.didProbe) {
+      return;
+    }
 
     const videoElement = videoRef.current;
     if (!videoElement) {
@@ -234,41 +294,7 @@ export function SendTab({
       scannerControlsRef.current?.stop();
       scannerControlsRef.current = null;
     };
-  }, [cameraState.activeDeviceId, scannerOpen]);
-
-  React.useEffect(() => {
-    if (!scannerOpen) {
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        if (cancelled) {
-          return;
-        }
-        const cameraIds = devices
-          .filter((d) => d.kind === "videoinput")
-          .map((d) => d.deviceId)
-          .filter((id) => id.length > 0);
-        setCameraState((prev) => ({
-          ...prev,
-          deviceIds: cameraIds,
-          activeDeviceId:
-            cameraIds.length === 0
-              ? undefined
-              : prev.activeDeviceId && cameraIds.includes(prev.activeDeviceId)
-                ? prev.activeDeviceId
-                : cameraIds[0],
-        }));
-      } catch (e) {
-        console.error("Failed to enumerate camera devices:", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [scannerOpen]);
+  }, [cameraState.activeDeviceId, cameraState.didProbe, scannerOpen]);
 
   const toggleCamera = React.useCallback(() => {
     if (cameraState.deviceIds.length < 2) {
