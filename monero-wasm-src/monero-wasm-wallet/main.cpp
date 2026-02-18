@@ -459,7 +459,7 @@ public:
                     .unlock_time = 0,
                     .timestamp = pd.m_timestamp,
                     .amount = amount - pd.m_change - fee,
-                    .tx_hash = std::string(""),
+                    .tx_hash = epee::string_tools::pod_to_hex(i->first),
                     .fee = fee,
                     .destinationsStr = destinationsStr,
                     .index_major = pd.m_subaddr_account,
