@@ -545,7 +545,7 @@ function RestoreView({
                     ></TextArea>
                   </FormRow>
 
-                  <FormRow>
+                  <FormRow className="!mb-0">
                     <Label>Starting height</Label>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <Input
@@ -572,7 +572,7 @@ function RestoreView({
               label: "Cake 16 words",
               content: (
                 <div className="space-y-4">
-                  <FormRow>
+                  <FormRow className="!mb-0">
                     <Label>Seed phrase</Label>
                     <TextArea
                       rows={4}
