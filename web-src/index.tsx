@@ -2,7 +2,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { initModule } from "../monero-wasm-module/walletApi";
 import { WalletsList } from "./components/starting";
-import { AlertProvider } from "./components/ui";
+import { AlertProvider, MultisigDataOverlayProvider } from "./components/ui";
 
 registerCrossOriginIsolationWorkaround();
 
@@ -26,11 +26,13 @@ function MyApp() {
         <div className="ambient-pane-overlay" />
         <div className="relative z-10">
           <AlertProvider>
-            {loading ? (
-              <div className="text-center">Loading...</div>
-            ) : (
-              <WalletsList />
-            )}
+            <MultisigDataOverlayProvider>
+              {loading ? (
+                <div className="text-center">Loading...</div>
+              ) : (
+                <WalletsList />
+              )}
+            </MultisigDataOverlayProvider>
           </AlertProvider>
         </div>
       </div>

@@ -76,8 +76,10 @@ export declare class MoneroWasmWallet {
     amounts: bigint[],
     priority: FeePriority,
   ): Promise<PendingTxHandle>;
-  transfer_get_fee(handle: PendingTxHandle): bigint;
+  get_transfers(): Promise<TransferItem[]>;
+  get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
+  save_multisig_tx_pending_tx(handle: PendingTxHandle): Promise<Uint8Array>;
 
   get_multisig_status(): Promise<MultisigAccountStatus>;
   has_multisig_partial_key_images(): Promise<boolean>;
@@ -169,6 +171,33 @@ export interface EmbindVector<T> extends ClassHandle {
 
 export interface PendingTxHandle extends ClassHandle {
   readonly __nominal: unique symbol;
+}
+
+export interface TransferInfoItem {
+  fee: bigint;
+  destinations: TransferDestinationInfo[];
+}
+
+export interface TransferItem {
+  block_height: bigint;
+  txid: string;
+  global_output_index: bigint;
+  local_output_index: bigint;
+  spent: boolean;
+  froze: boolean;
+  spent_height: bigint;
+  amount: bigint;
+  rct: boolean;
+  key_image_known: boolean;
+  key_image_request: boolean;
+  subaddr_index_major: number;
+  subaddr_index_minor: number;
+  key_image_partial: boolean;
+}
+
+export interface TransferDestinationInfo {
+  dstAddress: string;
+  dspAmount: bigint;
 }
 
 interface Module {

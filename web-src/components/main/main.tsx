@@ -478,17 +478,19 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     ? "bg-amber-500/10 text-amber-200 ring-amber-400/20"
     : "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20";
 
+  const isMultisigTabVisible =
+    !status ||
+    status.multisigStatus.multisig_is_active ||
+    (status.payments.length === 0 &&
+      (!mempoolPayments || mempoolPayments.length === 0));
+
   // This way to keep this tab state in tne main component and not lose it when switching tabs
   const sendTabContent = SendTab({
     scheduleRefresh: stopWaitingOrScheduleNoWait,
     wallet,
     price: price,
+    showMultisigActions: isMultisigTabVisible,
   });
-  const isShouldHideMultisigTab =
-    !!status &&
-    !!mempoolPayments &&
-    !status.multisigStatus.multisig_is_active &&
-    (status.payments.length > 0 || mempoolPayments.length > 0);
 
   return (
     <div className="space-y-5 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
@@ -537,9 +539,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               hideBottom={lockedBalance === 0n}
             />
             <WalletSplitMetricCard
-              title={
-                price ? `EUR (1 XMR = ${price.toFixed(2)} EUR)` : "EUR"
-              }
+              title={price ? `EUR (1 XMR = ${price.toFixed(2)} EUR)` : "EUR"}
               topValue={availableEurText}
               topLabel="available"
               bottomValue={lockedEurText}
@@ -596,7 +596,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 />
               ),
             },
-            ...(!isShouldHideMultisigTab
+            ...(isMultisigTabVisible
               ? [
                   {
                     key: "multisig",

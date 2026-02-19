@@ -17,19 +17,42 @@ import {
   Select,
   ShimmerStatus,
   SurfaceCard,
+  Toggle,
+  useAlert,
+  useMultisigDataOverlayExport,
+  useMultisigDataOverlayImport,
 } from "../ui";
 import {
   FeePriority,
   MoneroWasmWallet,
   PendingTxHandle,
+  TransferItem,
+  TransferInfoItem,
   type FeePriority as FeePriorityValue,
 } from "../../../monero-wasm-module/walletApi";
 
 type SendState =
   | { type: "entering" }
   | { type: "estimating" }
-  | { type: "confirming"; fee: bigint; txHandle: PendingTxHandle }
-  | { type: "sending"; fee: bigint; txHandle: PendingTxHandle }
+  | {
+      type: "confirming";
+      txHandle: PendingTxHandle;
+      info: TransferInfoItem[];
+      isMultisigWallet: boolean;
+    }
+  | { type: "multisig-info-loading" }
+  | {
+      type: "multisig-info";
+      importData: Uint8Array;
+      info: MultisigTxInfo;
+    }
+  | {
+      type: "multisig-signing";
+      importData: Uint8Array;
+      info: MultisigTxInfo;
+    }
+  | { type: "multisig-exporting" }
+  | { type: "sending"; txFee: bigint; txHandle: PendingTxHandle }
   | { type: "sent"; txFee: bigint }
   | { type: "error"; message: string };
 
@@ -100,14 +123,37 @@ type ParsedRecipient = {
   isValid: boolean;
 };
 
+type CoinsOverlayState =
+  | { type: "loading"; showSpent: boolean }
+  | { type: "ready"; coins: TransferItem[]; showSpent: boolean }
+  | { type: "error"; message: string; showSpent: boolean };
+
+type MultisigTxInfo = {
+  fee: bigint;
+  recipients: Array<{ address: string; amount: bigint }>;
+  summary: string;
+};
+
+function summarizeTransfers(transfers: TransferInfoItem[]) {
+  const destinations = transfers.flatMap((tx) => tx.destinations);
+  const totalOutgoing = destinations.reduce(
+    (sum, dst) => sum + dst.dspAmount,
+    0n,
+  );
+  const totalFee = transfers.reduce((sum, tx) => sum + tx.fee, 0n);
+  return { destinations, totalOutgoing, totalFee };
+}
+
 export function SendTab({
   wallet,
   scheduleRefresh,
   price,
+  showMultisigActions,
 }: {
   wallet: MoneroWasmWallet;
   scheduleRefresh: () => void;
   price: number | null;
+  showMultisigActions: boolean;
 }) {
   const [recipients, setRecipients] = React.useState<RecipientInput[]>([
     { address: "", amount: "" },
@@ -116,10 +162,15 @@ export function SendTab({
     FeePriority.Default,
   );
   const [state, setState] = React.useState<SendState>({ type: "entering" });
+  const [coinsOverlayState, setCoinsOverlayState] =
+    React.useState<CoinsOverlayState | null>(null);
   const [scannerOpen, setScannerOpen] = React.useState(false);
   const [scannerError, setScannerError] = React.useState<string | null>(null);
   const [cameraState, setCameraState] =
     React.useState<CameraState>(INITIAL_CAMERA_STATE);
+  const alert = useAlert();
+  const multisigExportOverlay = useMultisigDataOverlayExport();
+  const multisigImportOverlay = useMultisigDataOverlayImport();
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const scannerControlsRef = React.useRef<IScannerControls | null>(null);
 
@@ -150,7 +201,6 @@ export function SendTab({
   );
   const totalFiatValue =
     totalParsedAmount > 0n && price ? toFiat(totalParsedAmount, price) : null;
-
   const isValid =
     recipients.length > 0 &&
     parsedRecipients.every((recipient) => recipient.isValid) &&
@@ -160,39 +210,94 @@ export function SendTab({
     if (state.type !== "entering") {
       throw new Error("Invalid state for creating transaction");
     }
-    if (parsedRecipients.length === 0 || parsedRecipients.some((r) => !r.isValid)) {
+    if (
+      parsedRecipients.length === 0 ||
+      parsedRecipients.some((r) => !r.isValid)
+    ) {
       return;
     }
 
     const destinations = parsedRecipients.map(
       (recipient) => recipient.normalizedAddress,
     );
-    const amounts = parsedRecipients.map((recipient) => recipient.parsedAmount as bigint);
+    const amounts = parsedRecipients.map(
+      (recipient) => recipient.parsedAmount as bigint,
+    );
 
     setState({ type: "estimating" });
-    wallet.transfer_prepare(destinations, amounts, feePriority).then(
-      (txHandle) => {
-        const fee = wallet.transfer_get_fee(txHandle);
-        setState({ type: "confirming", fee, txHandle });
-      },
-      (e) => {
-        setState({
-          type: "error",
-          message: (e as Error).message ?? "Failed to estimate fee",
-        });
-      },
-    );
+    let txHandle: PendingTxHandle | null = null;
+    try {
+      txHandle = await wallet.transfer_prepare(
+        destinations,
+        amounts,
+        feePriority,
+      );
+      const transferInfo = wallet.get_transfers_info(txHandle);
+      const multisigStatus = await wallet.get_multisig_status();
+      if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
+        txHandle.delete();
+        txHandle = null;
+        setState({ type: "entering" });
+        await alert("Multisig wallet is enabled but not ready.");
+        return;
+      }
+      console.info("Transfer info:", transferInfo);
+      setState({
+        type: "confirming",
+        txHandle,
+        info: transferInfo,
+        isMultisigWallet: multisigStatus.multisig_is_active,
+      });
+    } catch (e) {
+      txHandle?.delete();
+      setState({
+        type: "error",
+        message: (e as Error).message ?? "Failed to estimate fee",
+      });
+    }
   }
 
-  async function handleSend() {
+  async function handleConfirm() {
     if (state.type !== "confirming") {
       throw new Error("Invalid state for sending transaction");
     }
-    setState({ type: "sending", fee: state.fee, txHandle: state.txHandle });
+    const txHandle = state.txHandle;
+
+    if (state.isMultisigWallet) {
+      try {
+        setState({ type: "multisig-exporting" });
+        const data = await wallet.save_multisig_tx_pending_tx(txHandle);
+        const dataCopy = new Uint8Array(data.length);
+        dataCopy.set(data);
+        const walletName = await wallet.get_wallet_file();
+        await multisigExportOverlay({
+          data: dataCopy,
+          header: "Partially signed transaction",
+          fileName: `partially-signed-multisig-tx-${walletName}`,
+        });
+        txHandle.delete();
+        setState({ type: "entering" });
+        return;
+      } catch (e) {
+        txHandle.delete();
+        setState({
+          type: "error",
+          message: (e as Error).message ?? "Failed to export multisig tx",
+        });
+        return;
+      }
+    }
+
+    const summary = summarizeTransfers(state.info);
+    setState({
+      type: "sending",
+      txFee: summary.totalFee,
+      txHandle,
+    });
     wallet
-      .transfer_commit_tx(state.txHandle)
+      .transfer_commit_tx(txHandle)
       .then(() => {
-        setState({ type: "sent", txFee: state.fee });
+        setState({ type: "sent", txFee: summary.totalFee });
         scheduleRefresh();
       })
       .catch((e) => {
@@ -202,8 +307,91 @@ export function SendTab({
         });
       })
       .finally(() => {
-        state.txHandle.delete();
+        txHandle.delete();
       });
+  }
+
+  async function handleLoadCoins() {
+    setCoinsOverlayState({ type: "loading", showSpent: false });
+    try {
+      const result = await wallet.get_transfers();
+      setCoinsOverlayState({
+        type: "ready",
+        coins: result,
+        showSpent: false,
+      });
+    } catch (e) {
+      setCoinsOverlayState({
+        type: "error",
+        message: (e as Error)?.message || "Failed to load coins",
+        showSpent: false,
+      });
+    }
+  }
+
+  async function handleStartSignMultisigFlow() {
+    if (!showMultisigActions || state.type !== "entering") {
+      return;
+    }
+
+    const imported = await multisigImportOverlay({
+      header: "Paste multisig tx data here",
+    });
+    if (imported === null) {
+      return;
+    }
+
+    const importData = new Uint8Array(imported.length);
+    importData.set(imported);
+
+    setState({ type: "multisig-info-loading" });
+    try {
+      const info = await getMultisigTxInfoStub(wallet, importData);
+      setState({ type: "multisig-info", importData, info });
+    } catch (e) {
+      setState({
+        type: "error",
+        message: (e as Error)?.message || "Failed to parse multisig tx data",
+      });
+    }
+  }
+
+  async function handleSignMultisigTx() {
+    if (state.type !== "multisig-info") {
+      return;
+    }
+
+    const importData = state.importData;
+    const info = state.info;
+    setState({ type: "multisig-signing", importData, info });
+    try {
+      const signed = await signMultisigTxStub(wallet, importData);
+      const signedDataCopy = new Uint8Array(signed.data.length);
+      signedDataCopy.set(signed.data);
+
+      await multisigExportOverlay({
+        data: signedDataCopy,
+        header: signed.is_ready
+          ? "Signed multisig tx (ready to broadcast)"
+          : "Signed multisig tx (collect more signatures)",
+        fileName: "signed-multisig-tx",
+        action: signed.is_ready
+          ? {
+              label: "Broadcast",
+              onAction: async () => {
+                await broadcastMultisigTxStub(wallet, signedDataCopy);
+                scheduleRefresh();
+              },
+            }
+          : undefined,
+      });
+      setState({ type: "entering" });
+    } catch (e) {
+      setState({
+        type: "error",
+        message: (e as Error)?.message || "Failed to sign multisig tx",
+      });
+    }
   }
 
   function reset() {
@@ -247,7 +435,8 @@ export function SendTab({
               ? undefined
               : prev.activeDeviceId && deviceIds.includes(prev.activeDeviceId)
                 ? prev.activeDeviceId
-                : preferredEnvDeviceId && deviceIds.includes(preferredEnvDeviceId)
+                : preferredEnvDeviceId &&
+                    deviceIds.includes(preferredEnvDeviceId)
                   ? preferredEnvDeviceId
                   : deviceIds[0],
         }));
@@ -294,38 +483,42 @@ export function SendTab({
     const reader = new BrowserMultiFormatReader();
 
     reader
-      .decodeFromVideoDevice(cameraState.activeDeviceId, videoElement, (result) => {
-        if (isClosed || !result) {
-          return;
-        }
-        const parsed = parseMoneroQrPayload(result.getText());
-        if (!parsed || parsed.length === 0) {
-          setScannerError(
-            "Unsupported QR format. Expected Monero address or monero: URI.",
-          );
-          return;
-        }
-        setRecipients((prevRecipients) => {
-          const nextRecipients = [...prevRecipients];
-          while (
-            nextRecipients.length > 0 &&
-            isRecipientEmpty(nextRecipients[nextRecipients.length - 1])
-          ) {
-            nextRecipients.pop();
+      .decodeFromVideoDevice(
+        cameraState.activeDeviceId,
+        videoElement,
+        (result) => {
+          if (isClosed || !result) {
+            return;
           }
-          for (const recipient of parsed) {
-            nextRecipients.push({
-              address: recipient.address,
-              amount: recipient.amount ?? "",
-            });
+          const parsed = parseMoneroQrPayload(result.getText());
+          if (!parsed || parsed.length === 0) {
+            setScannerError(
+              "Unsupported QR format. Expected Monero address or monero: URI.",
+            );
+            return;
           }
-          return nextRecipients.length > 0
-            ? nextRecipients
-            : [{ address: "", amount: "" }];
-        });
-        setScannerOpen(false);
-        setScannerError(null);
-      })
+          setRecipients((prevRecipients) => {
+            const nextRecipients = [...prevRecipients];
+            while (
+              nextRecipients.length > 0 &&
+              isRecipientEmpty(nextRecipients[nextRecipients.length - 1])
+            ) {
+              nextRecipients.pop();
+            }
+            for (const recipient of parsed) {
+              nextRecipients.push({
+                address: recipient.address,
+                amount: recipient.amount ?? "",
+              });
+            }
+            return nextRecipients.length > 0
+              ? nextRecipients
+              : [{ address: "", amount: "" }];
+          });
+          setScannerOpen(false);
+          setScannerError(null);
+        },
+      )
       .then((controls) => {
         if (isClosed) {
           controls.stop();
@@ -404,7 +597,10 @@ export function SendTab({
   }
 
   function addRecipient() {
-    setRecipients((prevRecipients) => [...prevRecipients, { address: "", amount: "" }]);
+    setRecipients((prevRecipients) => [
+      ...prevRecipients,
+      { address: "", amount: "" },
+    ]);
   }
 
   function removeRecipient(index: number) {
@@ -417,295 +613,688 @@ export function SendTab({
   }
 
   return (
-    <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
-      <div className="space-y-4 pb-2">
-      {/* ENTERING */}
-      {state.type === "entering" && (
-        <>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <Label>Recipients</Label>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="soft"
-                  type="button"
-                  onClick={addRecipient}
-                  className="!flex-none px-2.5 py-1 text-xs"
-                >
-                  Add destination
-                </Button>
-                <Button
-                  variant="soft"
-                  type="button"
-                  onClick={() => setScannerOpen((s) => !s)}
-                  className="!flex-none px-2.5 py-1 text-xs"
-                >
-                  {scannerOpen ? "Close scanner" : "Scan QR"}
-                </Button>
-              </div>
-            </div>
-
-            {scannerOpen && (
-              <SurfaceCard className="space-y-2 p-2.5">
-                <video
-                  ref={videoRef}
-                  className="w-full rounded-lg bg-black/30"
-                  autoPlay
-                  playsInline
-                  muted
-                />
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="soft"
-                    className="w-full text-xs"
-                    onClick={toggleCamera}
-                    disabled={cameraState.deviceIds.length < 2}
-                  >
-                    Switch camera
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="soft"
-                    className="w-full text-xs"
-                    onClick={() => {
-                      void toggleTorch();
-                    }}
-                    disabled={!cameraState.torchAvailable || cameraState.torchBusy}
-                  >
-                    {cameraState.torchOn ? "Light off" : "Light on"}
-                  </Button>
-                </div>
-                <div className="text-xs text-white/55">
-                  Scan a QR with one or many recipients as plain addresses or{" "}
-                  <span className="font-mono">monero:</span> URIs.
-                </div>
-                {scannerError && (
-                  <div className="rounded-md bg-red-500/10 p-2 text-xs text-red-300 ring-1 ring-red-500/30">
-                    {scannerError}
-                  </div>
-                )}
-              </SurfaceCard>
-            )}
-
-            {recipients.map((recipient, index) => {
-              const parsedAmount = parseXmrToAtomic(recipient.amount);
-              const fiatValue =
-                parsedAmount !== null && parsedAmount > 0n && price
-                  ? toFiat(parsedAmount, price)
-                  : null;
-
-              return (
-                <SurfaceCard key={index} className="space-y-3 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-xs text-white/60">
-                      Recipient #{index + 1}
-                    </div>
+    <>
+      <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
+        <div className="space-y-4 pb-2">
+          {/* ENTERING */}
+          {state.type === "entering" && (
+            <>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Recipients</Label>
+                  <div className="flex items-center gap-2">
                     <Button
-                      type="button"
                       variant="soft"
+                      type="button"
+                      onClick={addRecipient}
                       className="!flex-none px-2.5 py-1 text-xs"
-                      onClick={() => removeRecipient(index)}
-                      disabled={recipients.length <= 1}
                     >
-                      Remove
+                      Add destination
+                    </Button>
+                    <Button
+                      variant="soft"
+                      type="button"
+                      onClick={() => setScannerOpen((s) => !s)}
+                      className="!flex-none px-2.5 py-1 text-xs"
+                    >
+                      {scannerOpen ? "Close scanner" : "Scan QR"}
                     </Button>
                   </div>
+                </div>
 
-                  <div>
-                    <Label>Recipient address</Label>
-                    <Input
-                      value={recipient.address}
-                      onChange={(e) =>
-                        updateRecipient(index, { address: e.target.value })
-                      }
-                      placeholder="Enter Monero address"
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="font-mono text-sm"
+                {scannerOpen && (
+                  <SurfaceCard className="space-y-2 p-2.5">
+                    <video
+                      ref={videoRef}
+                      className="w-full rounded-lg bg-black/30"
+                      autoPlay
+                      playsInline
+                      muted
                     />
-                  </div>
-
-                  <div>
-                    <Label>Amount (XMR)</Label>
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={recipient.amount}
-                      onChange={(e) =>
-                        updateRecipient(index, { amount: e.target.value })
-                      }
-                      placeholder="0.000000000000"
-                      autoComplete="off"
-                    />
-                    {fiatValue !== null && (
-                      <div className="mt-1 text-xs text-white/50">
-                        ≈ {fiatValue.toFixed(2)} EUR
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="soft"
+                        className="w-full text-xs"
+                        onClick={toggleCamera}
+                        disabled={cameraState.deviceIds.length < 2}
+                      >
+                        Switch camera
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="soft"
+                        className="w-full text-xs"
+                        onClick={() => {
+                          void toggleTorch();
+                        }}
+                        disabled={
+                          !cameraState.torchAvailable || cameraState.torchBusy
+                        }
+                      >
+                        {cameraState.torchOn ? "Light off" : "Light on"}
+                      </Button>
+                    </div>
+                    <div className="text-xs text-white/55">
+                      Scan a QR with one or many recipients as plain addresses
+                      or <span className="font-mono">monero:</span> URIs.
+                    </div>
+                    {scannerError && (
+                      <div className="rounded-md bg-red-500/10 p-2 text-xs text-red-300 ring-1 ring-red-500/30">
+                        {scannerError}
                       </div>
                     )}
-                  </div>
-                </SurfaceCard>
-              );
-            })}
+                  </SurfaceCard>
+                )}
 
-            <div>
-              <Label>Priority</Label>
-              <Select.Root
-                value={String(feePriority)}
-                onValueChange={(next) => {
-                  setFeePriority(Number(next) as FeePriorityValue);
-                }}
+                {recipients.map((recipient, index) => {
+                  const parsedAmount = parseXmrToAtomic(recipient.amount);
+                  const fiatValue =
+                    parsedAmount !== null && parsedAmount > 0n && price
+                      ? toFiat(parsedAmount, price)
+                      : null;
+
+                  return (
+                    <SurfaceCard key={index} className="space-y-3 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs text-white/60">
+                          Recipient #{index + 1}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="soft"
+                          className="!flex-none px-2.5 py-1 text-xs"
+                          onClick={() => removeRecipient(index)}
+                          disabled={recipients.length <= 1}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+
+                      <div>
+                        <Label>Recipient address</Label>
+                        <Input
+                          value={recipient.address}
+                          onChange={(e) =>
+                            updateRecipient(index, { address: e.target.value })
+                          }
+                          placeholder="Enter Monero address"
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="font-mono text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Amount (XMR)</Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={recipient.amount}
+                          onChange={(e) =>
+                            updateRecipient(index, { amount: e.target.value })
+                          }
+                          placeholder="0.000000000000"
+                          autoComplete="off"
+                        />
+                        {fiatValue !== null && (
+                          <div className="mt-1 text-xs text-white/50">
+                            ≈ {fiatValue.toFixed(2)} EUR
+                          </div>
+                        )}
+                      </div>
+                    </SurfaceCard>
+                  );
+                })}
+
+                <div>
+                  <Label>Priority</Label>
+                  <Select.Root
+                    value={String(feePriority)}
+                    onValueChange={(next) => {
+                      setFeePriority(Number(next) as FeePriorityValue);
+                    }}
+                  >
+                    <Select.Trigger>
+                      <Select.Value>
+                        {FEE_PRIORITY_LABELS[feePriority]}
+                      </Select.Value>
+                    </Select.Trigger>
+                    <Select.Content>
+                      {FEE_PRIORITY_OPTIONS.map((option) => (
+                        <Select.Option key={option.value} value={option.value}>
+                          {option.label}
+                        </Select.Option>
+                      ))}
+                    </Select.Content>
+                  </Select.Root>
+                </div>
+              </div>
+
+              <Button
+                variant="primary"
+                disabled={!isValid}
+                onClick={handleCreateTx}
+                className="w-full text-sm font-semibold"
               >
-                <Select.Trigger>
-                  <Select.Value>
-                    {FEE_PRIORITY_LABELS[feePriority]}
-                  </Select.Value>
-                </Select.Trigger>
-                <Select.Content>
-                  {FEE_PRIORITY_OPTIONS.map((option) => (
-                    <Select.Option key={option.value} value={option.value}>
-                      {option.label}
-                    </Select.Option>
-                  ))}
-                </Select.Content>
-              </Select.Root>
-            </div>
-          </div>
+                Review transaction
+              </Button>
 
-          <Button
-            variant="primary"
-            disabled={!isValid}
-            onClick={handleCreateTx}
-            className="w-full text-sm font-semibold"
-          >
-            Review transaction
-          </Button>
-        </>
-      )}
-
-      {/* ESTIMATING */}
-      {state.type === "estimating" && (
-        <ShimmerStatus text="Estimating network fee..." />
-      )}
-
-      {/* CONFIRMING */}
-      {state.type === "confirming" && parsedRecipients.length > 0 && (
-        <div className="space-y-4">
-          <SurfaceCard className="space-y-3">
-            <div>
-              <div className="text-xs text-white/60">Total outgoing</div>
-              <div className="text-lg font-semibold text-white">
-                {formatAtomicToXmr(totalParsedAmount)} XMR
-              </div>
-              {totalFiatValue !== null && (
-                <div className="text-sm text-white/60">
-                  ≈ {totalFiatValue.toFixed(2)} EUR
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="text-xs text-white/60">Network fee</div>
-              <div className="text-sm text-white">
-                {formatAtomicToXmr(state.fee)} XMR
-              </div>
-              {price && (
-                <div className="text-xs text-white/50">
-                  ≈ {toFiat(state.fee, price).toFixed(2)} EUR
-                </div>
-              )}
-            </div>
-
-            {parsedRecipients.length === 1 && (
-              <div>
-                <div className="text-xs text-white/60 pt-2">To address</div>
-                <div className="break-all font-mono text-xs text-white/80">
-                  {splitAddressBy6(parsedRecipients[0].normalizedAddress)}
+              <div className="border-t border-white/10 pt-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="neutral"
+                    type="button"
+                    onClick={() => {
+                      void handleLoadCoins();
+                    }}
+                    className="!flex-none px-3 py-1.5 text-xs"
+                  >
+                    Coins
+                  </Button>
+                  {showMultisigActions && (
+                    <Button
+                      variant="neutral"
+                      type="button"
+                      onClick={() => {
+                        void handleStartSignMultisigFlow();
+                      }}
+                      className="!flex-none px-3 py-1.5 text-xs"
+                    >
+                      Sign multisig tx
+                    </Button>
+                  )}
                 </div>
               </div>
-            )}
+            </>
+          )}
 
-            {parsedRecipients.length > 1 && (
-              <div className="space-y-2 pt-2">
-                <div className="text-xs text-white/60">Recipients</div>
-                {parsedRecipients.map((recipient) => (
-                  <div key={recipient.index} className="rounded-lg bg-white/5 p-2">
-                    <div className="break-all font-mono text-[11px] text-white/75">
-                      {splitAddressBy6(recipient.normalizedAddress)}
-                    </div>
-                    <div className="mt-1 text-xs text-white">
-                      {formatAtomicToXmr(recipient.parsedAmount ?? 0n)} XMR
-                    </div>
+          {/* ESTIMATING */}
+          {state.type === "estimating" && (
+            <ShimmerStatus text="Building transaction..." />
+          )}
+
+          {state.type === "multisig-info-loading" && (
+            <ShimmerStatus text="Loading multisig transaction info..." />
+          )}
+
+          {/* CONFIRMING */}
+          {state.type === "confirming" && (
+            <div className="space-y-4">
+              <SurfaceCard className="space-y-3">
+                {(() => {
+                  const summary = summarizeTransfers(state.info);
+                  return (
+                    <>
+                      <div>
+                        <div className="text-xs text-white/60">
+                          Total outgoing
+                        </div>
+                        <div className="text-lg font-semibold text-white">
+                          {formatAtomicToXmr(summary.totalOutgoing)} XMR
+                        </div>
+                        {summary.totalOutgoing > 0n && price && (
+                          <div className="text-sm text-white/60">
+                            ≈ {toFiat(summary.totalOutgoing, price).toFixed(2)}{" "}
+                            EUR
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-white/60">Network fee</div>
+                        <div className="text-sm text-white">
+                          {formatAtomicToXmr(summary.totalFee)} XMR
+                        </div>
+                        {price && (
+                          <div className="text-xs text-white/50">
+                            ≈ {toFiat(summary.totalFee, price).toFixed(2)} EUR
+                          </div>
+                        )}
+                      </div>
+
+                      {summary.destinations.length === 1 && (
+                        <div>
+                          <div className="text-xs text-white/60 pt-2">
+                            To address
+                          </div>
+                          <div className="break-all font-mono text-xs text-white/80">
+                            {splitAddressBy6(
+                              summary.destinations[0].dstAddress,
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {summary.destinations.length > 1 && (
+                        <div className="space-y-2 pt-2">
+                          <div className="text-xs text-white/60">
+                            Recipients
+                          </div>
+                          {summary.destinations.map((recipient, index) => (
+                            <div
+                              key={`${recipient.dstAddress}-${recipient.dspAmount.toString()}-${index}`}
+                              className="rounded-lg bg-white/5 p-2"
+                            >
+                              <div className="break-all font-mono text-[11px] text-white/75">
+                                {splitAddressBy6(recipient.dstAddress)}
+                              </div>
+                              <div className="mt-1 text-xs text-white">
+                                {formatAtomicToXmr(recipient.dspAmount)} XMR
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </SurfaceCard>
+
+              <ButtonsHolder>
+                <Button
+                  onClick={() => setState({ type: "entering" })}
+                  className="text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  onClick={handleConfirm}
+                  variant="primary"
+                  className="text-sm font-semibold"
+                >
+                  {state.isMultisigWallet ? "Confirm" : "Confirm & Send"}
+                </Button>
+              </ButtonsHolder>
+            </div>
+          )}
+
+          {state.type === "multisig-info" && (
+            <div className="space-y-4">
+              <SurfaceCard className="space-y-3">
+                <div>
+                  <div className="text-xs text-white/60">Total outgoing</div>
+                  <div className="text-lg font-semibold text-white">
+                    {formatAtomicToXmr(
+                      state.info.recipients.reduce(
+                        (sum, recipient) => sum + recipient.amount,
+                        0n,
+                      ),
+                    )}{" "}
+                    XMR
                   </div>
-                ))}
+                  {price && (
+                    <div className="text-sm text-white/60">
+                      ≈{" "}
+                      {toFiat(
+                        state.info.recipients.reduce(
+                          (sum, recipient) => sum + recipient.amount,
+                          0n,
+                        ),
+                        price,
+                      ).toFixed(2)}{" "}
+                      EUR
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/60">Network fee</div>
+                  <div className="text-sm text-white">
+                    {formatAtomicToXmr(state.info.fee)} XMR
+                  </div>
+                  {price && (
+                    <div className="text-xs text-white/50">
+                      ≈ {toFiat(state.info.fee, price).toFixed(2)} EUR
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <div className="text-xs text-white/60">Recipients</div>
+                  {state.info.recipients.length > 0 ? (
+                    state.info.recipients.map((recipient, index) => (
+                      <div
+                        key={`${recipient.address}-${index}`}
+                        className="rounded-lg bg-white/5 p-2"
+                      >
+                        <div className="break-all font-mono text-[11px] text-white/75">
+                          {splitAddressBy6(recipient.address)}
+                        </div>
+                        <div className="mt-1 text-xs text-white">
+                          {formatAtomicToXmr(recipient.amount)} XMR
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-lg bg-white/5 p-2 text-xs text-white/65">
+                      No recipients parsed yet.
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-lg bg-white/5 p-2 text-xs text-white/70">
+                  {state.info.summary}
+                </div>
+              </SurfaceCard>
+
+              <ButtonsHolder>
+                <Button
+                  onClick={() => setState({ type: "entering" })}
+                  className="text-sm font-semibold"
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    void handleSignMultisigTx();
+                  }}
+                  variant="primary"
+                  className="text-sm font-semibold"
+                >
+                  Sign
+                </Button>
+              </ButtonsHolder>
+            </div>
+          )}
+
+          {state.type === "multisig-signing" && (
+            <ShimmerStatus text="Signing multisig transaction..." />
+          )}
+
+          {state.type === "multisig-exporting" && (
+            <ShimmerStatus text="Preparing multisig tx export..." />
+          )}
+
+          {/* SENDING */}
+          {state.type === "sending" && (
+            <ShimmerStatus text="Broadcasting transaction..." />
+          )}
+
+          {/* SENT */}
+          {state.type === "sent" && (
+            <div className="space-y-4 text-center">
+              <div className="text-green-400 text-lg font-semibold">
+                ✓ Transaction sent
               </div>
-            )}
-          </SurfaceCard>
 
-          <ButtonsHolder>
-            <Button
-              onClick={() => setState({ type: "entering" })}
-              className="text-sm font-semibold"
-            >
-              Cancel
-            </Button>
+              <div className="text-sm text-white/60">
+                Fee paid: {formatAtomicToXmr(state.txFee)} XMR
+              </div>
 
-            <Button
-              onClick={handleSend}
-              variant="primary"
-              className="text-sm font-semibold"
-            >
-              Confirm &amp; Send
-            </Button>
-          </ButtonsHolder>
+              <Button
+                onClick={reset}
+                variant="primary"
+                className="w-full text-sm font-semibold"
+              >
+                Send another
+              </Button>
+            </div>
+          )}
+
+          {/* ERROR */}
+          {state.type === "error" && (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-red-500/10 ring-1 ring-red-500/30 p-3 text-sm text-red-300">
+                {state.message}
+              </div>
+
+              <Button
+                onClick={() => setState({ type: "entering" })}
+                variant="soft"
+                className="w-full text-sm font-semibold"
+              >
+                Try again
+              </Button>
+            </div>
+          )}
         </div>
-      )}
-
-      {/* SENDING */}
-      {state.type === "sending" && (
-        <ShimmerStatus text="Broadcasting transaction..." />
-      )}
-
-      {/* SENT */}
-      {state.type === "sent" && (
-        <div className="space-y-4 text-center">
-          <div className="text-green-400 text-lg font-semibold">
-            ✓ Transaction sent
-          </div>
-
-          <div className="text-sm text-white/60">
-            Fee paid: {formatAtomicToXmr(state.txFee)} XMR
-          </div>
-
-          <Button
-            onClick={reset}
-            variant="primary"
-            className="w-full text-sm font-semibold"
-          >
-            Send another
-          </Button>
-        </div>
-      )}
-
-      {/* ERROR */}
-      {state.type === "error" && (
-        <div className="space-y-4">
-          <div className="rounded-xl bg-red-500/10 ring-1 ring-red-500/30 p-3 text-sm text-red-300">
-            {state.message}
-          </div>
-
-          <Button
-            onClick={() => setState({ type: "entering" })}
-            variant="soft"
-            className="w-full text-sm font-semibold"
-          >
-            Try again
-          </Button>
-        </div>
-      )}
       </div>
-    </div>
+      {coinsOverlayState && (
+        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-[1px]">
+          <div className="flex h-full w-full flex-col bg-[#211239] p-3 ring-1 ring-white/15 sm:p-4">
+            <div className="space-y-1 border-b border-white/10 pb-3">
+              <div className="text-base font-semibold text-white/90">Coins</div>
+              <div className="text-sm text-white/70">
+                Wallet transfer outputs.
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 py-3">
+              <div className="scrollbar-glass h-full overflow-y-auto rounded-lg bg-white/5 p-3 ring-1 ring-white/10">
+                {coinsOverlayState.type === "loading" && (
+                  <div className="text-sm text-white/80">Loading coins...</div>
+                )}
+                {coinsOverlayState.type === "error" && (
+                  <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-100 ring-1 ring-red-300/30">
+                    {coinsOverlayState.message}
+                  </div>
+                )}
+                {coinsOverlayState.type === "ready" && (
+                  <>
+                    {(coinsOverlayState.showSpent
+                      ? coinsOverlayState.coins
+                      : coinsOverlayState.coins.filter((coin) => !coin.spent)
+                    ).length === 0 ? (
+                      <div className="text-sm text-white/65">
+                        No coins found.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {[
+                          ...(coinsOverlayState.showSpent
+                            ? coinsOverlayState.coins
+                            : coinsOverlayState.coins.filter(
+                                (coin) => !coin.spent,
+                              )),
+                        ]
+                          .reverse()
+                          .map((coin, index) => {
+                            const isSpent = coin.spent;
+                            return (
+                              <SurfaceCard
+                                key={`${coin.txid}-${coin.global_output_index.toString()}-${index}`}
+                                className={`space-y-1.5 p-2.5 ${
+                                  isSpent
+                                    ? "bg-white/[0.025] text-white/45 ring-white/10"
+                                    : "text-white/80"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2 text-xs">
+                                  <span
+                                    className={
+                                      isSpent ? "text-white/50" : "text-white"
+                                    }
+                                  >
+                                    {balanceToString(coin.amount)} XMR
+                                  </span>
+                                  <span
+                                    className={`rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-inset ${
+                                      isSpent
+                                        ? "bg-white/[0.02] text-white/40 ring-white/15"
+                                        : "bg-white/10 text-white/70 ring-white/20"
+                                    }`}
+                                  >
+                                    spent: {coin.spent ? "true" : "false"}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] break-all font-mono">
+                                  <span className="text-white/45">txid:</span>{" "}
+                                  {coin.txid}
+                                </div>
+                                <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 text-[11px] sm:grid-cols-2">
+                                  <div>
+                                    <span className="text-white/45">
+                                      block_height:
+                                    </span>{" "}
+                                    {coin.block_height.toString()}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">
+                                      global_output_index:
+                                    </span>{" "}
+                                    {coin.global_output_index.toString()}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">
+                                      local_output_index:
+                                    </span>{" "}
+                                    {coin.local_output_index.toString()}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">
+                                      froze:
+                                    </span>{" "}
+                                    {coin.froze ? "true" : "false"}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">
+                                      spent_height:
+                                    </span>{" "}
+                                    {coin.spent_height.toString()}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">rct:</span>{" "}
+                                    {coin.rct ? "true" : "false"}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">
+                                      key_image_known:
+                                    </span>{" "}
+                                    {coin.key_image_known ? "true" : "false"}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">
+                                      key_image_request:
+                                    </span>{" "}
+                                    {coin.key_image_request ? "true" : "false"}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">
+                                      subaddr_index:
+                                    </span>{" "}
+                                    {coin.subaddr_index_major}/
+                                    {coin.subaddr_index_minor}
+                                  </div>
+                                  <div>
+                                    <span className="text-white/45">
+                                      key_image_partial:
+                                    </span>{" "}
+                                    {coin.key_image_partial ? "true" : "false"}
+                                  </div>
+                                </div>
+                              </SurfaceCard>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-white/10 pt-3">
+              <div className="flex items-center justify-between gap-2">
+                <Toggle
+                  checked={coinsOverlayState.showSpent}
+                  onChange={(next) =>
+                    setCoinsOverlayState((prev) =>
+                      prev ? { ...prev, showSpent: next } : prev,
+                    )
+                  }
+                  label="Show spent"
+                  className={`max-w-[180px] p-2 ${
+                    coinsOverlayState.type === "loading"
+                      ? "pointer-events-none opacity-60"
+                      : ""
+                  }`}
+                />
+                <Button
+                  type="button"
+                  variant="soft"
+                  className="!flex-none px-4 py-1.5 text-xs"
+                  onClick={() => setCoinsOverlayState(null)}
+                  disabled={coinsOverlayState.type === "loading"}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
+}
+
+async function getMultisigTxInfoStub(
+  wallet: MoneroWasmWallet,
+  data: Uint8Array,
+): Promise<MultisigTxInfo> {
+  const maybeWallet = wallet as unknown as {
+    getMultisigTxInfo?: (input: Uint8Array) => Promise<{
+      fee?: bigint;
+      recipients?: Array<{ address: string; amount: bigint }>;
+      summary?: string;
+    }>;
+  };
+  if (typeof maybeWallet.getMultisigTxInfo === "function") {
+    const info = await maybeWallet.getMultisigTxInfo(data);
+    return {
+      fee: info.fee ?? 0n,
+      recipients: info.recipients ?? [],
+      summary: info.summary ?? "Multisig tx info loaded.",
+    };
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  return {
+    fee: 0n,
+    recipients: [],
+    summary:
+      "TODO: parse and display multisig tx info once getMultisigTxInfo() is implemented.",
+  };
+}
+
+async function signMultisigTxStub(
+  wallet: MoneroWasmWallet,
+  input: Uint8Array,
+): Promise<{ data: Uint8Array; is_ready: boolean }> {
+  const maybeWallet = wallet as unknown as {
+    signMultisigTx?: (
+      data: Uint8Array,
+    ) => Promise<{ data: Uint8Array; is_ready: boolean }>;
+    signMulsiigTx?: (
+      data: Uint8Array,
+    ) => Promise<{ data: Uint8Array; is_ready: boolean }>;
+  };
+  if (typeof maybeWallet.signMultisigTx === "function") {
+    return maybeWallet.signMultisigTx(input);
+  }
+  if (typeof maybeWallet.signMulsiigTx === "function") {
+    return maybeWallet.signMulsiigTx(input);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const data = new Uint8Array(input.length);
+  data.set(input);
+  return { data, is_ready: false };
+}
+
+async function broadcastMultisigTxStub(
+  wallet: MoneroWasmWallet,
+  data: Uint8Array,
+): Promise<void> {
+  const maybeWallet = wallet as unknown as {
+    broadcastMultisigTx?: (input: Uint8Array) => Promise<void>;
+  };
+  if (typeof maybeWallet.broadcastMultisigTx === "function") {
+    await maybeWallet.broadcastMultisigTx(data);
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 350));
 }
 
 function parseMoneroQrPayload(
@@ -811,7 +1400,9 @@ function toUriIndex(key: string): number {
   return Number(numeric);
 }
 
-function isRecipientEmpty(recipient: Pick<RecipientInput, "address" | "amount">) {
+function isRecipientEmpty(
+  recipient: Pick<RecipientInput, "address" | "amount">,
+) {
   return recipient.address.trim() === "" && recipient.amount.trim() === "";
 }
 

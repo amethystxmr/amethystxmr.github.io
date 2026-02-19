@@ -478,6 +478,42 @@ public:
                        { return get_payments_mempool_impl(); });
     }
 
+    auto get_transfers()
+    {
+        return promise(
+            [this]()
+            {
+                tools::wallet2::transfer_container incoming_transfers;
+                m_wallet.get_transfers(incoming_transfers);
+                return incoming_transfers;
+            },
+            [](const tools::wallet2::transfer_container &incoming_transfers) -> emscripten::val
+            {
+                auto result = emscripten::val::array();
+                for (size_t i = 0; i < incoming_transfers.size(); ++i)
+                {
+                    const auto &td = incoming_transfers[i];
+                    auto item = emscripten::val::object();
+                    item.set("block_height", td.m_block_height);
+                    item.set("txid", epee::string_tools::pod_to_hex(td.m_txid));
+                    item.set("global_output_index", td.m_global_output_index);
+                    item.set("local_output_index", td.m_internal_output_index);
+                    item.set("spent", td.m_spent);
+                    item.set("froze", td.m_frozen);
+                    item.set("spent_height", td.m_spent_height);
+                    item.set("amount", td.m_amount);
+                    item.set("rct", td.m_rct);
+                    item.set("key_image_known", td.m_key_image_known);
+                    item.set("key_image_request", td.m_key_image_request);
+                    item.set("subaddr_index_major", td.m_subaddr_index.major);
+                    item.set("subaddr_index_minor", td.m_subaddr_index.minor);
+                    item.set("key_image_partial", td.m_key_image_partial);
+                    result.set(static_cast<uint32_t>(i), item);
+                }
+                return result;
+            });
+    }
+
     std::vector<PaymentDetails> get_payments_mempool_impl()
     {
         std::vector<PaymentDetails> result;
@@ -560,22 +596,60 @@ public:
                        { return transfer_impl(dst_addresses, amounts, priority); });
     }
 
-    uint64_t transfer_get_fee(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
+    emscripten::val get_transfers_info(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
-        uint64_t total_fee = 0;
-        for (size_t n = 0; n < ptx_vector->size(); ++n)
+        auto result = emscripten::val::array();
+
+        for (size_t tx_index = 0; tx_index < ptx_vector->size(); ++tx_index)
         {
-            total_fee += (*ptx_vector)[n].fee;
+            const auto &ptx = (*ptx_vector)[tx_index];
+            auto tx_item = emscripten::val::object();
+            tx_item.set("fee", ptx.fee);
+
+            auto destinations = emscripten::val::array();
+            for (size_t dst_index = 0; dst_index < ptx.dests.size(); ++dst_index)
+            {
+                const auto &dst = ptx.dests[dst_index];
+                auto dst_item = emscripten::val::object();
+                dst_item.set("dstAddress", cryptonote::get_account_address_as_str(m_wallet.nettype(), dst.is_subaddress, dst.addr));
+                dst_item.set("dspAmount", dst.amount);
+                destinations.set(static_cast<uint32_t>(dst_index), dst_item);
+            }
+            tx_item.set("destinations", destinations);
+            result.set(static_cast<uint32_t>(tx_index), tx_item);
         }
-        return total_fee;
+        return result;
     }
 
     auto transfer_commit_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
-        return promise([this, ptx_vector = std::move(ptx_vector)]()
+        return promise([this, ptx_vector]()
                        {
                            m_wallet.commit_tx(*ptx_vector);
                            return true; });
+    }
+
+    auto save_multisig_tx_pending_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
+    {
+        return promise(
+            [this, ptx_vector]()
+            {
+                auto status = m_wallet.get_multisig_status();
+                if (!status.multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is not multisig");
+                }
+                if (!status.is_ready)
+                {
+                    throw std::runtime_error("Multisig wallet is not ready");
+                }
+                return m_wallet.save_multisig_tx(*ptx_vector);
+            },
+            [](const std::string &ciphertext) -> emscripten::val
+            {
+                auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
+                return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes, ciphertext.size());
+            });
     }
 
     std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(const std::vector<std::string> &dst_addresses, const std::vector<uint64_t> &amounts, uint32_t priority)
@@ -1016,7 +1090,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("set_on_new_block_callback", &MoneroWasmWallet::set_on_new_block_callback)
         .function("refresh", &MoneroWasmWallet::refresh)
         .function("load", &MoneroWasmWallet::load)
-        //.function("get_transfers", &MoneroWasmWallet::get_transfers)
+        .function("get_transfers", &MoneroWasmWallet::get_transfers)
         .function("get_payments", &MoneroWasmWallet::get_payments)
         .function("get_payments_mempool", &MoneroWasmWallet::get_payments_mempool)
         .function("store", &MoneroWasmWallet::store)
@@ -1032,8 +1106,9 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_blockchain_height_by_date", &MoneroWasmWallet::get_blockchain_height_by_date)
         .function("words_to_bytes", &MoneroWasmWallet::words_to_bytes)
         .function("transfer_prepare", &MoneroWasmWallet::transfer_prepare)
-        .function("transfer_get_fee", &MoneroWasmWallet::transfer_get_fee)
+        .function("get_transfers_info", &MoneroWasmWallet::get_transfers_info)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
+        .function("save_multisig_tx_pending_tx", &MoneroWasmWallet::save_multisig_tx_pending_tx)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
         .function("has_multisig_partial_key_images", &MoneroWasmWallet::has_multisig_partial_key_images)
         .function("has_unknown_key_images", &MoneroWasmWallet::has_unknown_key_images)
