@@ -478,6 +478,41 @@ public:
                        { return get_payments_mempool_impl(); });
     }
 
+    auto get_transfers()
+    {
+        return promise(
+            [this]()
+            {
+                tools::wallet2::transfer_container incoming_transfers;
+                m_wallet.get_transfers(incoming_transfers);
+                return incoming_transfers;
+            },
+            [](const tools::wallet2::transfer_container &incoming_transfers) -> emscripten::val
+            {
+                auto result = emscripten::val::array();
+                for (size_t i = 0; i < incoming_transfers.size(); ++i)
+                {
+                    const auto &td = incoming_transfers[i];
+                    auto item = emscripten::val::object();
+                    item.set("block_height", td.m_block_height);
+                    item.set("txid", epee::string_tools::pod_to_hex(td.m_txid));
+                    item.set("global_output_index", td.m_global_output_index);
+                    item.set("spent", td.m_spent);
+                    item.set("froze", td.m_frozen);
+                    item.set("spent_height", td.m_spent_height);
+                    item.set("amount", td.m_amount);
+                    item.set("rct", td.m_rct);
+                    item.set("key_image_known", td.m_key_image_known);
+                    item.set("key_image_request", td.m_key_image_request);
+                    item.set("subaddr_index_major", td.m_subaddr_index.major);
+                    item.set("subaddr_index_minor", td.m_subaddr_index.minor);
+                    item.set("key_image_partial", td.m_key_image_partial);
+                    result.set(static_cast<uint32_t>(i), item);
+                }
+                return result;
+            });
+    }
+
     std::vector<PaymentDetails> get_payments_mempool_impl()
     {
         std::vector<PaymentDetails> result;
@@ -1031,7 +1066,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("set_on_new_block_callback", &MoneroWasmWallet::set_on_new_block_callback)
         .function("refresh", &MoneroWasmWallet::refresh)
         .function("load", &MoneroWasmWallet::load)
-        //.function("get_transfers", &MoneroWasmWallet::get_transfers)
+        .function("get_transfers", &MoneroWasmWallet::get_transfers)
         .function("get_payments", &MoneroWasmWallet::get_payments)
         .function("get_payments_mempool", &MoneroWasmWallet::get_payments_mempool)
         .function("store", &MoneroWasmWallet::store)
