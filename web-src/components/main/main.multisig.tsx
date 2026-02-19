@@ -12,10 +12,12 @@ import {
   OverlayDialog,
   SurfaceCard,
   TextArea,
+  useMultisigDataOverlayExport,
+  useMultisigDataOverlayImport,
   useAlert,
   usePasswordPrompt,
 } from "../ui";
-import { downloadBlob, withFsLock } from "../utils";
+import { withFsLock } from "../utils";
 
 const PARTICIPANT_OPTIONS = Array.from({ length: 15 }, (_, i) => i + 2);
 
@@ -589,7 +591,8 @@ function MultisigReady({
   onRefresh: () => void;
 }) {
   const alert = useAlert();
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const exportOverlay = useMultisigDataOverlayExport();
+  const importOverlay = useMultisigDataOverlayImport();
   const [busyAction, setBusyAction] = React.useState<
     "idle" | "export" | "import"
   >("idle");
@@ -618,52 +621,49 @@ function MultisigReady({
       const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
       const dataForBlob = new Uint8Array(data.length);
       dataForBlob.set(data);
-      downloadBlob(
-        new Blob([dataForBlob], { type: "application/octet-stream" }),
-        `${walletName}-${currentHeight.toString()}`,
-      );
+      await exportOverlay({
+        data: dataForBlob,
+        header: "Your multisig data",
+        fileName: `${walletName}-${currentHeight.toString()}`,
+      });
     } catch (e) {
       await alert((e as Error)?.message || "Failed to export multisig info");
     } finally {
       setBusyAction("idle");
     }
-  }, [alert, isBusy, wallet]);
+  }, [alert, exportOverlay, isBusy, wallet]);
 
-  const handleImportMultisigFiles = React.useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = event.target.files ? Array.from(event.target.files) : [];
-      event.target.value = "";
-      if (files.length === 0 || isBusy) {
-        return;
-      }
+  const handleImportMultisig = React.useCallback(async () => {
+    if (isBusy) {
+      return;
+    }
 
-      setBusyAction("import");
-      try {
-        const infos = await Promise.all(
-          files.map(async (file) => {
-            const buf = await file.arrayBuffer();
-            return new Uint8Array(buf);
-          }),
-        );
+    const infos = await importOverlay({
+      header: "Paste data from others here",
+      allowMultifiles: true,
+    });
+    if (infos === null) {
+      return;
+    }
 
-        const updatedOutputs = await withFsLock(async () => {
-          const imported = await wallet.import_multisig(infos);
-          await wallet.store();
-          return imported;
-        });
+    setBusyAction("import");
+    try {
+      const updatedOutputs = await withFsLock(async () => {
+        const imported = await wallet.import_multisig(infos);
+        await wallet.store();
+        return imported;
+      });
 
-        await alert(
-          `Multisig info imported. Number of outputs updated: ${updatedOutputs}`,
-        );
-        onRefresh();
-      } catch (e) {
-        await alert((e as Error)?.message || "Failed to import multisig info");
-      } finally {
-        setBusyAction("idle");
-      }
-    },
-    [alert, isBusy, onRefresh, wallet],
-  );
+      await alert(
+        `Multisig info imported. Number of outputs updated: ${updatedOutputs}`,
+      );
+      onRefresh();
+    } catch (e) {
+      await alert((e as Error)?.message || "Failed to import multisig info");
+    } finally {
+      setBusyAction("idle");
+    }
+  }, [alert, importOverlay, isBusy, onRefresh, wallet]);
 
   return (
     <>
@@ -731,21 +731,14 @@ function MultisigReady({
               variant="neutral"
               className="w-full py-2.5"
               disabled={isBusy}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                void handleImportMultisig();
+              }}
             >
               {busyAction === "import"
                 ? "Importing..."
                 : "Import participant data"}
             </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                void handleImportMultisigFiles(event);
-              }}
-            />
           </div>
         </SurfaceCard>
       </MultisigTabWrap>

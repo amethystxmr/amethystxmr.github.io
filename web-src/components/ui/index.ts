@@ -24,3 +24,8 @@ export { ConfirmDialog } from "./ConfirmDialog";
 export { PasswordPromptDialog } from "./PasswordPromptDialog";
 export { usePasswordPrompt } from "./usePasswordPrompt";
 export { ProgressBar } from "./ProgressBar";
+export {
+  MultisigDataOverlayProvider,
+  useMultisigDataOverlayExport,
+  useMultisigDataOverlayImport,
+} from "./MultisigDataOverlayProvider";
