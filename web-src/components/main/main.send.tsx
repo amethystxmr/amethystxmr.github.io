@@ -445,6 +445,24 @@ export function SendTab({
     setCameraState(INITIAL_CAMERA_STATE);
   }
 
+  function handleCancelConfirm() {
+    if (state.type !== "confirming") {
+      return;
+    }
+    if (
+      state.kind.type === "non-multisig" ||
+      state.kind.type === "new-multisig"
+    ) {
+      state.kind.txHandle.delete();
+    } else if (state.kind.type === "continue-multisig") {
+      // No handles to clean up in this
+    } else {
+      state.kind satisfies never;
+    }
+
+    setState({ type: "entering" });
+  }
+
   React.useEffect(() => {
     if (!scannerOpen) {
       return;
@@ -934,7 +952,7 @@ export function SendTab({
 
               <ButtonsHolder>
                 <Button
-                  onClick={() => setState({ type: "entering" })}
+                  onClick={handleCancelConfirm}
                   className="text-sm font-semibold"
                 >
                   Cancel
