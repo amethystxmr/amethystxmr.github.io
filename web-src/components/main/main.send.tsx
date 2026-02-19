@@ -420,7 +420,6 @@ export function SendTab({
         kind: {
           type: "continue-multisig",
           importData,
-          // TODO: What if I already signed this and it is someone else is missing?
           iAmTheLastSigner: signersNeeded === 1,
         },
       });

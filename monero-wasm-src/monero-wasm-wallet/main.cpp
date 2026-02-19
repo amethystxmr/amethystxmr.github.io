@@ -637,8 +637,7 @@ public:
                                    throw std::runtime_error("Non-accepting callback was not called");
                                }
                            }
-                           return txs;
-                       });
+                           return txs; });
     }
 
     auto sign_multisig_tx(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
@@ -685,7 +684,14 @@ public:
 
     size_t get_multisig_tx_signers_count(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
     {
-        return multisig_tx_set->m_signers.size();
+        if (multisig_tx_set->m_signers.find(m_wallet.get_multisig_signer_public_key()) == multisig_tx_set->m_signers.end())
+        {
+            return multisig_tx_set->m_signers.size();
+        }
+        else
+        {
+            return multisig_tx_set->m_signers.size() - 1;
+        }
     }
 
     auto transfer_commit_tx_multisig(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
@@ -693,8 +699,7 @@ public:
         return promise([this, multisig_tx_set]()
                        {
                            m_wallet.commit_tx(multisig_tx_set->m_ptx);
-                           return true;
-                       });
+                           return true; });
     }
 
     emscripten::val get_transfers_info_impl(const std::vector<tools::wallet2::pending_tx> &ptx_vector)
