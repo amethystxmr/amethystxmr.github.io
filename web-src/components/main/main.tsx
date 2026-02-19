@@ -483,6 +483,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     status.multisigStatus.multisig_is_active ||
     (status.payments.length === 0 &&
       (!mempoolPayments || mempoolPayments.length === 0));
+  const isMainTabsLockedByMultisig =
+    !!status &&
+    status.multisigStatus.multisig_is_active &&
+    !status.multisigStatus.is_ready;
 
   // This way to keep this tab state in tne main component and not lose it when switching tabs
   const sendTabContent = SendTab({
@@ -557,11 +561,14 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
       <div className="lg:h-[640px]">
         <NiceTabs
+          key={isMainTabsLockedByMultisig ? "tabs-multisig-locked" : "tabs-normal"}
+          initialKey={isMainTabsLockedByMultisig ? "multisig" : undefined}
           className="mt-0 lg:flex lg:h-full lg:min-h-0 lg:flex-col"
           tabs={[
             {
               key: "receive",
               label: "Receive",
+              disabled: isMainTabsLockedByMultisig,
               content: (
                 <ReceiveAddresses
                   addresses={addresses}
@@ -581,11 +588,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             {
               key: "send",
               label: "Send",
+              disabled: isMainTabsLockedByMultisig,
               content: sendTabContent,
             },
             {
               key: "transactions",
               label: "Transactions",
+              disabled: isMainTabsLockedByMultisig,
               content: (
                 <TransactionsTab
                   payments={status?.payments || null}
