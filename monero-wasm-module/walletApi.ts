@@ -80,6 +80,18 @@ export declare class MoneroWasmWallet {
   get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
   save_multisig_tx_pending_tx(handle: PendingTxHandle): Promise<Uint8Array>;
+  load_multisig_tx(
+    data: Uint8Array,
+    do_accept: boolean,
+  ): Promise<MultisigTxSetHandle>;
+  get_multisig_tx_set_info(handle: MultisigTxSetHandle): TransferInfoItem[];
+  get_multisig_tx_signers_count(
+    handle: MultisigTxSetHandle,
+    excludeSelf: boolean,
+  ): number;
+  sign_multisig_tx(handle: MultisigTxSetHandle): Promise<string[]>;
+  save_multisig_tx(handle: MultisigTxSetHandle): Promise<Uint8Array>;
+  transfer_commit_tx_multisig(handle: MultisigTxSetHandle): Promise<void>;
 
   get_multisig_status(): Promise<MultisigAccountStatus>;
   has_multisig_partial_key_images(): Promise<boolean>;
@@ -170,6 +182,10 @@ export interface EmbindVector<T> extends ClassHandle {
 }
 
 export interface PendingTxHandle extends ClassHandle {
+  readonly __nominal: unique symbol;
+}
+
+export interface MultisigTxSetHandle extends ClassHandle {
   readonly __nominal: unique symbol;
 }
 

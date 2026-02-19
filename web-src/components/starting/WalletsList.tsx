@@ -62,6 +62,7 @@ export function WalletsList() {
     | {
         type: "opening";
         fileName: string;
+        isStartupAutoOpen: boolean;
       }
     | {
         type: "opened";
@@ -158,7 +159,11 @@ export function WalletsList() {
       return;
     }
 
-    setView({ type: "opening", fileName: lastWalletName });
+    setView({
+      type: "opening",
+      fileName: lastWalletName,
+      isStartupAutoOpen: true,
+    });
   }, [buildListView]);
 
   if (view.type === "opened") {
@@ -178,7 +183,13 @@ export function WalletsList() {
   } else if (view.type === "create-new-wallet") {
     return <CreateNewWalletView onDone={handleCreateDone} />;
   } else if (view.type === "opening") {
-    return <OpenWalletView fileName={view.fileName} onDone={handleOpenDone} />;
+    return (
+      <OpenWalletView
+        fileName={view.fileName}
+        isStartupAutoOpen={view.isStartupAutoOpen}
+        onDone={handleOpenDone}
+      />
+    );
   } else if (view.type === "list") {
     return (
       <div className="space-y-4">
@@ -206,6 +217,7 @@ export function WalletsList() {
                     setView({
                       type: "opening",
                       fileName: name,
+                      isStartupAutoOpen: false,
                     });
                   }}
                 >
@@ -908,8 +920,10 @@ function CreateNewWalletView({
 function OpenWalletView({
   onDone,
   fileName,
+  isStartupAutoOpen,
 }: {
   fileName: string;
+  isStartupAutoOpen: boolean;
   onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   type OpenPhase =
@@ -979,7 +993,9 @@ function OpenWalletView({
       }
 
       if (!releaseWalletOpenLock) {
-        await alert(`Wallet "${fileName}" is already opened in another tab.`);
+        if (!isStartupAutoOpen) {
+          await alert(`Wallet "${fileName}" is already opened in another tab.`);
+        }
         onDone(null);
         setPhase("idle");
         return;
@@ -995,7 +1011,7 @@ function OpenWalletView({
       walletOpenLockReleaseRef.current = null;
       releaseWalletOpenLock?.();
     };
-  }, [alert, doOpen, fileName, onDone]);
+  }, [alert, doOpen, fileName, isStartupAutoOpen, onDone]);
 
   const isBusy = phase !== "idle";
 
