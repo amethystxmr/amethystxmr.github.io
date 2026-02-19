@@ -17,6 +17,8 @@ import {
   Select,
   ShimmerStatus,
   SurfaceCard,
+  useMultisigDataOverlayExport,
+  useMultisigDataOverlayImport,
 } from "../ui";
 import {
   FeePriority,
@@ -29,6 +31,17 @@ type SendState =
   | { type: "entering" }
   | { type: "estimating" }
   | { type: "confirming"; fee: bigint; txHandle: PendingTxHandle }
+  | { type: "multisig-info-loading" }
+  | {
+      type: "multisig-info";
+      importData: Uint8Array;
+      info: MultisigTxInfo;
+    }
+  | {
+      type: "multisig-signing";
+      importData: Uint8Array;
+      info: MultisigTxInfo;
+    }
   | { type: "sending"; fee: bigint; txHandle: PendingTxHandle }
   | { type: "sent"; txFee: bigint }
   | { type: "error"; message: string };
@@ -100,14 +113,27 @@ type ParsedRecipient = {
   isValid: boolean;
 };
 
+type CoinsOverlayState =
+  | { type: "loading" }
+  | { type: "ready"; todoMessage: string }
+  | { type: "error"; message: string };
+
+type MultisigTxInfo = {
+  fee: bigint;
+  recipients: Array<{ address: string; amount: bigint }>;
+  summary: string;
+};
+
 export function SendTab({
   wallet,
   scheduleRefresh,
   price,
+  showMultisigActions,
 }: {
   wallet: MoneroWasmWallet;
   scheduleRefresh: () => void;
   price: number | null;
+  showMultisigActions: boolean;
 }) {
   const [recipients, setRecipients] = React.useState<RecipientInput[]>([
     { address: "", amount: "" },
@@ -116,10 +142,14 @@ export function SendTab({
     FeePriority.Default,
   );
   const [state, setState] = React.useState<SendState>({ type: "entering" });
+  const [coinsOverlayState, setCoinsOverlayState] =
+    React.useState<CoinsOverlayState | null>(null);
   const [scannerOpen, setScannerOpen] = React.useState(false);
   const [scannerError, setScannerError] = React.useState<string | null>(null);
   const [cameraState, setCameraState] =
     React.useState<CameraState>(INITIAL_CAMERA_STATE);
+  const multisigExportOverlay = useMultisigDataOverlayExport();
+  const multisigImportOverlay = useMultisigDataOverlayImport();
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const scannerControlsRef = React.useRef<IScannerControls | null>(null);
 
@@ -204,6 +234,87 @@ export function SendTab({
       .finally(() => {
         state.txHandle.delete();
       });
+  }
+
+  async function handleLoadCoins() {
+    setCoinsOverlayState({ type: "loading" });
+    try {
+      const result = await getCoinsStub(wallet);
+      setCoinsOverlayState({
+        type: "ready",
+        todoMessage: result.todoMessage,
+      });
+    } catch (e) {
+      setCoinsOverlayState({
+        type: "error",
+        message: (e as Error)?.message || "Failed to load coins",
+      });
+    }
+  }
+
+  async function handleStartSignMultisigFlow() {
+    if (!showMultisigActions || state.type !== "entering") {
+      return;
+    }
+
+    const imported = await multisigImportOverlay({
+      header: "Paste multisig tx data here",
+    });
+    if (imported === null) {
+      return;
+    }
+
+    const importData = new Uint8Array(imported.length);
+    importData.set(imported);
+
+    setState({ type: "multisig-info-loading" });
+    try {
+      const info = await getMultisigTxInfoStub(wallet, importData);
+      setState({ type: "multisig-info", importData, info });
+    } catch (e) {
+      setState({
+        type: "error",
+        message: (e as Error)?.message || "Failed to parse multisig tx data",
+      });
+    }
+  }
+
+  async function handleSignMultisigTx() {
+    if (state.type !== "multisig-info") {
+      return;
+    }
+
+    const importData = state.importData;
+    const info = state.info;
+    setState({ type: "multisig-signing", importData, info });
+    try {
+      const signed = await signMultisigTxStub(wallet, importData);
+      const signedDataCopy = new Uint8Array(signed.data.length);
+      signedDataCopy.set(signed.data);
+
+      await multisigExportOverlay({
+        data: signedDataCopy,
+        header: signed.is_ready
+          ? "Signed multisig tx (ready to broadcast)"
+          : "Signed multisig tx (collect more signatures)",
+        fileName: "signed-multisig-tx",
+        action: signed.is_ready
+          ? {
+              label: "Broadcast",
+              onAction: async () => {
+                await broadcastMultisigTxStub(wallet, signedDataCopy);
+                scheduleRefresh();
+              },
+            }
+          : undefined,
+      });
+      setState({ type: "entering" });
+    } catch (e) {
+      setState({
+        type: "error",
+        message: (e as Error)?.message || "Failed to sign multisig tx",
+      });
+    }
   }
 
   function reset() {
@@ -417,8 +528,9 @@ export function SendTab({
   }
 
   return (
-    <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
-      <div className="space-y-4 pb-2">
+    <>
+      <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
+        <div className="space-y-4 pb-2">
       {/* ENTERING */}
       {state.type === "entering" && (
         <>
@@ -580,12 +692,43 @@ export function SendTab({
           >
             Review transaction
           </Button>
+
+          <div className="border-t border-white/10 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="neutral"
+                type="button"
+                onClick={() => {
+                  void handleLoadCoins();
+                }}
+                className="!flex-none px-3 py-1.5 text-xs"
+              >
+                Coins
+              </Button>
+              {showMultisigActions && (
+                <Button
+                  variant="neutral"
+                  type="button"
+                  onClick={() => {
+                    void handleStartSignMultisigFlow();
+                  }}
+                  className="!flex-none px-3 py-1.5 text-xs"
+                >
+                  Sign multisig tx
+                </Button>
+              )}
+            </div>
+          </div>
         </>
       )}
 
       {/* ESTIMATING */}
       {state.type === "estimating" && (
         <ShimmerStatus text="Estimating network fee..." />
+      )}
+
+      {state.type === "multisig-info-loading" && (
+        <ShimmerStatus text="Loading multisig transaction info..." />
       )}
 
       {/* CONFIRMING */}
@@ -661,6 +804,97 @@ export function SendTab({
         </div>
       )}
 
+      {state.type === "multisig-info" && (
+        <div className="space-y-4">
+          <SurfaceCard className="space-y-3">
+            <div>
+              <div className="text-xs text-white/60">Total outgoing</div>
+              <div className="text-lg font-semibold text-white">
+                {formatAtomicToXmr(
+                  state.info.recipients.reduce(
+                    (sum, recipient) => sum + recipient.amount,
+                    0n,
+                  ),
+                )}{" "}
+                XMR
+              </div>
+              {price && (
+                <div className="text-sm text-white/60">
+                  ≈{" "}
+                  {toFiat(
+                    state.info.recipients.reduce(
+                      (sum, recipient) => sum + recipient.amount,
+                      0n,
+                    ),
+                    price,
+                  ).toFixed(2)}{" "}
+                  EUR
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="text-xs text-white/60">Network fee</div>
+              <div className="text-sm text-white">
+                {formatAtomicToXmr(state.info.fee)} XMR
+              </div>
+              {price && (
+                <div className="text-xs text-white/50">
+                  ≈ {toFiat(state.info.fee, price).toFixed(2)} EUR
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2 pt-2">
+              <div className="text-xs text-white/60">Recipients</div>
+              {state.info.recipients.length > 0 ? (
+                state.info.recipients.map((recipient, index) => (
+                  <div key={`${recipient.address}-${index}`} className="rounded-lg bg-white/5 p-2">
+                    <div className="break-all font-mono text-[11px] text-white/75">
+                      {splitAddressBy6(recipient.address)}
+                    </div>
+                    <div className="mt-1 text-xs text-white">
+                      {formatAtomicToXmr(recipient.amount)} XMR
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg bg-white/5 p-2 text-xs text-white/65">
+                  No recipients parsed yet.
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-lg bg-white/5 p-2 text-xs text-white/70">
+              {state.info.summary}
+            </div>
+          </SurfaceCard>
+
+          <ButtonsHolder>
+            <Button
+              onClick={() => setState({ type: "entering" })}
+              className="text-sm font-semibold"
+            >
+              Cancel
+            </Button>
+
+            <Button
+              onClick={() => {
+                void handleSignMultisigTx();
+              }}
+              variant="primary"
+              className="text-sm font-semibold"
+            >
+              Sign
+            </Button>
+          </ButtonsHolder>
+        </div>
+      )}
+
+      {state.type === "multisig-signing" && (
+        <ShimmerStatus text="Signing multisig transaction..." />
+      )}
+
       {/* SENDING */}
       {state.type === "sending" && (
         <ShimmerStatus text="Broadcasting transaction..." />
@@ -703,9 +937,137 @@ export function SendTab({
           </Button>
         </div>
       )}
+        </div>
       </div>
-    </div>
+      {coinsOverlayState && (
+        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-[1px]">
+          <div className="flex h-full w-full flex-col bg-[#211239] p-3 ring-1 ring-white/15 sm:p-4">
+            <div className="space-y-1 border-b border-white/10 pb-3">
+              <div className="text-base font-semibold text-white/90">Coins</div>
+              <div className="text-sm text-white/70">
+                Coins view will be added after wallet method implementation.
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 py-3">
+              <div className="scrollbar-glass h-full overflow-y-auto rounded-lg bg-white/5 p-3 text-sm text-white/80 ring-1 ring-white/10">
+            {coinsOverlayState.type === "loading" && (
+                  <div>Loading coins... (TODO)</div>
+            )}
+            {coinsOverlayState.type === "error" && (
+                  <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-100 ring-1 ring-red-300/30">
+                    {coinsOverlayState.message}
+                  </div>
+            )}
+            {coinsOverlayState.type === "ready" && (
+                  <div>{coinsOverlayState.todoMessage}</div>
+            )}
+              </div>
+            </div>
+
+            <div className="border-t border-white/10 pt-3">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="soft"
+                  className="!flex-none px-4 py-1.5 text-xs"
+                  onClick={() => setCoinsOverlayState(null)}
+                  disabled={coinsOverlayState.type === "loading"}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
+}
+
+async function getCoinsStub(wallet: MoneroWasmWallet): Promise<{
+  todoMessage: string;
+}> {
+  const maybeWallet = wallet as unknown as {
+    getCoins?: () => Promise<unknown>;
+  };
+  if (typeof maybeWallet.getCoins === "function") {
+    await maybeWallet.getCoins();
+  } else {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+  return {
+    todoMessage:
+      "TODO: Coins data loaded. UI content will be implemented when getCoins() is ready.",
+  };
+}
+
+async function getMultisigTxInfoStub(
+  wallet: MoneroWasmWallet,
+  data: Uint8Array,
+): Promise<MultisigTxInfo> {
+  const maybeWallet = wallet as unknown as {
+    getMultisigTxInfo?: (input: Uint8Array) => Promise<{
+      fee?: bigint;
+      recipients?: Array<{ address: string; amount: bigint }>;
+      summary?: string;
+    }>;
+  };
+  if (typeof maybeWallet.getMultisigTxInfo === "function") {
+    const info = await maybeWallet.getMultisigTxInfo(data);
+    return {
+      fee: info.fee ?? 0n,
+      recipients: info.recipients ?? [],
+      summary: info.summary ?? "Multisig tx info loaded.",
+    };
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  return {
+    fee: 0n,
+    recipients: [],
+    summary:
+      "TODO: parse and display multisig tx info once getMultisigTxInfo() is implemented.",
+  };
+}
+
+async function signMultisigTxStub(
+  wallet: MoneroWasmWallet,
+  input: Uint8Array,
+): Promise<{ data: Uint8Array; is_ready: boolean }> {
+  const maybeWallet = wallet as unknown as {
+    signMultisigTx?: (
+      data: Uint8Array,
+    ) => Promise<{ data: Uint8Array; is_ready: boolean }>;
+    signMulsiigTx?: (
+      data: Uint8Array,
+    ) => Promise<{ data: Uint8Array; is_ready: boolean }>;
+  };
+  if (typeof maybeWallet.signMultisigTx === "function") {
+    return maybeWallet.signMultisigTx(input);
+  }
+  if (typeof maybeWallet.signMulsiigTx === "function") {
+    return maybeWallet.signMulsiigTx(input);
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  const data = new Uint8Array(input.length);
+  data.set(input);
+  return { data, is_ready: false };
+}
+
+async function broadcastMultisigTxStub(
+  wallet: MoneroWasmWallet,
+  data: Uint8Array,
+): Promise<void> {
+  const maybeWallet = wallet as unknown as {
+    broadcastMultisigTx?: (input: Uint8Array) => Promise<void>;
+  };
+  if (typeof maybeWallet.broadcastMultisigTx === "function") {
+    await maybeWallet.broadcastMultisigTx(data);
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 350));
 }
 
 function parseMoneroQrPayload(

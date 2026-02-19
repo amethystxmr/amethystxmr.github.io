@@ -12,6 +12,10 @@ export type MultisigDataOverlayExportOptions = {
   data: Uint8Array;
   header: string;
   fileName: string;
+  action?: {
+    onAction: () => void | Promise<void>;
+    label: string;
+  };
 };
 
 export type MultisigDataOverlayImportOptions = {
@@ -203,6 +207,7 @@ function MultisigDataOverlayDialog({
   const [mode, setMode] = React.useState<EncodingMode>("hex");
   const [inputText, setInputText] = React.useState("");
   const [errorText, setErrorText] = React.useState("");
+  const [actionBusy, setActionBusy] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
@@ -212,6 +217,7 @@ function MultisigDataOverlayDialog({
     setMode("hex");
     setInputText("");
     setErrorText("");
+    setActionBusy(false);
   }, [request]);
 
   React.useEffect(() => {
@@ -253,6 +259,7 @@ function MultisigDataOverlayDialog({
 
   const rightButtonText = isExport ? "Close" : hasInput ? "Import" : "Close";
   const leftFileButtonText = isExport ? "Save to file" : "Import from file";
+  const exportAction = request.type === "export" ? request.options.action : null;
 
   const handleFileButtonClick = () => {
     if (isExport) {
@@ -302,6 +309,22 @@ function MultisigDataOverlayDialog({
       onResolveImport(parsed);
     } catch (error) {
       setErrorText((error as Error).message || "Failed to decode data");
+    }
+  };
+
+  const handleExportAction = async () => {
+    if (request.type !== "export" || !request.options.action || actionBusy) {
+      return;
+    }
+    setActionBusy(true);
+    setErrorText("");
+    try {
+      await request.options.action.onAction();
+      onResolveExport();
+    } catch (error) {
+      setErrorText((error as Error)?.message || "Action failed");
+    } finally {
+      setActionBusy(false);
     }
   };
 
@@ -436,6 +459,19 @@ function MultisigDataOverlayDialog({
             >
               {rightButtonText}
             </Button>
+            {exportAction ? (
+              <Button
+                type="button"
+                variant="primary"
+                className="!flex-none px-4 py-1.5 text-xs"
+                onClick={() => {
+                  void handleExportAction();
+                }}
+                disabled={actionBusy}
+              >
+                {actionBusy ? `${exportAction.label}...` : exportAction.label}
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>
