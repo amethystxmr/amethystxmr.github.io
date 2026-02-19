@@ -682,15 +682,16 @@ public:
             });
     }
 
-    size_t get_multisig_tx_signers_count(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
+    size_t get_multisig_tx_signers_count(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set, bool exclude_self)
     {
-        if (multisig_tx_set->m_signers.find(m_wallet.get_multisig_signer_public_key()) == multisig_tx_set->m_signers.end())
+        if (exclude_self &&
+            multisig_tx_set->m_signers.find(m_wallet.get_multisig_signer_public_key()) != multisig_tx_set->m_signers.end())
         {
-            return multisig_tx_set->m_signers.size();
+            return multisig_tx_set->m_signers.size() - 1;
         }
         else
         {
-            return multisig_tx_set->m_signers.size() - 1;
+            return multisig_tx_set->m_signers.size();
         }
     }
 

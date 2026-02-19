@@ -85,7 +85,10 @@ export declare class MoneroWasmWallet {
     do_accept: boolean,
   ): Promise<MultisigTxSetHandle>;
   get_multisig_tx_set_info(handle: MultisigTxSetHandle): TransferInfoItem[];
-  get_multisig_tx_signers_count(handle: MultisigTxSetHandle): number;
+  get_multisig_tx_signers_count(
+    handle: MultisigTxSetHandle,
+    excludeSelf: boolean,
+  ): number;
   sign_multisig_tx(handle: MultisigTxSetHandle): Promise<string[]>;
   save_multisig_tx(handle: MultisigTxSetHandle): Promise<Uint8Array>;
   transfer_commit_tx_multisig(handle: MultisigTxSetHandle): Promise<void>;
