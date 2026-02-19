@@ -33,13 +33,14 @@ import {
 
 type SendState =
   | { type: "entering" }
-  | { type: "estimating" }
+  | { type: "building-transaction" }
   | {
       type: "confirming";
       txHandle: PendingTxHandle;
       info: TransferInfoItem[];
       isMultisigWallet: boolean;
     }
+  // TODO:
   | { type: "multisig-info-loading" }
   | {
       type: "multisig-info";
@@ -224,7 +225,7 @@ export function SendTab({
       (recipient) => recipient.parsedAmount as bigint,
     );
 
-    setState({ type: "estimating" });
+    setState({ type: "building-transaction" });
     let txHandle: PendingTxHandle | null = null;
     try {
       txHandle = await wallet.transfer_prepare(
@@ -809,8 +810,7 @@ export function SendTab({
             </>
           )}
 
-          {/* ESTIMATING */}
-          {state.type === "estimating" && (
+          {state.type === "building-transaction" && (
             <ShimmerStatus text="Building transaction..." />
           )}
 
