@@ -623,10 +623,33 @@ public:
 
     auto transfer_commit_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
-        return promise([this, ptx_vector = std::move(ptx_vector)]()
+        return promise([this, ptx_vector]()
                        {
                            m_wallet.commit_tx(*ptx_vector);
                            return true; });
+    }
+
+    auto save_multisig_tx_pending_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
+    {
+        return promise(
+            [this, ptx_vector]()
+            {
+                auto status = m_wallet.get_multisig_status();
+                if (!status.multisig_is_active)
+                {
+                    throw std::runtime_error("Wallet is not multisig");
+                }
+                if (!status.is_ready)
+                {
+                    throw std::runtime_error("Multisig wallet is not ready");
+                }
+                return m_wallet.save_multisig_tx(*ptx_vector);
+            },
+            [](const std::string &ciphertext) -> emscripten::val
+            {
+                auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
+                return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes, ciphertext.size());
+            });
     }
 
     std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(const std::vector<std::string> &dst_addresses, const std::vector<uint64_t> &amounts, uint32_t priority)
@@ -1085,6 +1108,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("transfer_prepare", &MoneroWasmWallet::transfer_prepare)
         .function("get_transfers_info", &MoneroWasmWallet::get_transfers_info)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
+        .function("save_multisig_tx_pending_tx", &MoneroWasmWallet::save_multisig_tx_pending_tx)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
         .function("has_multisig_partial_key_images", &MoneroWasmWallet::has_multisig_partial_key_images)
         .function("has_unknown_key_images", &MoneroWasmWallet::has_unknown_key_images)

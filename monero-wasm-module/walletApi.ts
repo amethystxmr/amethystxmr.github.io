@@ -79,6 +79,7 @@ export declare class MoneroWasmWallet {
   get_transfers(): Promise<TransferItem[]>;
   get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
+  save_multisig_tx_pending_tx(handle: PendingTxHandle): Promise<Uint8Array>;
 
   get_multisig_status(): Promise<MultisigAccountStatus>;
   has_multisig_partial_key_images(): Promise<boolean>;
