@@ -87,19 +87,24 @@ export function MultisigDataOverlayProvider({
     [],
   );
 
-  const openImportRaw = React.useCallback(
-    (options: MultisigDataOverlayImportOptions) => {
-      if (requestRef.current !== null) {
-        throw new Error(
-          "Cannot open multisig import overlay while another multisig overlay is active",
-        );
-      }
-      return new Promise<Uint8Array | Uint8Array[] | null>((resolve) => {
-        setRequest({ type: "import", options, resolve });
-      });
+  function openImport(
+    options: MultisigDataOverlayImportOptions & { allowMultifiles: true },
+  ): Promise<Uint8Array[] | null>;
+  function openImport(
+    options: MultisigDataOverlayImportOptions & {
+      allowMultifiles?: false | undefined;
     },
-    [],
-  );
+  ): Promise<Uint8Array | null>;
+  function openImport(options: MultisigDataOverlayImportOptions) {
+    if (requestRef.current !== null) {
+      throw new Error(
+        "Cannot open multisig import overlay while another multisig overlay is active",
+      );
+    }
+    return new Promise<Uint8Array | Uint8Array[] | null>((resolve) => {
+      setRequest({ type: "import", options, resolve });
+    });
+  }
 
   const closeCurrent = React.useCallback(() => {
     setRequest((current) => {
@@ -150,7 +155,7 @@ export function MultisigDataOverlayProvider({
     <MultisigDataOverlayContext.Provider
       value={{
         openExport,
-        openImport: openImportRaw as ImportPromiseFn,
+        openImport,
       }}
     >
       {children}
@@ -229,8 +234,8 @@ function MultisigDataOverlayDialog({
   const isExport = request.type === "export";
   const subheader =
     request.type === "import"
-      ? request.options.subheader ??
-        (request.options.allowMultifiles ? DEFAULT_MULTIFILES_SUBHEADER : "")
+      ? (request.options.subheader ??
+        (request.options.allowMultifiles ? DEFAULT_MULTIFILES_SUBHEADER : ""))
       : "";
   const hasInput = inputText.trim().length > 0;
 
@@ -334,7 +339,9 @@ function MultisigDataOverlayDialog({
           <div className="text-base font-semibold text-white/90">
             {request.options.header}
           </div>
-          {subheader ? <div className="text-sm text-white/70">{subheader}</div> : null}
+          {subheader ? (
+            <div className="text-sm text-white/70">{subheader}</div>
+          ) : null}
         </div>
 
         <div className="min-h-0 flex-1 py-3">
@@ -405,7 +412,10 @@ function MultisigDataOverlayDialog({
                 ref={fileInputRef}
                 type="file"
                 className="hidden"
-                multiple={request.type === "import" && request.options.allowMultifiles === true}
+                multiple={
+                  request.type === "import" &&
+                  request.options.allowMultifiles === true
+                }
                 onChange={(event) => {
                   void handleImportFileChange(event);
                 }}
