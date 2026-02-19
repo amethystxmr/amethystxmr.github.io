@@ -76,7 +76,7 @@ export declare class MoneroWasmWallet {
     amounts: bigint[],
     priority: FeePriority,
   ): Promise<PendingTxHandle>;
-  transfer_get_fee(handle: PendingTxHandle): bigint;
+  get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
 
   get_multisig_status(): Promise<MultisigAccountStatus>;
@@ -169,6 +169,16 @@ export interface EmbindVector<T> extends ClassHandle {
 
 export interface PendingTxHandle extends ClassHandle {
   readonly __nominal: unique symbol;
+}
+
+export interface TransferInfoItem {
+  fee: bigint;
+  destinations: TransferDestinationInfo[];
+}
+
+export interface TransferDestinationInfo {
+  dstAddress: string;
+  dspAmount: bigint;
 }
 
 interface Module {

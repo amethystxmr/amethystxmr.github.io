@@ -560,14 +560,29 @@ public:
                        { return transfer_impl(dst_addresses, amounts, priority); });
     }
 
-    uint64_t transfer_get_fee(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
+    emscripten::val get_transfers_info(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
-        uint64_t total_fee = 0;
-        for (size_t n = 0; n < ptx_vector->size(); ++n)
+        auto result = emscripten::val::array();
+
+        for (size_t tx_index = 0; tx_index < ptx_vector->size(); ++tx_index)
         {
-            total_fee += (*ptx_vector)[n].fee;
+            const auto &ptx = (*ptx_vector)[tx_index];
+            auto tx_item = emscripten::val::object();
+            tx_item.set("fee", ptx.fee);
+
+            auto destinations = emscripten::val::array();
+            for (size_t dst_index = 0; dst_index < ptx.dests.size(); ++dst_index)
+            {
+                const auto &dst = ptx.dests[dst_index];
+                auto dst_item = emscripten::val::object();
+                dst_item.set("dstAddress", cryptonote::get_account_address_as_str(m_wallet.nettype(), dst.is_subaddress, dst.addr));
+                dst_item.set("dspAmount", dst.amount);
+                destinations.set(static_cast<uint32_t>(dst_index), dst_item);
+            }
+            tx_item.set("destinations", destinations);
+            result.set(static_cast<uint32_t>(tx_index), tx_item);
         }
-        return total_fee;
+        return result;
     }
 
     auto transfer_commit_tx(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
@@ -1032,7 +1047,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_blockchain_height_by_date", &MoneroWasmWallet::get_blockchain_height_by_date)
         .function("words_to_bytes", &MoneroWasmWallet::words_to_bytes)
         .function("transfer_prepare", &MoneroWasmWallet::transfer_prepare)
-        .function("transfer_get_fee", &MoneroWasmWallet::transfer_get_fee)
+        .function("get_transfers_info", &MoneroWasmWallet::get_transfers_info)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
         .function("has_multisig_partial_key_images", &MoneroWasmWallet::has_multisig_partial_key_images)
