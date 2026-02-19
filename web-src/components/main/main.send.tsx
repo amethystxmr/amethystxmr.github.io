@@ -29,6 +29,7 @@ import {
   TransferItem,
   TransferInfoItem,
   type FeePriority as FeePriorityValue,
+  MultisigTxSetHandle,
 } from "../../../monero-wasm-module/walletApi";
 
 type SendState =
@@ -36,25 +37,33 @@ type SendState =
   | { type: "building-transaction" }
   | {
       type: "confirming";
-      txHandle: PendingTxHandle;
       info: TransferInfoItem[];
-      isMultisigWallet: boolean;
+      kind:
+        | {
+            type: "non-multisig";
+            txHandle: PendingTxHandle;
+          }
+        | {
+            type: "new-multisig";
+            txHandle: PendingTxHandle;
+          }
+        | {
+            type: "continue-multisig";
+            importData: Uint8Array;
+          };
     }
-  // TODO:
   | { type: "multisig-info-loading" }
-  | {
-      type: "multisig-info";
-      importData: Uint8Array;
-      info: MultisigTxInfo;
-    }
   | {
       type: "multisig-signing";
       importData: Uint8Array;
-      info: MultisigTxInfo;
+      info: TransferInfoItem[];
     }
   | { type: "multisig-exporting" }
-  | { type: "sending"; txFee: bigint; txHandle: PendingTxHandle }
-  | { type: "sent"; txFee: bigint }
+  | {
+      type: "sending";
+      info: TransferInfoItem[];
+    }
+  | { type: "sent"; info: TransferInfoItem[] }
   | { type: "error"; message: string };
 
 type CameraState = {
@@ -129,12 +138,6 @@ type CoinsOverlayState =
   | { type: "ready"; coins: TransferItem[]; showSpent: boolean }
   | { type: "error"; message: string; showSpent: boolean };
 
-type MultisigTxInfo = {
-  fee: bigint;
-  recipients: Array<{ address: string; amount: bigint }>;
-  summary: string;
-};
-
 function summarizeTransfers(transfers: TransferInfoItem[]) {
   const destinations = transfers.flatMap((tx) => tx.destinations);
   const totalOutgoing = destinations.reduce(
@@ -192,16 +195,7 @@ export function SendTab({
       }),
     [recipients],
   );
-  const totalParsedAmount = React.useMemo(
-    () =>
-      parsedRecipients.reduce(
-        (sum, recipient) => sum + (recipient.parsedAmount ?? 0n),
-        0n,
-      ),
-    [parsedRecipients],
-  );
-  const totalFiatValue =
-    totalParsedAmount > 0n && price ? toFiat(totalParsedAmount, price) : null;
+
   const isValid =
     recipients.length > 0 &&
     parsedRecipients.every((recipient) => recipient.isValid) &&
@@ -245,9 +239,13 @@ export function SendTab({
       console.info("Transfer info:", transferInfo);
       setState({
         type: "confirming",
-        txHandle,
+        kind: {
+          type: multisigStatus.multisig_is_active
+            ? "new-multisig"
+            : "non-multisig",
+          txHandle,
+        },
         info: transferInfo,
-        isMultisigWallet: multisigStatus.multisig_is_active,
       });
     } catch (e) {
       txHandle?.delete();
@@ -262,9 +260,9 @@ export function SendTab({
     if (state.type !== "confirming") {
       throw new Error("Invalid state for sending transaction");
     }
-    const txHandle = state.txHandle;
 
-    if (state.isMultisigWallet) {
+    if (state.kind.type === "new-multisig") {
+      const txHandle = state.kind.txHandle;
       try {
         setState({ type: "multisig-exporting" });
         const data = await wallet.save_multisig_tx_pending_tx(txHandle);
@@ -278,38 +276,91 @@ export function SendTab({
         });
         txHandle.delete();
         setState({ type: "entering" });
-        return;
       } catch (e) {
         txHandle.delete();
         setState({
           type: "error",
           message: (e as Error).message ?? "Failed to export multisig tx",
         });
-        return;
       }
-    }
+    } else if (state.kind.type === "non-multisig") {
+      const txHandle = state.kind.txHandle;
 
-    const summary = summarizeTransfers(state.info);
-    setState({
-      type: "sending",
-      txFee: summary.totalFee,
-      txHandle,
-    });
-    wallet
-      .transfer_commit_tx(txHandle)
-      .then(() => {
-        setState({ type: "sent", txFee: summary.totalFee });
-        scheduleRefresh();
-      })
-      .catch((e) => {
-        setState({
-          type: "error",
-          message: (e as Error).message ?? "Transaction failed",
-        });
-      })
-      .finally(() => {
-        txHandle.delete();
+      setState({
+        type: "sending",
+        info: state.info,
       });
+      wallet
+        .transfer_commit_tx(txHandle)
+        .then(() => {
+          setState({ type: "sent", info: state.info });
+          scheduleRefresh();
+        })
+        .catch((e) => {
+          setState({
+            type: "error",
+            message: (e as Error).message ?? "Transaction failed",
+          });
+        })
+        .finally(() => {
+          txHandle.delete();
+        });
+    } else if (state.kind.type === "continue-multisig") {
+      const importData = state.kind.importData;
+      const info = state.info;
+      setState({ type: "multisig-signing", importData, info });
+      (async () => {
+        let txHandle: MultisigTxSetHandle | null = null;
+        try {
+          txHandle = await wallet.load_multisig_tx(importData, true);
+          const signTxIds = await wallet.sign_multisig_tx(txHandle);
+          const signedData = await wallet.save_multisig_tx(txHandle);
+          const signedDataCopy = new Uint8Array(signedData.length);
+          signedDataCopy.set(signedData);
+
+          if (signTxIds.length === 0) {
+            txHandle.delete();
+            txHandle = null;
+
+            // TODO const signersNeeded = threshold - wallet.get_multisig_tx_signers_count(signers) - 1;
+            const signersNeeded = 67;
+            await multisigExportOverlay({
+              data: signedDataCopy,
+              header: `Signed multisig tx (${signersNeeded} more signatures needed)`,
+              fileName: "signed-multisig-tx",
+            });
+          } else {
+            const txInfos = wallet.get_multisig_tx_set_info(txHandle);
+            setState({
+              type: "sending",
+              info: txInfos,
+            });
+            // TODO this method
+            // await wallet.transfer_commit_tx_multisig(txHandle);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            txHandle.delete();
+            txHandle = null;
+            setState({
+              type: "sent",
+              info: txInfos,
+            });
+          }
+          setState({ type: "entering" });
+        } catch (e) {
+          if (txHandle) {
+            txHandle.delete();
+          }
+          setState({
+            type: "error",
+            message:
+              (e as Error).message ??
+              "Failed to sign partially signed multisig transaction",
+          });
+        }
+      })();
+    } else {
+      state.kind satisfies never;
+    }
   }
 
   async function handleLoadCoins() {
@@ -346,51 +397,25 @@ export function SendTab({
     importData.set(imported);
 
     setState({ type: "multisig-info-loading" });
+    let handle: MultisigTxSetHandle | null = null;
     try {
-      const info = await getMultisigTxInfoStub(wallet, importData);
-      setState({ type: "multisig-info", importData, info });
+      handle = await wallet.load_multisig_tx(importData, false);
+      const txInfos = wallet.get_multisig_tx_set_info(handle);
+      handle.delete();
+      handle = null;
+
+      setState({
+        type: "confirming",
+        info: txInfos,
+        kind: { type: "continue-multisig", importData },
+      });
     } catch (e) {
+      if (handle) {
+        handle.delete();
+      }
       setState({
         type: "error",
         message: (e as Error)?.message || "Failed to parse multisig tx data",
-      });
-    }
-  }
-
-  async function handleSignMultisigTx() {
-    if (state.type !== "multisig-info") {
-      return;
-    }
-
-    const importData = state.importData;
-    const info = state.info;
-    setState({ type: "multisig-signing", importData, info });
-    try {
-      const signed = await signMultisigTxStub(wallet, importData);
-      const signedDataCopy = new Uint8Array(signed.data.length);
-      signedDataCopy.set(signed.data);
-
-      await multisigExportOverlay({
-        data: signedDataCopy,
-        header: signed.is_ready
-          ? "Signed multisig tx (ready to broadcast)"
-          : "Signed multisig tx (collect more signatures)",
-        fileName: "signed-multisig-tx",
-        action: signed.is_ready
-          ? {
-              label: "Broadcast",
-              onAction: async () => {
-                await broadcastMultisigTxStub(wallet, signedDataCopy);
-                scheduleRefresh();
-              },
-            }
-          : undefined,
-      });
-      setState({ type: "entering" });
-    } catch (e) {
-      setState({
-        type: "error",
-        message: (e as Error)?.message || "Failed to sign multisig tx",
       });
     }
   }
@@ -904,97 +929,13 @@ export function SendTab({
                   variant="primary"
                   className="text-sm font-semibold"
                 >
-                  {state.isMultisigWallet ? "Confirm" : "Confirm & Send"}
-                </Button>
-              </ButtonsHolder>
-            </div>
-          )}
-
-          {state.type === "multisig-info" && (
-            <div className="space-y-4">
-              <SurfaceCard className="space-y-3">
-                <div>
-                  <div className="text-xs text-white/60">Total outgoing</div>
-                  <div className="text-lg font-semibold text-white">
-                    {formatAtomicToXmr(
-                      state.info.recipients.reduce(
-                        (sum, recipient) => sum + recipient.amount,
-                        0n,
-                      ),
-                    )}{" "}
-                    XMR
-                  </div>
-                  {price && (
-                    <div className="text-sm text-white/60">
-                      ≈{" "}
-                      {toFiat(
-                        state.info.recipients.reduce(
-                          (sum, recipient) => sum + recipient.amount,
-                          0n,
-                        ),
-                        price,
-                      ).toFixed(2)}{" "}
-                      EUR
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <div className="text-xs text-white/60">Network fee</div>
-                  <div className="text-sm text-white">
-                    {formatAtomicToXmr(state.info.fee)} XMR
-                  </div>
-                  {price && (
-                    <div className="text-xs text-white/50">
-                      ≈ {toFiat(state.info.fee, price).toFixed(2)} EUR
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2 pt-2">
-                  <div className="text-xs text-white/60">Recipients</div>
-                  {state.info.recipients.length > 0 ? (
-                    state.info.recipients.map((recipient, index) => (
-                      <div
-                        key={`${recipient.address}-${index}`}
-                        className="rounded-lg bg-white/5 p-2"
-                      >
-                        <div className="break-all font-mono text-[11px] text-white/75">
-                          {splitAddressBy6(recipient.address)}
-                        </div>
-                        <div className="mt-1 text-xs text-white">
-                          {formatAtomicToXmr(recipient.amount)} XMR
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-lg bg-white/5 p-2 text-xs text-white/65">
-                      No recipients parsed yet.
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-lg bg-white/5 p-2 text-xs text-white/70">
-                  {state.info.summary}
-                </div>
-              </SurfaceCard>
-
-              <ButtonsHolder>
-                <Button
-                  onClick={() => setState({ type: "entering" })}
-                  className="text-sm font-semibold"
-                >
-                  Cancel
-                </Button>
-
-                <Button
-                  onClick={() => {
-                    void handleSignMultisigTx();
-                  }}
-                  variant="primary"
-                  className="text-sm font-semibold"
-                >
-                  Sign
+                  {state.kind.type === "non-multisig"
+                    ? "Confirm & Send"
+                    : state.kind.type === "continue-multisig"
+                      ? "Confirm"
+                      : state.kind.type === "new-multisig"
+                        ? "Confirm"
+                        : (state.kind satisfies never)}
                 </Button>
               </ButtonsHolder>
             </div>
@@ -1021,7 +962,7 @@ export function SendTab({
               </div>
 
               <div className="text-sm text-white/60">
-                Fee paid: {formatAtomicToXmr(state.txFee)} XMR
+                Fee paid: {summarizeTransfers(state.info).totalFee} XMR
               </div>
 
               <Button
@@ -1227,74 +1168,6 @@ export function SendTab({
       )}
     </>
   );
-}
-
-async function getMultisigTxInfoStub(
-  wallet: MoneroWasmWallet,
-  data: Uint8Array,
-): Promise<MultisigTxInfo> {
-  const maybeWallet = wallet as unknown as {
-    getMultisigTxInfo?: (input: Uint8Array) => Promise<{
-      fee?: bigint;
-      recipients?: Array<{ address: string; amount: bigint }>;
-      summary?: string;
-    }>;
-  };
-  if (typeof maybeWallet.getMultisigTxInfo === "function") {
-    const info = await maybeWallet.getMultisigTxInfo(data);
-    return {
-      fee: info.fee ?? 0n,
-      recipients: info.recipients ?? [],
-      summary: info.summary ?? "Multisig tx info loaded.",
-    };
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  return {
-    fee: 0n,
-    recipients: [],
-    summary:
-      "TODO: parse and display multisig tx info once getMultisigTxInfo() is implemented.",
-  };
-}
-
-async function signMultisigTxStub(
-  wallet: MoneroWasmWallet,
-  input: Uint8Array,
-): Promise<{ data: Uint8Array; is_ready: boolean }> {
-  const maybeWallet = wallet as unknown as {
-    signMultisigTx?: (
-      data: Uint8Array,
-    ) => Promise<{ data: Uint8Array; is_ready: boolean }>;
-    signMulsiigTx?: (
-      data: Uint8Array,
-    ) => Promise<{ data: Uint8Array; is_ready: boolean }>;
-  };
-  if (typeof maybeWallet.signMultisigTx === "function") {
-    return maybeWallet.signMultisigTx(input);
-  }
-  if (typeof maybeWallet.signMulsiigTx === "function") {
-    return maybeWallet.signMulsiigTx(input);
-  }
-
-  await new Promise((resolve) => setTimeout(resolve, 350));
-  const data = new Uint8Array(input.length);
-  data.set(input);
-  return { data, is_ready: false };
-}
-
-async function broadcastMultisigTxStub(
-  wallet: MoneroWasmWallet,
-  data: Uint8Array,
-): Promise<void> {
-  const maybeWallet = wallet as unknown as {
-    broadcastMultisigTx?: (input: Uint8Array) => Promise<void>;
-  };
-  if (typeof maybeWallet.broadcastMultisigTx === "function") {
-    await maybeWallet.broadcastMultisigTx(data);
-    return;
-  }
-  await new Promise((resolve) => setTimeout(resolve, 350));
 }
 
 function parseMoneroQrPayload(
