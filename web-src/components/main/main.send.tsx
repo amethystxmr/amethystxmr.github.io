@@ -323,8 +323,7 @@ export function SendTab({
             const multisigStatus = await wallet.get_multisig_status();
             const signersNeeded = Math.max(
               multisigStatus.threshold -
-                wallet.get_multisig_tx_signers_count(txHandle) -
-                1,
+                wallet.get_multisig_tx_signers_count(txHandle),
               0,
             );
 
@@ -408,9 +407,7 @@ export function SendTab({
       const txInfos = wallet.get_multisig_tx_set_info(handle);
       const multisigStatus = await wallet.get_multisig_status();
       const signersNeeded = Math.max(
-        multisigStatus.threshold -
-          wallet.get_multisig_tx_signers_count(handle) -
-          1,
+        multisigStatus.threshold - wallet.get_multisig_tx_signers_count(handle),
         0,
       );
 
