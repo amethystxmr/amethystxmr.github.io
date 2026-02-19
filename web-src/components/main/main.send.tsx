@@ -18,6 +18,7 @@ import {
   ShimmerStatus,
   SurfaceCard,
   Toggle,
+  useAlert,
   useMultisigDataOverlayExport,
   useMultisigDataOverlayImport,
 } from "../ui";
@@ -37,6 +38,7 @@ type SendState =
       type: "confirming";
       txHandle: PendingTxHandle;
       info: TransferInfoItem[];
+      isMultisigWallet: boolean;
     }
   | { type: "multisig-info-loading" }
   | {
@@ -49,6 +51,7 @@ type SendState =
       importData: Uint8Array;
       info: MultisigTxInfo;
     }
+  | { type: "multisig-exporting" }
   | { type: "sending"; txFee: bigint; txHandle: PendingTxHandle }
   | { type: "sent"; txFee: bigint }
   | { type: "error"; message: string };
@@ -165,6 +168,7 @@ export function SendTab({
   const [scannerError, setScannerError] = React.useState<string | null>(null);
   const [cameraState, setCameraState] =
     React.useState<CameraState>(INITIAL_CAMERA_STATE);
+  const alert = useAlert();
   const multisigExportOverlay = useMultisigDataOverlayExport();
   const multisigImportOverlay = useMultisigDataOverlayImport();
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -221,37 +225,77 @@ export function SendTab({
     );
 
     setState({ type: "estimating" });
-    wallet.transfer_prepare(destinations, amounts, feePriority).then(
-      (txHandle) => {
-        const transferInfo = wallet.get_transfers_info(txHandle);
-        console.info("Transfer info:", transferInfo);
-        setState({
-          type: "confirming",
-          txHandle,
-          info: transferInfo,
-        });
-      },
-      (e) => {
-        setState({
-          type: "error",
-          message: (e as Error).message ?? "Failed to estimate fee",
-        });
-      },
-    );
+    let txHandle: PendingTxHandle | null = null;
+    try {
+      txHandle = await wallet.transfer_prepare(
+        destinations,
+        amounts,
+        feePriority,
+      );
+      const transferInfo = wallet.get_transfers_info(txHandle);
+      const multisigStatus = await wallet.get_multisig_status();
+      if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
+        txHandle.delete();
+        txHandle = null;
+        setState({ type: "entering" });
+        await alert("Multisig wallet is enabled but not ready.");
+        return;
+      }
+      console.info("Transfer info:", transferInfo);
+      setState({
+        type: "confirming",
+        txHandle,
+        info: transferInfo,
+        isMultisigWallet: multisigStatus.multisig_is_active,
+      });
+    } catch (e) {
+      txHandle?.delete();
+      setState({
+        type: "error",
+        message: (e as Error).message ?? "Failed to estimate fee",
+      });
+    }
   }
 
-  async function handleSend() {
+  async function handleConfirm() {
     if (state.type !== "confirming") {
       throw new Error("Invalid state for sending transaction");
     }
+    const txHandle = state.txHandle;
+
+    if (state.isMultisigWallet) {
+      try {
+        setState({ type: "multisig-exporting" });
+        const data = await wallet.save_multisig_tx_pending_tx(txHandle);
+        const dataCopy = new Uint8Array(data.length);
+        dataCopy.set(data);
+        const walletName = await wallet.get_wallet_file();
+        await multisigExportOverlay({
+          data: dataCopy,
+          header: "Partially signed transaction",
+          fileName: `partially-signed-multisig-tx-${walletName}`,
+        });
+        txHandle.delete();
+        setState({ type: "entering" });
+        return;
+      } catch (e) {
+        txHandle.delete();
+        setState({
+          type: "error",
+          message: (e as Error).message ?? "Failed to export multisig tx",
+        });
+        return;
+      }
+    }
+
     const summary = summarizeTransfers(state.info);
     setState({
       type: "sending",
       txFee: summary.totalFee,
-      txHandle: state.txHandle,
+      txHandle,
     });
     wallet
-      .transfer_commit_tx(state.txHandle)
+      .transfer_commit_tx(txHandle)
       .then(() => {
         setState({ type: "sent", txFee: summary.totalFee });
         scheduleRefresh();
@@ -263,7 +307,7 @@ export function SendTab({
         });
       })
       .finally(() => {
-        state.txHandle.delete();
+        txHandle.delete();
       });
   }
 
@@ -856,11 +900,11 @@ export function SendTab({
                 </Button>
 
                 <Button
-                  onClick={handleSend}
+                  onClick={handleConfirm}
                   variant="primary"
                   className="text-sm font-semibold"
                 >
-                  Confirm &amp; Send
+                  {state.isMultisigWallet ? "Confirm" : "Confirm & Send"}
                 </Button>
               </ButtonsHolder>
             </div>
@@ -960,6 +1004,10 @@ export function SendTab({
             <ShimmerStatus text="Signing multisig transaction..." />
           )}
 
+          {state.type === "multisig-exporting" && (
+            <ShimmerStatus text="Preparing multisig tx export..." />
+          )}
+
           {/* SENDING */}
           {state.type === "sending" && (
             <ShimmerStatus text="Broadcasting transaction..." />
@@ -1009,7 +1057,9 @@ export function SendTab({
           <div className="flex h-full w-full flex-col bg-[#211239] p-3 ring-1 ring-white/15 sm:p-4">
             <div className="space-y-1 border-b border-white/10 pb-3">
               <div className="text-base font-semibold text-white/90">Coins</div>
-              <div className="text-sm text-white/70">Wallet transfer outputs.</div>
+              <div className="text-sm text-white/70">
+                Wallet transfer outputs.
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 py-3">
@@ -1028,12 +1078,18 @@ export function SendTab({
                       ? coinsOverlayState.coins
                       : coinsOverlayState.coins.filter((coin) => !coin.spent)
                     ).length === 0 ? (
-                      <div className="text-sm text-white/65">No coins found.</div>
+                      <div className="text-sm text-white/65">
+                        No coins found.
+                      </div>
                     ) : (
                       <div className="space-y-3">
-                        {[...(coinsOverlayState.showSpent
-                          ? coinsOverlayState.coins
-                          : coinsOverlayState.coins.filter((coin) => !coin.spent))]
+                        {[
+                          ...(coinsOverlayState.showSpent
+                            ? coinsOverlayState.coins
+                            : coinsOverlayState.coins.filter(
+                                (coin) => !coin.spent,
+                              )),
+                        ]
                           .reverse()
                           .map((coin, index) => {
                             const isSpent = coin.spent;
@@ -1048,7 +1104,9 @@ export function SendTab({
                               >
                                 <div className="flex items-center justify-between gap-2 text-xs">
                                   <span
-                                    className={isSpent ? "text-white/50" : "text-white"}
+                                    className={
+                                      isSpent ? "text-white/50" : "text-white"
+                                    }
                                   >
                                     {balanceToString(coin.amount)} XMR
                                   </span>
@@ -1063,27 +1121,38 @@ export function SendTab({
                                   </span>
                                 </div>
                                 <div className="text-[11px] break-all font-mono">
-                                  <span className="text-white/45">txid:</span> {coin.txid}
+                                  <span className="text-white/45">txid:</span>{" "}
+                                  {coin.txid}
                                 </div>
                                 <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 text-[11px] sm:grid-cols-2">
                                   <div>
-                                    <span className="text-white/45">block_height:</span>{" "}
+                                    <span className="text-white/45">
+                                      block_height:
+                                    </span>{" "}
                                     {coin.block_height.toString()}
                                   </div>
                                   <div>
-                                    <span className="text-white/45">global_output_index:</span>{" "}
+                                    <span className="text-white/45">
+                                      global_output_index:
+                                    </span>{" "}
                                     {coin.global_output_index.toString()}
                                   </div>
                                   <div>
-                                    <span className="text-white/45">local_output_index:</span>{" "}
+                                    <span className="text-white/45">
+                                      local_output_index:
+                                    </span>{" "}
                                     {coin.local_output_index.toString()}
                                   </div>
                                   <div>
-                                    <span className="text-white/45">froze:</span>{" "}
+                                    <span className="text-white/45">
+                                      froze:
+                                    </span>{" "}
                                     {coin.froze ? "true" : "false"}
                                   </div>
                                   <div>
-                                    <span className="text-white/45">spent_height:</span>{" "}
+                                    <span className="text-white/45">
+                                      spent_height:
+                                    </span>{" "}
                                     {coin.spent_height.toString()}
                                   </div>
                                   <div>
@@ -1091,7 +1160,9 @@ export function SendTab({
                                     {coin.rct ? "true" : "false"}
                                   </div>
                                   <div>
-                                    <span className="text-white/45">key_image_known:</span>{" "}
+                                    <span className="text-white/45">
+                                      key_image_known:
+                                    </span>{" "}
                                     {coin.key_image_known ? "true" : "false"}
                                   </div>
                                   <div>
@@ -1101,8 +1172,11 @@ export function SendTab({
                                     {coin.key_image_request ? "true" : "false"}
                                   </div>
                                   <div>
-                                    <span className="text-white/45">subaddr_index:</span>{" "}
-                                    {coin.subaddr_index_major}/{coin.subaddr_index_minor}
+                                    <span className="text-white/45">
+                                      subaddr_index:
+                                    </span>{" "}
+                                    {coin.subaddr_index_major}/
+                                    {coin.subaddr_index_minor}
                                   </div>
                                   <div>
                                     <span className="text-white/45">
