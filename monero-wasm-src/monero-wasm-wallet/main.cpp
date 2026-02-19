@@ -598,11 +598,98 @@ public:
 
     emscripten::val get_transfers_info(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
+        return get_transfers_info_impl(*ptx_vector);
+    }
+
+    emscripten::val get_multisig_tx_set_info(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
+    {
+        return get_transfers_info_impl(multisig_tx_set->m_ptx);
+    }
+
+    auto load_multisig_tx(emscripten::val data_js, bool do_accept)
+    {
+        auto data = parse_js_uint8_array(data_js);
+        cryptonote::blobdata blob(reinterpret_cast<const char *>(data.data()), data.size());
+        return promise([this, blob = std::move(blob), do_accept]()
+                       {
+                           auto txs = std::make_shared<tools::wallet2::multisig_tx_set>();
+                           if (do_accept)
+                           {
+                               bool ok = m_wallet.load_multisig_tx(blob, *txs, [](const tools::wallet2::multisig_tx_set &)
+                                                                   { return true; });
+                               if (!ok)
+                               {
+                                   throw std::runtime_error("Failed to load multisig tx");
+                               }
+                           }
+                           else
+                           {
+                               tools::wallet2::multisig_tx_set ignored_out;
+                               bool callback_called = false;
+                               m_wallet.load_multisig_tx(blob, ignored_out, [&callback_called, txs](const tools::wallet2::multisig_tx_set &callback_txs)
+                                                         {
+                                                             callback_called = true;
+                                                             *txs = callback_txs;
+                                                             return false;
+                                                         });
+                               if (!callback_called)
+                               {
+                                   throw std::runtime_error("Non-accepting callback was not called");
+                               }
+                           }
+                           return txs;
+                       });
+    }
+
+    auto sign_multisig_tx(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
+    {
+        return promise(
+            [this, multisig_tx_set]()
+            {
+                std::vector<crypto::hash> txids_hashes;
+                bool ok = m_wallet.sign_multisig_tx(*multisig_tx_set, txids_hashes);
+                if (!ok)
+                {
+                    throw std::runtime_error("Failed to sign multisig tx");
+                }
+                auto txids = std::vector<std::string>{};
+                txids.reserve(txids_hashes.size());
+                for (const auto &txid : txids_hashes)
+                {
+                    txids.push_back(epee::string_tools::pod_to_hex(txid));
+                }
+                return txids;
+            },
+            [](const std::vector<std::string> &txids) -> emscripten::val
+            {
+                auto result = emscripten::val::array();
+                for (size_t i = 0; i < txids.size(); ++i)
+                {
+                    result.set(static_cast<uint32_t>(i), txids[i]);
+                }
+                return result;
+            });
+    }
+
+    auto save_multisig_tx(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
+    {
+        return promise(
+            [this, multisig_tx_set]()
+            { return m_wallet.save_multisig_tx(*multisig_tx_set); },
+            [](const std::string &ciphertext) -> emscripten::val
+            {
+                auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
+                return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes, ciphertext.size());
+            });
+    }
+
+    emscripten::val get_transfers_info_impl(const std::vector<tools::wallet2::pending_tx> &ptx_vector)
+    {
         auto result = emscripten::val::array();
 
-        for (size_t tx_index = 0; tx_index < ptx_vector->size(); ++tx_index)
+        for (size_t tx_index = 0; tx_index < ptx_vector.size(); ++tx_index)
         {
-            const auto &ptx = (*ptx_vector)[tx_index];
+            const auto &ptx = ptx_vector[tx_index];
             auto tx_item = emscripten::val::object();
             tx_item.set("fee", ptx.fee);
 
@@ -1109,6 +1196,10 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_transfers_info", &MoneroWasmWallet::get_transfers_info)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
         .function("save_multisig_tx_pending_tx", &MoneroWasmWallet::save_multisig_tx_pending_tx)
+        .function("load_multisig_tx", &MoneroWasmWallet::load_multisig_tx)
+        .function("get_multisig_tx_set_info", &MoneroWasmWallet::get_multisig_tx_set_info)
+        .function("sign_multisig_tx", &MoneroWasmWallet::sign_multisig_tx)
+        .function("save_multisig_tx", &MoneroWasmWallet::save_multisig_tx)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
         .function("has_multisig_partial_key_images", &MoneroWasmWallet::has_multisig_partial_key_images)
         .function("has_unknown_key_images", &MoneroWasmWallet::has_unknown_key_images)
@@ -1123,6 +1214,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
         .smart_ptr<std::shared_ptr<std::vector<tools::wallet2::pending_tx>>>("VectorOfPendingTx");
+    emscripten::class_<tools::wallet2::multisig_tx_set>("MultisigTxSetHandle")
+        .smart_ptr<std::shared_ptr<tools::wallet2::multisig_tx_set>>("MultisigTxSetHandle");
 
     emscripten::value_object<struct multisig::multisig_account_status>("MultisigAccountStatus")
         .field("multisig_is_active", &multisig::multisig_account_status::multisig_is_active)
