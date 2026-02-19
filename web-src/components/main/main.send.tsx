@@ -49,6 +49,7 @@ type SendState =
           }
         | {
             type: "continue-multisig";
+            iAmTheLastSigner: boolean;
             importData: Uint8Array;
           };
     }
@@ -405,13 +406,26 @@ export function SendTab({
     try {
       handle = await wallet.load_multisig_tx(importData, false);
       const txInfos = wallet.get_multisig_tx_set_info(handle);
+      const multisigStatus = await wallet.get_multisig_status();
+      const signersNeeded = Math.max(
+        multisigStatus.threshold -
+          wallet.get_multisig_tx_signers_count(handle) -
+          1,
+        0,
+      );
+
       handle.delete();
       handle = null;
 
       setState({
         type: "confirming",
         info: txInfos,
-        kind: { type: "continue-multisig", importData },
+        kind: {
+          type: "continue-multisig",
+          importData,
+          // TODO: What if I already signed this and it is someone else is missing?
+          iAmTheLastSigner: signersNeeded === 1,
+        },
       });
     } catch (e) {
       if (handle) {
@@ -936,7 +950,9 @@ export function SendTab({
                   {state.kind.type === "non-multisig"
                     ? "Confirm & Send"
                     : state.kind.type === "continue-multisig"
-                      ? "Confirm"
+                      ? !state.kind.iAmTheLastSigner
+                        ? "Confirm"
+                        : "Finalize & Send"
                       : state.kind.type === "new-multisig"
                         ? "Confirm"
                         : (state.kind satisfies never)}
