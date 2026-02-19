@@ -319,11 +319,17 @@ export function SendTab({
           signedDataCopy.set(signedData);
 
           if (signTxIds.length === 0) {
+            const multisigStatus = await wallet.get_multisig_status();
+            const signersNeeded = Math.max(
+              multisigStatus.threshold -
+                wallet.get_multisig_tx_signers_count(txHandle) -
+                1,
+              0,
+            );
+
             txHandle.delete();
             txHandle = null;
 
-            // TODO const signersNeeded = threshold - wallet.get_multisig_tx_signers_count(signers) - 1;
-            const signersNeeded = 67;
             await multisigExportOverlay({
               data: signedDataCopy,
               header: `Signed multisig tx (${signersNeeded} more signatures needed)`,
@@ -335,9 +341,7 @@ export function SendTab({
               type: "sending",
               info: txInfos,
             });
-            // TODO this method
-            // await wallet.transfer_commit_tx_multisig(txHandle);
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await wallet.transfer_commit_tx_multisig(txHandle);
             txHandle.delete();
             txHandle = null;
             setState({

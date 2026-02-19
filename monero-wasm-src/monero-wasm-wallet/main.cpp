@@ -683,6 +683,20 @@ public:
             });
     }
 
+    size_t get_multisig_tx_signers_count(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
+    {
+        return multisig_tx_set->m_signers.size();
+    }
+
+    auto transfer_commit_tx_multisig(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
+    {
+        return promise([this, multisig_tx_set]()
+                       {
+                           m_wallet.commit_tx(multisig_tx_set->m_ptx);
+                           return true;
+                       });
+    }
+
     emscripten::val get_transfers_info_impl(const std::vector<tools::wallet2::pending_tx> &ptx_vector)
     {
         auto result = emscripten::val::array();
@@ -1198,8 +1212,10 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("save_multisig_tx_pending_tx", &MoneroWasmWallet::save_multisig_tx_pending_tx)
         .function("load_multisig_tx", &MoneroWasmWallet::load_multisig_tx)
         .function("get_multisig_tx_set_info", &MoneroWasmWallet::get_multisig_tx_set_info)
+        .function("get_multisig_tx_signers_count", &MoneroWasmWallet::get_multisig_tx_signers_count)
         .function("sign_multisig_tx", &MoneroWasmWallet::sign_multisig_tx)
         .function("save_multisig_tx", &MoneroWasmWallet::save_multisig_tx)
+        .function("transfer_commit_tx_multisig", &MoneroWasmWallet::transfer_commit_tx_multisig)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
         .function("has_multisig_partial_key_images", &MoneroWasmWallet::has_multisig_partial_key_images)
         .function("has_unknown_key_images", &MoneroWasmWallet::has_unknown_key_images)
