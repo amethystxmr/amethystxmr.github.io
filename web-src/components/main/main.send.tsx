@@ -24,6 +24,7 @@ import {
   FeePriority,
   MoneroWasmWallet,
   PendingTxHandle,
+  TransferItem,
   TransferInfoItem,
   type FeePriority as FeePriorityValue,
 } from "../../../monero-wasm-module/walletApi";
@@ -120,7 +121,7 @@ type ParsedRecipient = {
 
 type CoinsOverlayState =
   | { type: "loading" }
-  | { type: "ready"; todoMessage: string }
+  | { type: "ready"; coins: TransferItem[] }
   | { type: "error"; message: string };
 
 type MultisigTxInfo = {
@@ -268,10 +269,10 @@ export function SendTab({
   async function handleLoadCoins() {
     setCoinsOverlayState({ type: "loading" });
     try {
-      const result = await getCoinsStub(wallet);
+      const result = await wallet.get_transfers();
       setCoinsOverlayState({
         type: "ready",
-        todoMessage: result.todoMessage,
+        coins: result,
       });
     } catch (e) {
       setCoinsOverlayState({
@@ -1005,15 +1006,13 @@ export function SendTab({
           <div className="flex h-full w-full flex-col bg-[#211239] p-3 ring-1 ring-white/15 sm:p-4">
             <div className="space-y-1 border-b border-white/10 pb-3">
               <div className="text-base font-semibold text-white/90">Coins</div>
-              <div className="text-sm text-white/70">
-                Coins view will be added after wallet method implementation.
-              </div>
+              <div className="text-sm text-white/70">Wallet transfer outputs.</div>
             </div>
 
             <div className="min-h-0 flex-1 py-3">
-              <div className="scrollbar-glass h-full overflow-y-auto rounded-lg bg-white/5 p-3 text-sm text-white/80 ring-1 ring-white/10">
+              <div className="scrollbar-glass h-full overflow-y-auto rounded-lg bg-white/5 p-3 ring-1 ring-white/10">
                 {coinsOverlayState.type === "loading" && (
-                  <div>Loading coins... (TODO)</div>
+                  <div className="text-sm text-white/80">Loading coins...</div>
                 )}
                 {coinsOverlayState.type === "error" && (
                   <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-100 ring-1 ring-red-300/30">
@@ -1021,7 +1020,95 @@ export function SendTab({
                   </div>
                 )}
                 {coinsOverlayState.type === "ready" && (
-                  <div>{coinsOverlayState.todoMessage}</div>
+                  <>
+                    {coinsOverlayState.coins.length === 0 ? (
+                      <div className="text-sm text-white/65">No coins found.</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {[...coinsOverlayState.coins].reverse().map((coin, index) => {
+                          const isSpent = coin.spent;
+                          return (
+                            <SurfaceCard
+                              key={`${coin.txid}-${coin.global_output_index.toString()}-${index}`}
+                              className={`space-y-1.5 p-2.5 ${
+                                isSpent
+                                  ? "bg-white/[0.025] text-white/45 ring-white/10"
+                                  : "text-white/80"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2 text-xs">
+                                <span className={isSpent ? "text-white/50" : "text-white"}>
+                                  {balanceToString(coin.amount)} XMR
+                                </span>
+                                <span
+                                  className={`rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-inset ${
+                                    isSpent
+                                      ? "bg-white/[0.02] text-white/40 ring-white/15"
+                                      : "bg-white/10 text-white/70 ring-white/20"
+                                  }`}
+                                >
+                                  spent: {coin.spent ? "true" : "false"}
+                                </span>
+                              </div>
+                              <div className="text-[11px] break-all font-mono">
+                                <span className="text-white/45">txid:</span> {coin.txid}
+                              </div>
+                              <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 text-[11px] sm:grid-cols-2">
+                                <div>
+                                  <span className="text-white/45">block_height:</span>{" "}
+                                  {coin.block_height.toString()}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">global_output_index:</span>{" "}
+                                  {coin.global_output_index.toString()}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">froze:</span>{" "}
+                                  {coin.froze ? "true" : "false"}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">spent_height:</span>{" "}
+                                  {coin.spent_height.toString()}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">rct:</span>{" "}
+                                  {coin.rct ? "true" : "false"}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">key_image_known:</span>{" "}
+                                  {coin.key_image_known ? "true" : "false"}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">
+                                    key_image_request:
+                                  </span>{" "}
+                                  {coin.key_image_request ? "true" : "false"}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">
+                                    subaddr_index_major:
+                                  </span>{" "}
+                                  {coin.subaddr_index_major}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">
+                                    subaddr_index_minor:
+                                  </span>{" "}
+                                  {coin.subaddr_index_minor}
+                                </div>
+                                <div>
+                                  <span className="text-white/45">
+                                    key_image_partial:
+                                  </span>{" "}
+                                  {coin.key_image_partial ? "true" : "false"}
+                                </div>
+                              </div>
+                            </SurfaceCard>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1044,23 +1131,6 @@ export function SendTab({
       )}
     </>
   );
-}
-
-async function getCoinsStub(wallet: MoneroWasmWallet): Promise<{
-  todoMessage: string;
-}> {
-  const maybeWallet = wallet as unknown as {
-    getCoins?: () => Promise<unknown>;
-  };
-  if (typeof maybeWallet.getCoins === "function") {
-    await maybeWallet.getCoins();
-  } else {
-    await new Promise((resolve) => setTimeout(resolve, 350));
-  }
-  return {
-    todoMessage:
-      "TODO: Coins data loaded. UI content will be implemented when getCoins() is ready.",
-  };
 }
 
 async function getMultisigTxInfoStub(
