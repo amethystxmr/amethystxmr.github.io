@@ -407,14 +407,26 @@ export function SendTab({
       handle = await wallet.load_multisig_tx(importData, false);
       const txInfos = wallet.get_multisig_tx_set_info(handle);
       const multisigStatus = await wallet.get_multisig_status();
+
+      const signersCountWithoutMe = wallet.get_multisig_tx_signers_count(
+        handle,
+        true,
+      );
+      const signersCountWithMe = wallet.get_multisig_tx_signers_count(
+        handle,
+        false,
+      );
       const signersNeeded = Math.max(
-        multisigStatus.threshold -
-          wallet.get_multisig_tx_signers_count(handle, true),
+        multisigStatus.threshold - signersCountWithoutMe,
         0,
       );
 
       handle.delete();
       handle = null;
+
+      if (signersCountWithoutMe !== signersCountWithMe) {
+        throw new Error("This wallet already signed this transaction");
+      }
 
       setState({
         type: "confirming",
