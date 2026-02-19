@@ -28,7 +28,9 @@ export function WalletMain({
 }) {
   (window as any).wallet = wallet;
 
-  const [walletFileName, setWalletFileName] = React.useState("Loading...");
+  const [walletFileName, setWalletFileName] = React.useState<string | null>(
+    null,
+  );
 
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -97,6 +99,23 @@ export function WalletMain({
       cancelled = true;
     };
   }, [wallet]);
+
+  React.useEffect(() => {
+    const appName = "AmethystXMR";
+    const defaultTitle = "Amethyst XMR";
+    const walletName = walletFileName
+      ? walletFileName.split(/[\\/]/).pop() || walletFileName
+      : null;
+
+    document.title =
+      walletName && walletName !== "Unknown wallet"
+        ? `${walletName} [${appName}]`
+        : defaultTitle;
+
+    return () => {
+      document.title = defaultTitle;
+    };
+  }, [walletFileName]);
 
   /*
   
@@ -512,7 +531,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 Amethyst XMR
               </h1>
               <div className="mt-2 inline-flex max-w-full items-center rounded-lg bg-white/8 px-3 py-1 text-sm text-white/75 ring-1 ring-white/10">
-                <span className="truncate">{walletFileName}</span>
+                <span className="truncate">{walletFileName ?? "Loading..."}</span>
               </div>
             </div>
 
