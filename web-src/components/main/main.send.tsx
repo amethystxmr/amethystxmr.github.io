@@ -1063,6 +1063,10 @@ export function SendTab({
                                   {coin.global_output_index.toString()}
                                 </div>
                                 <div>
+                                  <span className="text-white/45">local_output_index:</span>{" "}
+                                  {coin.local_output_index.toString()}
+                                </div>
+                                <div>
                                   <span className="text-white/45">froze:</span>{" "}
                                   {coin.froze ? "true" : "false"}
                                 </div>
@@ -1085,16 +1089,8 @@ export function SendTab({
                                   {coin.key_image_request ? "true" : "false"}
                                 </div>
                                 <div>
-                                  <span className="text-white/45">
-                                    subaddr_index_major:
-                                  </span>{" "}
-                                  {coin.subaddr_index_major}
-                                </div>
-                                <div>
-                                  <span className="text-white/45">
-                                    subaddr_index_minor:
-                                  </span>{" "}
-                                  {coin.subaddr_index_minor}
+                                  <span className="text-white/45">subaddr_index:</span>{" "}
+                                  {coin.subaddr_index_major}/{coin.subaddr_index_minor}
                                 </div>
                                 <div>
                                   <span className="text-white/45">

@@ -181,6 +181,7 @@ export interface TransferItem {
   block_height: bigint;
   txid: string;
   global_output_index: bigint;
+  local_output_index: bigint;
   spent: boolean;
   froze: boolean;
   spent_height: bigint;

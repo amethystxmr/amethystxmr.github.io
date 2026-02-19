@@ -497,6 +497,7 @@ public:
                     item.set("block_height", td.m_block_height);
                     item.set("txid", epee::string_tools::pod_to_hex(td.m_txid));
                     item.set("global_output_index", td.m_global_output_index);
+                    item.set("local_output_index", td.m_internal_output_index);
                     item.set("spent", td.m_spent);
                     item.set("froze", td.m_frozen);
                     item.set("spent_height", td.m_spent_height);
