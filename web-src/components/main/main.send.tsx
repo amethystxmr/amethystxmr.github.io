@@ -24,13 +24,18 @@ import {
   FeePriority,
   MoneroWasmWallet,
   PendingTxHandle,
+  TransferInfoItem,
   type FeePriority as FeePriorityValue,
 } from "../../../monero-wasm-module/walletApi";
 
 type SendState =
   | { type: "entering" }
   | { type: "estimating" }
-  | { type: "confirming"; fee: bigint; txHandle: PendingTxHandle }
+  | {
+      type: "confirming";
+      txHandle: PendingTxHandle;
+      info: TransferInfoItem[];
+    }
   | { type: "multisig-info-loading" }
   | {
       type: "multisig-info";
@@ -42,7 +47,7 @@ type SendState =
       importData: Uint8Array;
       info: MultisigTxInfo;
     }
-  | { type: "sending"; fee: bigint; txHandle: PendingTxHandle }
+  | { type: "sending"; txFee: bigint; txHandle: PendingTxHandle }
   | { type: "sent"; txFee: bigint }
   | { type: "error"; message: string };
 
@@ -124,6 +129,16 @@ type MultisigTxInfo = {
   summary: string;
 };
 
+function summarizeTransfers(transfers: TransferInfoItem[]) {
+  const destinations = transfers.flatMap((tx) => tx.destinations);
+  const totalOutgoing = destinations.reduce(
+    (sum, dst) => sum + dst.dspAmount,
+    0n,
+  );
+  const totalFee = transfers.reduce((sum, tx) => sum + tx.fee, 0n);
+  return { destinations, totalOutgoing, totalFee };
+}
+
 export function SendTab({
   wallet,
   scheduleRefresh,
@@ -180,7 +195,6 @@ export function SendTab({
   );
   const totalFiatValue =
     totalParsedAmount > 0n && price ? toFiat(totalParsedAmount, price) : null;
-
   const isValid =
     recipients.length > 0 &&
     parsedRecipients.every((recipient) => recipient.isValid) &&
@@ -202,8 +216,12 @@ export function SendTab({
     setState({ type: "estimating" });
     wallet.transfer_prepare(destinations, amounts, feePriority).then(
       (txHandle) => {
-        const fee = wallet.transfer_get_fee(txHandle);
-        setState({ type: "confirming", fee, txHandle });
+        const transferInfo = wallet.get_transfers_info(txHandle);
+        setState({
+          type: "confirming",
+          txHandle,
+          info: transferInfo,
+        });
       },
       (e) => {
         setState({
@@ -218,11 +236,12 @@ export function SendTab({
     if (state.type !== "confirming") {
       throw new Error("Invalid state for sending transaction");
     }
-    setState({ type: "sending", fee: state.fee, txHandle: state.txHandle });
+    const summary = summarizeTransfers(state.info);
+    setState({ type: "sending", txFee: summary.totalFee, txHandle: state.txHandle });
     wallet
       .transfer_commit_tx(state.txHandle)
       .then(() => {
-        setState({ type: "sent", txFee: state.fee });
+        setState({ type: "sent", txFee: summary.totalFee });
         scheduleRefresh();
       })
       .catch((e) => {
@@ -732,17 +751,21 @@ export function SendTab({
       )}
 
       {/* CONFIRMING */}
-      {state.type === "confirming" && parsedRecipients.length > 0 && (
+      {state.type === "confirming" && (
         <div className="space-y-4">
           <SurfaceCard className="space-y-3">
+            {(() => {
+              const summary = summarizeTransfers(state.info);
+              return (
+                <>
             <div>
               <div className="text-xs text-white/60">Total outgoing</div>
               <div className="text-lg font-semibold text-white">
-                {formatAtomicToXmr(totalParsedAmount)} XMR
+                    {formatAtomicToXmr(summary.totalOutgoing)} XMR
               </div>
-              {totalFiatValue !== null && (
+                  {summary.totalOutgoing > 0n && price && (
                 <div className="text-sm text-white/60">
-                  ≈ {totalFiatValue.toFixed(2)} EUR
+                      ≈ {toFiat(summary.totalOutgoing, price).toFixed(2)} EUR
                 </div>
               )}
             </div>
@@ -750,39 +773,45 @@ export function SendTab({
             <div>
               <div className="text-xs text-white/60">Network fee</div>
               <div className="text-sm text-white">
-                {formatAtomicToXmr(state.fee)} XMR
+                    {formatAtomicToXmr(summary.totalFee)} XMR
               </div>
               {price && (
                 <div className="text-xs text-white/50">
-                  ≈ {toFiat(state.fee, price).toFixed(2)} EUR
+                      ≈ {toFiat(summary.totalFee, price).toFixed(2)} EUR
                 </div>
               )}
             </div>
 
-            {parsedRecipients.length === 1 && (
+                  {summary.destinations.length === 1 && (
               <div>
                 <div className="text-xs text-white/60 pt-2">To address</div>
                 <div className="break-all font-mono text-xs text-white/80">
-                  {splitAddressBy6(parsedRecipients[0].normalizedAddress)}
+                        {splitAddressBy6(summary.destinations[0].dstAddress)}
                 </div>
               </div>
             )}
 
-            {parsedRecipients.length > 1 && (
+                  {summary.destinations.length > 1 && (
               <div className="space-y-2 pt-2">
                 <div className="text-xs text-white/60">Recipients</div>
-                {parsedRecipients.map((recipient) => (
-                  <div key={recipient.index} className="rounded-lg bg-white/5 p-2">
+                      {summary.destinations.map((recipient, index) => (
+                  <div
+                    key={`${recipient.dstAddress}-${recipient.dspAmount.toString()}-${index}`}
+                    className="rounded-lg bg-white/5 p-2"
+                  >
                     <div className="break-all font-mono text-[11px] text-white/75">
-                      {splitAddressBy6(recipient.normalizedAddress)}
+                      {splitAddressBy6(recipient.dstAddress)}
                     </div>
                     <div className="mt-1 text-xs text-white">
-                      {formatAtomicToXmr(recipient.parsedAmount ?? 0n)} XMR
+                      {formatAtomicToXmr(recipient.dspAmount)} XMR
                     </div>
                   </div>
                 ))}
               </div>
             )}
+                </>
+              );
+            })()}
           </SurfaceCard>
 
           <ButtonsHolder>
