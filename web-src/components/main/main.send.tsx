@@ -335,6 +335,7 @@ export function SendTab({
               header: `Signed multisig tx (${signersNeeded} more signatures needed)`,
               fileName: "signed-multisig-tx",
             });
+            setState({ type: "entering" });
           } else {
             const txInfos = wallet.get_multisig_tx_set_info(txHandle);
             setState({
@@ -349,7 +350,6 @@ export function SendTab({
               info: txInfos,
             });
           }
-          setState({ type: "entering" });
         } catch (e) {
           if (txHandle) {
             txHandle.delete();
