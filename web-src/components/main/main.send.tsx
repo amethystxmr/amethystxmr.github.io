@@ -763,7 +763,7 @@ export function SendTab({
 
           {/* ESTIMATING */}
           {state.type === "estimating" && (
-            <ShimmerStatus text="Estimating network fee..." />
+            <ShimmerStatus text="Building transaction..." />
           )}
 
           {state.type === "multisig-info-loading" && (
