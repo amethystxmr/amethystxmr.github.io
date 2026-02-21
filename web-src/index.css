@@ -155,6 +155,11 @@
   }
 
   @media (max-width: 639px) {
+    .ambient-pane-overlay {
+      position: fixed;
+      inset: 0;
+    }
+
     .scrollbar-hidden-mobile {
       scrollbar-width: none;
     }
