@@ -19,7 +19,7 @@ export function getDefaultOptions(): OptionSchema {
   };
 }
 
-export class GlobalOptions<T extends Record<string, any>> {
+export class GlobalOptions<T extends Record<string, unknown>> {
   private cache: Partial<T> = {};
 
   constructor(

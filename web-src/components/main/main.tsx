@@ -26,7 +26,7 @@ export function WalletMain({
   wallet: MoneroWasmWallet;
   onExit: () => void;
 }) {
-  (window as any).wallet = wallet;
+  (window as Window & { wallet?: MoneroWasmWallet }).wallet = wallet;
 
   const [walletFileName, setWalletFileName] = React.useState<string | null>(
     null,

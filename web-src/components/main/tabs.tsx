@@ -94,7 +94,7 @@ export function NiceTabs({
         onKeyDown={onKeyDown}
         className="scrollbar-glass mb-2 flex w-full flex-wrap gap-2 overflow-x-auto rounded-xl bg-white/5 p-1 ring-1 ring-white/10 sm:flex-nowrap"
       >
-        {tabs.map((t, idx) => {
+        {tabs.map((t) => {
           const selected = t.key === activeKey;
           const tabId = `${uid}-tab-${t.key}`;
           const panelId = `${uid}-panel-${t.key}`;
