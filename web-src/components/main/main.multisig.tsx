@@ -702,20 +702,6 @@ function MultisigReady({
     <>
       <MultisigTabWrap>
         <div className="space-y-3 text-sm text-white/75 lg:h-full">
-          {/*
-          <div className="flex flex-wrap items-start justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
-            <div className="space-y-1">
-              
-              <div className="text-white/70">
-                Exchange latest participant data before signing or checking
-                spent outputs.
-              </div>
-            </div>
-            <div className="inline-flex h-7 items-center rounded-full bg-white/10 px-3 text-xs font-semibold text-white/85 ring-1 ring-white/15">
-              {multisigStatus.threshold}-of-{multisigStatus.total} active
-            </div>
-          </div>
-          */}
           <div className="rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
             <div className="text-base font-semibold text-white/90 mb-2">
               Multisig {multisigStatus.threshold}-of-{multisigStatus.total}
