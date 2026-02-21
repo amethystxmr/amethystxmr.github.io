@@ -8,6 +8,7 @@ import {
   Button,
   ButtonRadioRow,
   ConfirmDialog,
+  Hint,
   Label,
   OverlayDialog,
   SurfaceCard,
@@ -324,7 +325,7 @@ export function MultisigTab({
     return (
       <MultisigTabWrap>
         <SurfaceCard className="text-sm text-white/75">
-          Loading initial status...
+          Loading multisig status...
         </SurfaceCard>
       </MultisigTabWrap>
     );
@@ -339,25 +340,24 @@ export function MultisigTab({
               <>
                 <div className="space-y-2 text-sm text-white/75">
                   <p>
-                    Multisig lets this wallet require multiple participants to
-                    authorize spending (for example, 2-of-3).
+                    <b>Multisig</b> means a transaction needs multiple
+                    signatures before it can be submitted to the Monero network.
                   </p>
                   <p>
-                    Start by generating your initial key exchange message, then
-                    collect messages from all participants. Depending on
-                    threshold and participants, multiple rounds of key exchange
-                    may be required.
+                    Instead of a single wallet creating and signing transactions
+                    on its own, participants must collaborate.
                   </p>
+                  <p>Setup requires several rounds of key-exchange messages.</p>
                   <p>
-                    This is recommended on a wallet with no transfers. If the
-                    wallet is still syncing, waiting is recommended but you can
-                    continue at your own risk.
+                    A wallet cannot be both multisig and non-multisig at the
+                    same time, so this requires a wallet with no transfers.
                   </p>
                 </div>
 
                 {isPrepareBlockedByPayments && (
                   <SurfaceCard className="text-sm text-white/75">
-                    Not possible when wallet has transfers.
+                    Multisig setup is unavailable for wallets with existing
+                    transfers.
                   </SurfaceCard>
                 )}
 
@@ -377,7 +377,7 @@ export function MultisigTab({
                           setAllowPrepareWhileSyncing(e.target.checked)
                         }
                       />
-                      Allow start multisig while syncing
+                      Allow starting multisig while syncing
                     </label>
                   </SurfaceCard>
                 )}
@@ -398,7 +398,32 @@ export function MultisigTab({
             ) : (
               <>
                 <div className="space-y-1">
-                  <Label>Your round 1 message</Label>
+                  <div className="mb-1 flex items-center gap-2">
+                    <div className="text-sm font-semibold text-gray-300">
+                      Your round 1 message
+                    </div>
+                    <Hint>
+                      <div className="space-y-2">
+                        <p>
+                          This value is the same kind of message you get when
+                          running{" "}
+                          <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11px] text-white">
+                            prepare_multisig
+                          </code>{" "}
+                          in{" "}
+                          <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11px] text-white">
+                            monero-wallet-cli
+                          </code>
+                          .
+                        </p>
+                        <p>
+                          It may look slightly different each time you open this
+                          screen, but the underlying data is equivalent. You can
+                          safely reuse a previously saved message.
+                        </p>
+                      </div>
+                    </Hint>
+                  </div>
                   <TextArea
                     readOnly
                     rows={1}
@@ -451,7 +476,17 @@ export function MultisigTab({
                 </div>
 
                 <ButtonRadioRow
-                  label="Threshold"
+                  label={
+                    <>
+                      <span>Threshold</span>
+                      <Hint>
+                        <p>
+                          Threshold is the minimum number of participants
+                          required to sign and send funds from this wallet.
+                        </p>
+                      </Hint>
+                    </>
+                  }
                   options={Array.from(
                     { length: participants },
                     (_, i) => i + 1,
@@ -463,10 +498,17 @@ export function MultisigTab({
                 />
 
                 <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-                  <Label>All participants round 1 messages</Label>
+                  <div className="mb-1 flex items-center gap-2">
+                    <div className="text-sm font-semibold text-gray-300">
+                      All participants round 1 messages
+                    </div>
+                    <Hint>
+                      <p>Split messages by newline or space.</p>
+                    </Hint>
+                  </div>
                   <TextArea
                     rows={10}
-                    className="resize-none lg:min-h-0 lg:flex-1"
+                    className="scrollbar-glass scrollbar-hidden-mobile resize-none lg:min-h-0 lg:flex-1"
                     value={othersRound1Messages}
                     onChange={(e) => setOthersRound1Messages(e.target.value)}
                   />
@@ -522,7 +564,7 @@ export function MultisigTab({
       <MultisigTabWrap>
         <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
           <div className="text-sm font-semibold text-white/85">
-            Setting up {multisigStatus.threshold}/{multisigStatus.total}{" "}
+            Setting up {multisigStatus.threshold}-of-{multisigStatus.total}{" "}
             multisig, round {thisRound} from {totalRounds}
           </div>
           <div className="space-y-1">
@@ -546,7 +588,7 @@ export function MultisigTab({
             <Label>All participants round {thisRound} messages</Label>
             <TextArea
               rows={12}
-              className="resize-none lg:min-h-0 lg:flex-1"
+              className="scrollbar-glass scrollbar-hidden-mobile resize-none lg:min-h-0 lg:flex-1"
               value={othersRoundMessages}
               onChange={(e) => setOthersRoundMessages(e.target.value)}
             />
@@ -662,11 +704,10 @@ function MultisigReady({
     <>
       <MultisigTabWrap>
         <SurfaceCard className="space-y-3 text-sm text-white/75 lg:h-full">
+          {/*
           <div className="flex flex-wrap items-start justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
             <div className="space-y-1">
-              <div className="text-base font-semibold text-white/90">
-                Multisig coordination
-              </div>
+              
               <div className="text-white/70">
                 Exchange latest participant data before signing or checking
                 spent outputs.
@@ -676,10 +717,13 @@ function MultisigReady({
               {multisigStatus.threshold}-of-{multisigStatus.total} active
             </div>
           </div>
+          */}
           <div className="rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
+            <div className="text-base font-semibold text-white/90 mb-2">
+              Multisig {multisigStatus.threshold}-of-{multisigStatus.total}
+            </div>
             <div className="text-white/75">
-              For {multisigStatus.threshold}-of-{multisigStatus.total}: import
-              at least {multisigStatus.threshold - 1} files from other
+              Import at least {multisigStatus.threshold - 1} files from other
               participants.
             </div>
             <div className="mt-1 text-white/75">
