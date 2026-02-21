@@ -1609,9 +1609,9 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
               className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="truncate text-sm text-white/85">{walletName}</div>
-              <div className="flex flex-nowrap gap-2 overflow-x-auto">
+              <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-nowrap sm:gap-2">
                 <Button
-                  className="shrink-0 whitespace-nowrap"
+                  className="!flex-none whitespace-nowrap sm:shrink-0"
                   variant="soft"
                   onClick={() => {
                     setRemoveState({ type: "confirm", walletName });
@@ -1620,7 +1620,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                   🗑 Remove
                 </Button>
                 <Button
-                  className="shrink-0 whitespace-nowrap"
+                  className="!flex-none whitespace-nowrap sm:shrink-0"
                   variant="soft"
                   onClick={() => {
                     setRenameState({
@@ -1633,7 +1633,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                   ✎ Rename
                 </Button>
                 <Button
-                  className="shrink-0 whitespace-nowrap"
+                  className="!flex-none whitespace-nowrap sm:shrink-0"
                   variant="soft"
                   onClick={async () => {
                     await doExportWallet(walletName);
@@ -1665,7 +1665,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         }}
       />
 
-      <ButtonsHolder>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <Button className="w-full" variant="soft" onClick={onBack}>
           ← Back
         </Button>
@@ -1677,7 +1677,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         >
           ⬆︎ Import
         </Button>
-      </ButtonsHolder>
+      </div>
 
       <ConfirmByTextDialog
         open={removeState.type !== "idle"}
