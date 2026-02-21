@@ -814,6 +814,50 @@ public:
                        { return m_wallet.get_wallet_file(); });
     }
 
+    auto get_tx_proof(const std::string &txid_str, const std::string &dstaddress, const std::string &note)
+    {
+        return promise([this, txid_str, dstaddress, note]()
+                       {
+                           crypto::hash txid;
+                           if (!epee::string_tools::hex_to_pod(txid_str, txid))
+                           {
+                               throw std::runtime_error("TX ID has invalid format");
+                           }
+
+                           cryptonote::address_parse_info info;
+                           if (!cryptonote::get_account_address_from_str(info, m_wallet.nettype(), dstaddress))
+                           {
+                               throw std::runtime_error("Invalid destination address");
+                           }
+
+                           return m_wallet.get_tx_proof(txid, info.address, info.is_subaddress, note); });
+    }
+
+    auto get_tx_key(const std::string &txid_str)
+    {
+        return promise([this, txid_str]()
+                       {
+                           crypto::hash txid;
+                           if (!epee::string_tools::hex_to_pod(txid_str, txid))
+                           {
+                               throw std::runtime_error("TX ID has invalid format");
+                           }
+
+                           crypto::secret_key tx_key = crypto::null_skey;
+                           std::vector<crypto::secret_key> additional_tx_keys;
+                           if (!m_wallet.get_tx_key(txid, tx_key, additional_tx_keys))
+                           {
+                               throw std::runtime_error("Tx secret key wasn't found in the wallet file.");
+                           }
+
+                           std::string keys = epee::string_tools::pod_to_hex(unwrap(unwrap(tx_key)));
+                           for (const auto &key : additional_tx_keys)
+                           {
+                               keys += epee::string_tools::pod_to_hex(unwrap(unwrap(key)));
+                           }
+                           return keys; });
+    }
+
     auto balance(uint32_t index_major, bool strict)
     {
         return promise([this, index_major, strict]()
@@ -1205,6 +1249,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_attribute", &MoneroWasmWallet::get_attribute)
         .function("get_seed", &MoneroWasmWallet::get_seed)
         .function("get_wallet_file", &MoneroWasmWallet::get_wallet_file)
+        .function("get_tx_proof", &MoneroWasmWallet::get_tx_proof)
+        .function("get_tx_key", &MoneroWasmWallet::get_tx_key)
         .function("balance", &MoneroWasmWallet::balance)
         .function("unlocked_balance", &MoneroWasmWallet::unlocked_balance)
         .function("set_refresh_from_block_height", &MoneroWasmWallet::set_refresh_from_block_height)

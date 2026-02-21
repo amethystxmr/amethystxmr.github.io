@@ -616,6 +616,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               disabled: isMainTabsLockedByMultisig,
               content: (
                 <TransactionsTab
+                  wallet={wallet}
                   payments={status?.payments || null}
                   addresses={addresses}
                   mempoolPayments={mempoolPayments}
