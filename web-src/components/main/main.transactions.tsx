@@ -192,7 +192,7 @@ export function TransactionsTab({
                         .join(", ")
                     : /*
                     TODO: why is this empty? Why we do not know the destination address?
-                    It might be that restored wallets do not have the destination address
+                    Answer: It might be that restored wallets do not have the destination address
                     */ ""
                   : incomingLabel;
               const typeTone = getTypeToneClass(p.type);
