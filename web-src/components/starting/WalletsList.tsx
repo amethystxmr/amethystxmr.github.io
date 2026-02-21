@@ -11,6 +11,7 @@ import {
   Label,
   ListRowButton,
   OverlayDialog,
+  Select,
   FormRow,
   SectionPanel,
   SurfaceCard,
@@ -33,7 +34,7 @@ import {
 } from "../../../monero-wasm-module/walletApi";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
-import { getDefaultOptions, options } from "../options";
+import { options } from "../options";
 import { NiceTabs } from "../main/tabs";
 import { acquireWalletOpenLock, downloadBlob, withFsLock } from "../utils";
 
@@ -41,6 +42,36 @@ type OpenedWallet = {
   wallet: MoneroWasmWallet;
   releaseWalletOpenLock: () => void;
 };
+
+const DAEMON_PRESET_OPTIONS = [
+  "http://localhost:18081",
+  "https://xmr-node.cakewallet.com:18081",
+] as const;
+const DAEMON_CUSTOM_OPTION = "__custom__";
+const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
+
+type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
+
+function getDaemonSelectValue(daemonAddress: string): string {
+  return DAEMON_PRESET_OPTIONS.includes(
+    daemonAddress as (typeof DAEMON_PRESET_OPTIONS)[number],
+  )
+    ? daemonAddress
+    : DAEMON_CUSTOM_OPTION;
+}
+
+function getDaemonTestLabel(status: DaemonTestStatus): string {
+  if (status === "testing") {
+    return "Testing";
+  }
+  if (status === "ok") {
+    return "All ok";
+  }
+  if (status === "failed") {
+    return "Failed";
+  }
+  return "Test";
+}
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
@@ -174,7 +205,7 @@ export function WalletsList() {
           const { wallet, releaseWalletOpenLock } = view.openedWallet;
           backToList();
           options.setValue("lastWalletName", null);
-          closeWallet(wallet, releaseWalletOpenLock);
+          void closeWallet(wallet).finally(releaseWalletOpenLock);
         }}
       />
     );
@@ -266,21 +297,42 @@ export function WalletsList() {
   }
 }
 
-function closeWallet(wallet: MoneroWasmWallet, onDone?: () => void): void {
-  (async () => {
-    try {
-      await wallet.close_wallet();
-    } catch (e) {
-      console.error("Error closing wallet:", e);
-    }
-    try {
-      await wallet.delete();
-    } catch (e) {
-      console.error("Error deleting wallet:", e);
-    } finally {
-      onDone?.();
-    }
-  })();
+async function closeWallet(wallet: MoneroWasmWallet): Promise<void> {
+  try {
+    await wallet.close_wallet();
+  } catch (e) {
+    console.error("Error closing wallet:", e);
+  }
+  try {
+    await wallet.delete();
+  } catch (e) {
+    console.error("Error deleting wallet:", e);
+  }
+}
+
+async function testDaemonConnection(daemonAddress: string): Promise<void> {
+  const tempWalletName = `${TEMP_DAEMON_TEST_WALLET_PREFIX}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+  const previousMapUrl = window.globalHttpConfig.mapUrl;
+  window.globalHttpConfig.mapUrl = (url) => daemonAddress + url;
+
+  try {
+    await withFsLock(async () => {
+      const tempWallet = createWallet();
+      try {
+        await tempWallet.init();
+        const secret32 = crypto.getRandomValues(new Uint8Array(32));
+        await tempWallet.generate(tempWalletName, "", secret32, false, false);
+        await tempWallet.get_daemon_blockchain_height();
+      } finally {
+        await closeWallet(tempWallet);
+        deleteWalletFiles(tempWalletName);
+      }
+    });
+  } finally {
+    window.globalHttpConfig.mapUrl = previousMapUrl;
+  }
 }
 
 async function getBlockchainHeightByDateUsingTempWallet(
@@ -293,7 +345,7 @@ async function getBlockchainHeightByDateUsingTempWallet(
     await tempWallet.init();
     return await tempWallet.get_blockchain_height_by_date(year, month, day);
   } finally {
-    closeWallet(tempWallet);
+    await closeWallet(tempWallet);
   }
 }
 
@@ -490,7 +542,7 @@ function RestoreView({
         `Error restoring wallet: ${(e as Error).message || "Unknown error"}`,
       );
       if (wallet) {
-        closeWallet(wallet);
+        void closeWallet(wallet);
       }
       releaseWalletOpenLock?.();
       setRestoring(false);
@@ -745,7 +797,7 @@ function CreateNewWalletView({
         `Error creating wallet: ${(e as Error).message || "Unknown error"}`,
       );
       if (wallet) {
-        closeWallet(wallet);
+        void closeWallet(wallet);
       }
       releaseWalletOpenLock?.();
       setState({ type: "entering-data", fileName, password, passwordConfirm });
@@ -759,7 +811,7 @@ function CreateNewWalletView({
       );
     }
     onDone(null);
-    closeWallet(state.wallet, state.releaseWalletOpenLock);
+    void closeWallet(state.wallet).finally(state.releaseWalletOpenLock);
   };
 
   React.useEffect(() => {
@@ -962,7 +1014,7 @@ function OpenWalletView({
         onDone(openedWallet);
       })().catch((e) => {
         if (wallet) {
-          closeWallet(wallet);
+          void closeWallet(wallet);
         }
 
         if (!isInitial) {
@@ -1096,7 +1148,6 @@ function OpenWalletView({
 
 function OptionsView({ onBack }: { onBack: () => void }) {
   const alert = useAlert();
-  const defaultOptions = React.useMemo(() => getDefaultOptions(), []);
   const loadLastWallet = options.getValue("loadLastWallet");
   const cpuThreads = options.getValue("cpuThreads");
   const [cpuThreadsInput, setCpuThreadsInput] = React.useState(() =>
@@ -1109,6 +1160,11 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       ? navigator.hardwareConcurrency
       : null;
   const daemonAddress = options.getValue("daemonAddress");
+  const [daemonSelectValue, setDaemonSelectValue] = React.useState(() =>
+    getDaemonSelectValue(daemonAddress),
+  );
+  const [daemonTestStatus, setDaemonTestStatus] =
+    React.useState<DaemonTestStatus>("idle");
   const buildInfoText = React.useMemo(() => {
     if (import.meta.env.DEV) {
       return "Development mode via Vite dev server.";
@@ -1122,6 +1178,14 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   React.useEffect(() => {
     setCpuThreadsInput(String(cpuThreads));
   }, [cpuThreads]);
+  React.useEffect(() => {
+    setDaemonSelectValue(getDaemonSelectValue(daemonAddress));
+  }, [daemonAddress]);
+  React.useEffect(() => {
+    setDaemonTestStatus("idle");
+  }, [daemonAddress]);
+
+  const isCustomDaemonAddress = daemonSelectValue === DAEMON_CUSTOM_OPTION;
 
   return (
     <div className="space-y-4">
@@ -1190,18 +1254,77 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
         <FormRow>
           <Label>Daemon address</Label>
-          <InputWithAction
-            value={daemonAddress}
-            actionLabel="Reset"
-            onAction={() => {
-              options.setValue("daemonAddress", defaultOptions.daemonAddress);
-              refresh((x) => x + 1);
+          <Select.Root
+            value={daemonSelectValue}
+            onValueChange={(next) => {
+              setDaemonSelectValue(next);
+              if (next !== DAEMON_CUSTOM_OPTION) {
+                options.setValue("daemonAddress", next);
+                refresh((x) => x + 1);
+              }
             }}
-            onChange={(e) => {
-              options.setValue("daemonAddress", e.target.value);
-              refresh((x) => x + 1);
-            }}
-          />
+          >
+            <Select.Trigger>
+              <Select.Value>
+                {daemonSelectValue === DAEMON_CUSTOM_OPTION
+                  ? "Enter custom URL"
+                  : daemonSelectValue}
+              </Select.Value>
+            </Select.Trigger>
+            <Select.Content>
+              {DAEMON_PRESET_OPTIONS.map((address) => (
+                <Select.Option key={address} value={address}>
+                  {address}
+                </Select.Option>
+              ))}
+              <Select.Option value={DAEMON_CUSTOM_OPTION}>
+                Enter custom URL
+              </Select.Option>
+            </Select.Content>
+          </Select.Root>
+          {isCustomDaemonAddress && (
+            <Input
+              className="mt-2 font-mono text-sm"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="https://your-node.example.com:18081"
+              value={daemonAddress}
+              onChange={(e) => {
+                options.setValue("daemonAddress", e.target.value);
+                refresh((x) => x + 1);
+              }}
+            />
+          )}
+          <div className="mt-2 flex justify-end">
+            <Button
+              type="button"
+              className={`!flex-none !px-5 !py-2 text-xs ${
+                daemonTestStatus === "ok"
+                  ? "text-green-300 hover:text-green-200"
+                  : daemonTestStatus === "failed"
+                    ? "text-red-300 hover:text-red-200"
+                    : ""
+              }`}
+              disabled={daemonTestStatus === "testing"}
+              onClick={async () => {
+                const target = options.getValue("daemonAddress").trim();
+                setDaemonTestStatus("testing");
+                if (!target) {
+                  setDaemonTestStatus("failed");
+                  return;
+                }
+                try {
+                  await testDaemonConnection(target);
+                  setDaemonTestStatus("ok");
+                } catch (e) {
+                  console.error("Daemon test failed:", e);
+                  setDaemonTestStatus("failed");
+                }
+              }}
+            >
+              {getDaemonTestLabel(daemonTestStatus)}
+            </Button>
+          </div>
         </FormRow>
       </SectionPanel>
 
