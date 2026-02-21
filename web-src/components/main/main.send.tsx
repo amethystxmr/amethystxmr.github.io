@@ -8,6 +8,7 @@ import {
   splitAddressBy6,
   stringToBalance,
   toFiat,
+  withFsLock,
 } from "../utils";
 import {
   Button,
@@ -292,12 +293,14 @@ export function SendTab({
         type: "sending",
         info: state.info,
       });
-      wallet
-        .transfer_commit_tx(txHandle)
-        .then(() => {
-          setState({ type: "sent", info: state.info });
-          scheduleRefresh();
-        })
+      (async () => {
+        await withFsLock(async () => {
+          wallet.transfer_commit_tx(txHandle);
+          await wallet.store();
+        });
+        setState({ type: "sent", info: state.info });
+        scheduleRefresh();
+      })()
         .catch((e) => {
           setState({
             type: "error",
@@ -344,7 +347,13 @@ export function SendTab({
               type: "sending",
               info: txInfos,
             });
-            await wallet.transfer_commit_tx_multisig(txHandle);
+            await withFsLock(async () => {
+              if (!txHandle) {
+                throw new Error("Multisig transaction handle is not available");
+              }
+              await wallet.transfer_commit_tx_multisig(txHandle);
+              await wallet.store();
+            });
             txHandle.delete();
             txHandle = null;
             setState({
@@ -370,7 +379,10 @@ export function SendTab({
   }
 
   async function handleLoadCoins() {
-    const loadingState: CoinsOverlayState = { type: "loading", showSpent: false };
+    const loadingState: CoinsOverlayState = {
+      type: "loading",
+      showSpent: false,
+    };
     setCoinsOverlayState(loadingState);
     try {
       const result = await wallet.get_transfers();
@@ -742,7 +754,11 @@ export function SendTab({
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2 text-xs">
-                            <span className={isSpent ? "text-white/50" : "text-white"}>
+                            <span
+                              className={
+                                isSpent ? "text-white/50" : "text-white"
+                              }
+                            >
                               {balanceToString(coin.amount)} XMR
                             </span>
                             <span
@@ -756,11 +772,14 @@ export function SendTab({
                             </span>
                           </div>
                           <div className="text-[11px] break-all font-mono">
-                            <span className="text-white/45">txid:</span> {coin.txid}
+                            <span className="text-white/45">txid:</span>{" "}
+                            {coin.txid}
                           </div>
                           <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 text-[11px] sm:grid-cols-2">
                             <div>
-                              <span className="text-white/45">block_height:</span>{" "}
+                              <span className="text-white/45">
+                                block_height:
+                              </span>{" "}
                               {coin.block_height.toString()}
                             </div>
                             <div>
@@ -770,7 +789,9 @@ export function SendTab({
                               {coin.global_output_index.toString()}
                             </div>
                             <div>
-                              <span className="text-white/45">local_output_index:</span>{" "}
+                              <span className="text-white/45">
+                                local_output_index:
+                              </span>{" "}
                               {coin.local_output_index.toString()}
                             </div>
                             <div>
@@ -778,7 +799,9 @@ export function SendTab({
                               {coin.froze ? "true" : "false"}
                             </div>
                             <div>
-                              <span className="text-white/45">spent_height:</span>{" "}
+                              <span className="text-white/45">
+                                spent_height:
+                              </span>{" "}
                               {coin.spent_height.toString()}
                             </div>
                             <div>
@@ -786,19 +809,28 @@ export function SendTab({
                               {coin.rct ? "true" : "false"}
                             </div>
                             <div>
-                              <span className="text-white/45">key_image_known:</span>{" "}
+                              <span className="text-white/45">
+                                key_image_known:
+                              </span>{" "}
                               {coin.key_image_known ? "true" : "false"}
                             </div>
                             <div>
-                              <span className="text-white/45">key_image_request:</span>{" "}
+                              <span className="text-white/45">
+                                key_image_request:
+                              </span>{" "}
                               {coin.key_image_request ? "true" : "false"}
                             </div>
                             <div>
-                              <span className="text-white/45">subaddr_index:</span>{" "}
-                              {coin.subaddr_index_major}/{coin.subaddr_index_minor}
+                              <span className="text-white/45">
+                                subaddr_index:
+                              </span>{" "}
+                              {coin.subaddr_index_major}/
+                              {coin.subaddr_index_minor}
                             </div>
                             <div>
-                              <span className="text-white/45">key_image_partial:</span>{" "}
+                              <span className="text-white/45">
+                                key_image_partial:
+                              </span>{" "}
                               {coin.key_image_partial ? "true" : "false"}
                             </div>
                           </div>
@@ -1199,7 +1231,9 @@ export function SendTab({
         </div>
       </div>
       {coinsOverlayState && (
-        <FullscreenOverlayPanel>{renderCoinsOverlayContent()}</FullscreenOverlayPanel>
+        <FullscreenOverlayPanel>
+          {renderCoinsOverlayContent()}
+        </FullscreenOverlayPanel>
       )}
     </>
   );
