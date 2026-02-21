@@ -179,7 +179,8 @@ export function TransactionsTab({
                               key={`${d.address}-${destI}`}
                               className="break-all whitespace-normal"
                             >
-                              {splitAddressBy6(d.address)}
+                              - {splitAddressBy6(d.address)} (
+                              {balanceToString(d.amount)} XMR)
                             </div>
                           ))}
                         </div>
