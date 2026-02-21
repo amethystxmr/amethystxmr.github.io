@@ -341,16 +341,13 @@ export function MultisigTab({
                 <div className="space-y-2 text-sm text-white/75">
                   <p>
                     <b>Multisig</b> means a transaction needs multiple
-                    signatures before it can be submitted to the Monero
-                    network.
+                    signatures before it can be submitted to the Monero network.
                   </p>
                   <p>
-                    Instead of a single wallet creating and signing
-                    transactions on its own, participants must collaborate.
+                    Instead of a single wallet creating and signing transactions
+                    on its own, participants must collaborate.
                   </p>
-                  <p>
-                    Setup requires several rounds of key-exchange messages.
-                  </p>
+                  <p>Setup requires several rounds of key-exchange messages.</p>
                   <p>
                     A wallet cannot be both multisig and non-multisig at the
                     same time, so this requires a wallet with no transfers.
@@ -420,9 +417,9 @@ export function MultisigTab({
                           .
                         </p>
                         <p>
-                          It may look slightly different each time you open
-                          this screen, but the underlying data is equivalent.
-                          You can safely reuse a previously saved message.
+                          It may look slightly different each time you open this
+                          screen, but the underlying data is equivalent. You can
+                          safely reuse a previously saved message.
                         </p>
                       </div>
                     </Hint>
@@ -479,7 +476,17 @@ export function MultisigTab({
                 </div>
 
                 <ButtonRadioRow
-                  label="Threshold"
+                  label={
+                    <>
+                      <span>Threshold</span>
+                      <Hint>
+                        <p>
+                          Threshold is the minimum number of participants
+                          required to sign and send funds from this wallet.
+                        </p>
+                      </Hint>
+                    </>
+                  }
                   options={Array.from(
                     { length: participants },
                     (_, i) => i + 1,
@@ -491,10 +498,17 @@ export function MultisigTab({
                 />
 
                 <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-                  <Label>All participants round 1 messages</Label>
+                  <div className="mb-1 flex items-center gap-2">
+                    <div className="text-sm font-semibold text-gray-300">
+                      All participants round 1 messages
+                    </div>
+                    <Hint>
+                      <p>Split messages by newline or space.</p>
+                    </Hint>
+                  </div>
                   <TextArea
                     rows={10}
-                    className="resize-none lg:min-h-0 lg:flex-1"
+                    className="scrollbar-glass scrollbar-hidden-mobile resize-none lg:min-h-0 lg:flex-1"
                     value={othersRound1Messages}
                     onChange={(e) => setOthersRound1Messages(e.target.value)}
                   />
@@ -574,7 +588,7 @@ export function MultisigTab({
             <Label>All participants round {thisRound} messages</Label>
             <TextArea
               rows={12}
-              className="resize-none lg:min-h-0 lg:flex-1"
+              className="scrollbar-glass scrollbar-hidden-mobile resize-none lg:min-h-0 lg:flex-1"
               value={othersRoundMessages}
               onChange={(e) => setOthersRoundMessages(e.target.value)}
             />

@@ -9,7 +9,7 @@ export function ButtonRadioRow({
   disabled = false,
   compact = false,
 }: {
-  label: string;
+  label: React.ReactNode;
   options: number[];
   value: number;
   onChange: (next: number) => void;
@@ -24,7 +24,9 @@ export function ButtonRadioRow({
           : "space-y-2"
       }
     >
-      <div className="text-sm font-semibold text-white/85">{label}</div>
+      <div className="flex items-center gap-2 text-sm font-semibold text-white/85">
+        {label}
+      </div>
       <div
         className={
           compact
