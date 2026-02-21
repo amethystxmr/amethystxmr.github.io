@@ -339,19 +339,20 @@ export function MultisigTab({
               <>
                 <div className="space-y-2 text-sm text-white/75">
                   <p>
-                    Multisig lets this wallet require multiple participants to
-                    authorize spending (for example, 2-of-3).
+                    <b>Multisig</b> means that a transaction needs multiple
+                    signatures before it can be submitted to the Monero network
+                    and executed. Instead of one Monero wallet creating,
+                    signing, and submitting transactions all on its own, you
+                    will have a whole group of wallets and collaboration between
+                    them to transact.
                   </p>
                   <p>
-                    Start by generating your initial key exchange message, then
-                    collect messages from all participants. Depending on
-                    threshold and participants, multiple rounds of key exchange
-                    may be required.
+                    Multisig setup will require several rounds of key exchange
+                    messages between participants.
                   </p>
                   <p>
-                    This is recommended on a wallet with no transfers. If the
-                    wallet is still syncing, waiting is recommended but you can
-                    continue at your own risk.
+                    Because wallet can not be multisig and non-multisig at the
+                    same time, a wallet with no transactions is required
                   </p>
                 </div>
 
