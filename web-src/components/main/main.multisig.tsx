@@ -329,6 +329,9 @@ export function MultisigTab({
     );
   }
 
+  // I had some issues when tried to make multisig wallet while it still was syncing
+  const IS_ALLOW_PREPARE_WHILE_SYNCING = false;
+
   if (!multisigStatus.multisig_is_active) {
     return (
       <>
@@ -359,7 +362,7 @@ export function MultisigTab({
                   </SurfaceCard>
                 )}
 
-                {isWalletSyncing && (
+                {isWalletSyncing && IS_ALLOW_PREPARE_WHILE_SYNCING && (
                   <SurfaceCard className="space-y-2 text-sm text-white/75">
                     <div>Wallet is not synced yet.</div>
                     <div className="text-white/65">
