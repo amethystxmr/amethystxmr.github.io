@@ -370,21 +370,34 @@ export function SendTab({
   }
 
   async function handleLoadCoins() {
-    setCoinsOverlayState({ type: "loading", showSpent: false });
+    const loadingState: CoinsOverlayState = { type: "loading", showSpent: false };
+    setCoinsOverlayState(loadingState);
     try {
       const result = await wallet.get_transfers();
-      setCoinsOverlayState({
-        type: "ready",
-        coins: result,
-        showSpent: false,
-      });
+      setCoinsOverlayState((prev) =>
+        prev === loadingState
+          ? {
+              type: "ready",
+              coins: result,
+              showSpent: false,
+            }
+          : prev,
+      );
     } catch (e) {
-      setCoinsOverlayState({
-        type: "error",
-        message: (e as Error)?.message || "Failed to load coins",
-        showSpent: false,
-      });
+      setCoinsOverlayState((prev) =>
+        prev === loadingState
+          ? {
+              type: "error",
+              message: (e as Error)?.message || "Failed to load coins",
+              showSpent: false,
+            }
+          : prev,
+      );
     }
+  }
+
+  function closeCoinsOverlay() {
+    setCoinsOverlayState(null);
   }
 
   async function handleStartSignMultisigFlow() {
@@ -819,8 +832,7 @@ export function SendTab({
             type="button"
             variant="soft"
             className="!flex-none px-4 py-1.5 text-xs"
-            onClick={() => setCoinsOverlayState(null)}
-            disabled={coinsOverlayState?.type === "loading"}
+            onClick={closeCoinsOverlay}
           >
             Close
           </Button>
