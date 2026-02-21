@@ -998,16 +998,16 @@ export function SendTab({
               </Button>
 
               <div className="border-t border-white/10 pt-3">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <Button
                     variant="neutral"
                     type="button"
                     onClick={() => {
                       void handleLoadCoins();
                     }}
-                    className="!flex-none px-3 py-1.5 text-xs"
+                    className="!flex-none !px-4 !py-2 text-sm"
                   >
-                    Coins
+                    Show coins
                   </Button>
                   {showMultisigActions && (
                     <Button
@@ -1016,7 +1016,7 @@ export function SendTab({
                       onClick={() => {
                         void handleStartSignMultisigFlow();
                       }}
-                      className="!flex-none px-3 py-1.5 text-xs"
+                      className="!flex-none !px-4 !py-2 text-sm"
                     >
                       Sign multisig tx
                     </Button>
