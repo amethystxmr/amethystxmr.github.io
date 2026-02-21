@@ -10,7 +10,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
     "build": "vite build",
+    "logo-gen": "./scripts/generate-pwa-icons.sh",
     "preview": "vite preview",
+    "lint": "eslint web-src monero-wasm-module vite.config.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -31,5 +33,12 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-cross-origin-isolation": "^0.1.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.3",
+    "eslint": "^9.39.3",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "typescript-eslint": "^8.56.0"
   }
 }

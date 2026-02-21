@@ -18,6 +18,7 @@ import {
   ShimmerStatus,
   SurfaceCard,
   Toggle,
+  FullscreenOverlayPanel,
   useAlert,
   useMultisigDataOverlayExport,
   useMultisigDataOverlayImport,
@@ -369,21 +370,34 @@ export function SendTab({
   }
 
   async function handleLoadCoins() {
-    setCoinsOverlayState({ type: "loading", showSpent: false });
+    const loadingState: CoinsOverlayState = { type: "loading", showSpent: false };
+    setCoinsOverlayState(loadingState);
     try {
       const result = await wallet.get_transfers();
-      setCoinsOverlayState({
-        type: "ready",
-        coins: result,
-        showSpent: false,
-      });
+      setCoinsOverlayState((prev) =>
+        prev === loadingState
+          ? {
+              type: "ready",
+              coins: result,
+              showSpent: false,
+            }
+          : prev,
+      );
     } catch (e) {
-      setCoinsOverlayState({
-        type: "error",
-        message: (e as Error)?.message || "Failed to load coins",
-        showSpent: false,
-      });
+      setCoinsOverlayState((prev) =>
+        prev === loadingState
+          ? {
+              type: "error",
+              message: (e as Error)?.message || "Failed to load coins",
+              showSpent: false,
+            }
+          : prev,
+      );
     }
+  }
+
+  function closeCoinsOverlay() {
+    setCoinsOverlayState(null);
   }
 
   async function handleStartSignMultisigFlow() {
@@ -684,6 +698,149 @@ export function SendTab({
     });
   }
 
+  const renderCoinsOverlayContent = () => (
+    <>
+      <div className="space-y-1 border-b border-white/10 pb-3">
+        <div className="text-base font-semibold text-white/90">Coins</div>
+        <div className="text-sm text-white/70">Wallet transfer outputs.</div>
+      </div>
+
+      <div className="min-h-0 flex-1 py-3">
+        <div className="scrollbar-glass h-full overflow-y-auto rounded-lg bg-white/5 p-3 ring-1 ring-white/10">
+          {coinsOverlayState?.type === "loading" && (
+            <div className="text-sm text-white/80">Loading coins...</div>
+          )}
+          {coinsOverlayState?.type === "error" && (
+            <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-100 ring-1 ring-red-300/30">
+              {coinsOverlayState.message}
+            </div>
+          )}
+          {coinsOverlayState?.type === "ready" && (
+            <>
+              {(coinsOverlayState.showSpent
+                ? coinsOverlayState.coins
+                : coinsOverlayState.coins.filter((coin) => !coin.spent)
+              ).length === 0 ? (
+                <div className="text-sm text-white/65">No coins found.</div>
+              ) : (
+                <div className="space-y-3">
+                  {[
+                    ...(coinsOverlayState.showSpent
+                      ? coinsOverlayState.coins
+                      : coinsOverlayState.coins.filter((coin) => !coin.spent)),
+                  ]
+                    .reverse()
+                    .map((coin, index) => {
+                      const isSpent = coin.spent;
+                      return (
+                        <SurfaceCard
+                          key={`${coin.txid}-${coin.global_output_index.toString()}-${index}`}
+                          className={`space-y-1.5 p-2.5 ${
+                            isSpent
+                              ? "bg-white/[0.025] text-white/45 ring-white/10"
+                              : "text-white/80"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className={isSpent ? "text-white/50" : "text-white"}>
+                              {balanceToString(coin.amount)} XMR
+                            </span>
+                            <span
+                              className={`rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-inset ${
+                                isSpent
+                                  ? "bg-white/[0.02] text-white/40 ring-white/15"
+                                  : "bg-white/10 text-white/70 ring-white/20"
+                              }`}
+                            >
+                              spent: {coin.spent ? "true" : "false"}
+                            </span>
+                          </div>
+                          <div className="text-[11px] break-all font-mono">
+                            <span className="text-white/45">txid:</span> {coin.txid}
+                          </div>
+                          <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 text-[11px] sm:grid-cols-2">
+                            <div>
+                              <span className="text-white/45">block_height:</span>{" "}
+                              {coin.block_height.toString()}
+                            </div>
+                            <div>
+                              <span className="text-white/45">
+                                global_output_index:
+                              </span>{" "}
+                              {coin.global_output_index.toString()}
+                            </div>
+                            <div>
+                              <span className="text-white/45">local_output_index:</span>{" "}
+                              {coin.local_output_index.toString()}
+                            </div>
+                            <div>
+                              <span className="text-white/45">froze:</span>{" "}
+                              {coin.froze ? "true" : "false"}
+                            </div>
+                            <div>
+                              <span className="text-white/45">spent_height:</span>{" "}
+                              {coin.spent_height.toString()}
+                            </div>
+                            <div>
+                              <span className="text-white/45">rct:</span>{" "}
+                              {coin.rct ? "true" : "false"}
+                            </div>
+                            <div>
+                              <span className="text-white/45">key_image_known:</span>{" "}
+                              {coin.key_image_known ? "true" : "false"}
+                            </div>
+                            <div>
+                              <span className="text-white/45">key_image_request:</span>{" "}
+                              {coin.key_image_request ? "true" : "false"}
+                            </div>
+                            <div>
+                              <span className="text-white/45">subaddr_index:</span>{" "}
+                              {coin.subaddr_index_major}/{coin.subaddr_index_minor}
+                            </div>
+                            <div>
+                              <span className="text-white/45">key_image_partial:</span>{" "}
+                              {coin.key_image_partial ? "true" : "false"}
+                            </div>
+                          </div>
+                        </SurfaceCard>
+                      );
+                    })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="border-t border-white/10 pt-3">
+        <div className="flex items-center justify-between gap-2">
+          <Toggle
+            checked={Boolean(coinsOverlayState?.showSpent)}
+            onChange={(next) =>
+              setCoinsOverlayState((prev) =>
+                prev ? { ...prev, showSpent: next } : prev,
+              )
+            }
+            label="Show spent"
+            className={`max-w-[180px] p-2 ${
+              coinsOverlayState?.type === "loading"
+                ? "pointer-events-none opacity-60"
+                : ""
+            }`}
+          />
+          <Button
+            type="button"
+            variant="soft"
+            className="!flex-none px-4 py-1.5 text-xs"
+            onClick={closeCoinsOverlay}
+          >
+            Close
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
       <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
@@ -853,16 +1010,16 @@ export function SendTab({
               </Button>
 
               <div className="border-t border-white/10 pt-3">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <Button
                     variant="neutral"
                     type="button"
                     onClick={() => {
                       void handleLoadCoins();
                     }}
-                    className="!flex-none px-3 py-1.5 text-xs"
+                    className="!flex-none !px-4 !py-2 text-sm"
                   >
-                    Coins
+                    Show coins
                   </Button>
                   {showMultisigActions && (
                     <Button
@@ -871,7 +1028,7 @@ export function SendTab({
                       onClick={() => {
                         void handleStartSignMultisigFlow();
                       }}
-                      className="!flex-none px-3 py-1.5 text-xs"
+                      className="!flex-none !px-4 !py-2 text-sm"
                     >
                       Sign multisig tx
                     </Button>
@@ -1042,177 +1199,7 @@ export function SendTab({
         </div>
       </div>
       {coinsOverlayState && (
-        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-[1px]">
-          <div className="flex h-full w-full flex-col bg-[#211239] p-3 ring-1 ring-white/15 sm:p-4">
-            <div className="space-y-1 border-b border-white/10 pb-3">
-              <div className="text-base font-semibold text-white/90">Coins</div>
-              <div className="text-sm text-white/70">
-                Wallet transfer outputs.
-              </div>
-            </div>
-
-            <div className="min-h-0 flex-1 py-3">
-              <div className="scrollbar-glass h-full overflow-y-auto rounded-lg bg-white/5 p-3 ring-1 ring-white/10">
-                {coinsOverlayState.type === "loading" && (
-                  <div className="text-sm text-white/80">Loading coins...</div>
-                )}
-                {coinsOverlayState.type === "error" && (
-                  <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-100 ring-1 ring-red-300/30">
-                    {coinsOverlayState.message}
-                  </div>
-                )}
-                {coinsOverlayState.type === "ready" && (
-                  <>
-                    {(coinsOverlayState.showSpent
-                      ? coinsOverlayState.coins
-                      : coinsOverlayState.coins.filter((coin) => !coin.spent)
-                    ).length === 0 ? (
-                      <div className="text-sm text-white/65">
-                        No coins found.
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {[
-                          ...(coinsOverlayState.showSpent
-                            ? coinsOverlayState.coins
-                            : coinsOverlayState.coins.filter(
-                                (coin) => !coin.spent,
-                              )),
-                        ]
-                          .reverse()
-                          .map((coin, index) => {
-                            const isSpent = coin.spent;
-                            return (
-                              <SurfaceCard
-                                key={`${coin.txid}-${coin.global_output_index.toString()}-${index}`}
-                                className={`space-y-1.5 p-2.5 ${
-                                  isSpent
-                                    ? "bg-white/[0.025] text-white/45 ring-white/10"
-                                    : "text-white/80"
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2 text-xs">
-                                  <span
-                                    className={
-                                      isSpent ? "text-white/50" : "text-white"
-                                    }
-                                  >
-                                    {balanceToString(coin.amount)} XMR
-                                  </span>
-                                  <span
-                                    className={`rounded-md px-1.5 py-0.5 text-[11px] ring-1 ring-inset ${
-                                      isSpent
-                                        ? "bg-white/[0.02] text-white/40 ring-white/15"
-                                        : "bg-white/10 text-white/70 ring-white/20"
-                                    }`}
-                                  >
-                                    spent: {coin.spent ? "true" : "false"}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] break-all font-mono">
-                                  <span className="text-white/45">txid:</span>{" "}
-                                  {coin.txid}
-                                </div>
-                                <div className="grid grid-cols-1 gap-x-2 gap-y-0.5 text-[11px] sm:grid-cols-2">
-                                  <div>
-                                    <span className="text-white/45">
-                                      block_height:
-                                    </span>{" "}
-                                    {coin.block_height.toString()}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">
-                                      global_output_index:
-                                    </span>{" "}
-                                    {coin.global_output_index.toString()}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">
-                                      local_output_index:
-                                    </span>{" "}
-                                    {coin.local_output_index.toString()}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">
-                                      froze:
-                                    </span>{" "}
-                                    {coin.froze ? "true" : "false"}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">
-                                      spent_height:
-                                    </span>{" "}
-                                    {coin.spent_height.toString()}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">rct:</span>{" "}
-                                    {coin.rct ? "true" : "false"}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">
-                                      key_image_known:
-                                    </span>{" "}
-                                    {coin.key_image_known ? "true" : "false"}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">
-                                      key_image_request:
-                                    </span>{" "}
-                                    {coin.key_image_request ? "true" : "false"}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">
-                                      subaddr_index:
-                                    </span>{" "}
-                                    {coin.subaddr_index_major}/
-                                    {coin.subaddr_index_minor}
-                                  </div>
-                                  <div>
-                                    <span className="text-white/45">
-                                      key_image_partial:
-                                    </span>{" "}
-                                    {coin.key_image_partial ? "true" : "false"}
-                                  </div>
-                                </div>
-                              </SurfaceCard>
-                            );
-                          })}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="border-t border-white/10 pt-3">
-              <div className="flex items-center justify-between gap-2">
-                <Toggle
-                  checked={coinsOverlayState.showSpent}
-                  onChange={(next) =>
-                    setCoinsOverlayState((prev) =>
-                      prev ? { ...prev, showSpent: next } : prev,
-                    )
-                  }
-                  label="Show spent"
-                  className={`max-w-[180px] p-2 ${
-                    coinsOverlayState.type === "loading"
-                      ? "pointer-events-none opacity-60"
-                      : ""
-                  }`}
-                />
-                <Button
-                  type="button"
-                  variant="soft"
-                  className="!flex-none px-4 py-1.5 text-xs"
-                  onClick={() => setCoinsOverlayState(null)}
-                  disabled={coinsOverlayState.type === "loading"}
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <FullscreenOverlayPanel>{renderCoinsOverlayContent()}</FullscreenOverlayPanel>
       )}
     </>
   );

@@ -7,19 +7,29 @@ type OptionSchema = {
   daemonAddress: string;
 };
 
+export const DAEMON_LOCAL_ADDRESS = "http://localhost:18081";
+export const DAEMON_REMOTE_ADDRESS_1 = "https://xmr-node.cakewallet.com:18081";
+export const DAEMON_PRESET_OPTIONS = [
+  DAEMON_LOCAL_ADDRESS,
+  DAEMON_REMOTE_ADDRESS_1,
+] as const;
+
+export function getDefaultDaemonAddress(): string {
+  return location.hostname === "localhost"
+    ? DAEMON_LOCAL_ADDRESS
+    : DAEMON_REMOTE_ADDRESS_1;
+}
+
 export function getDefaultOptions(): OptionSchema {
   return {
     loadLastWallet: true,
     cpuThreads: getRecommendedMaxConcurrency(),
     lastWalletName: null,
-    daemonAddress:
-      location.hostname === "localhost"
-        ? "http://localhost:18081"
-        : "https://xmr-node.cakewallet.com:18081",
+    daemonAddress: getDefaultDaemonAddress(),
   };
 }
 
-export class GlobalOptions<T extends Record<string, any>> {
+export class GlobalOptions<T extends Record<string, unknown>> {
   private cache: Partial<T> = {};
 
   constructor(

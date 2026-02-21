@@ -1,6 +1,5 @@
 import {
   loadFilesystem,
-  MoneroWasmWallet,
   saveFilesystem,
 } from "../../monero-wasm-module/walletApi";
 

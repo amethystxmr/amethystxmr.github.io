@@ -1,4 +1,4 @@
-// @ts-ignore Generated wasm JS module has no TypeScript declarations.
+// @ts-expect-error Generated wasm JS module has no TypeScript declarations.
 import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
 
 type IDBFS = unknown & { readonly __nominal: unique symbol };
@@ -221,8 +221,8 @@ export interface TransferDestinationInfo {
 interface Module {
   FS: {
     mkdir(path: string): void;
-    mount(type: IDBFS, opts: {}, mountpoint: string): void;
-    syncfs(populate: boolean, callback: (err: any) => void): void;
+    mount(type: IDBFS, opts: Record<string, never>, mountpoint: string): void;
+    syncfs(populate: boolean, callback: (err: unknown) => void): void;
     chdir(path: string): void;
     readdir(path: string): string[];
     stat(path: string): { mode: number };
@@ -246,6 +246,8 @@ interface Module {
 let module: Module;
 declare global {
   interface Window {
+    module: Module;
+    clearFilesystem: typeof clearFilesystem;
     globalHttpConfig: {
       mapUrl: (url: string) => string;
       onFetch: (
@@ -266,7 +268,7 @@ export async function initModule() {
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
   setMaxConcurrency(getRecommendedMaxConcurrency());
-  (window as any).module = module;
+  window.module = module;
 
   window.globalHttpConfig = {
     mapUrl: () => {
@@ -353,7 +355,7 @@ export async function clearFilesystem() {
   await saveFilesystem();
 }
 
-(window as any).clearFilesystem = clearFilesystem;
+window.clearFilesystem = clearFilesystem;
 
 export function listWalletNames() {
   return module.FS.readdir(".")
@@ -403,7 +405,7 @@ export function renameWallet(oldName: string, newName: string) {
 export function getWalletFilesData(walletName: string) {
   const keysName = `${walletName}.keys`;
   const keysFileData = module.FS.readFile(keysName);
-  let outFiles = [{ name: keysName, data: keysFileData }];
+  const outFiles = [{ name: keysName, data: keysFileData }];
 
   for (const name of module.FS.readdir(".")) {
     if (
@@ -426,7 +428,7 @@ export function saveWalletFilesData(
   if (module.FS.readdir(".").includes(keysName)) {
     throw new Error(`File ${keysName} already exists`);
   }
-  for (const { name, data } of otherFilesData) {
+  for (const { name } of otherFilesData) {
     if (module.FS.readdir(".").includes(name)) {
       throw new Error(`File ${name} already exists`);
     }

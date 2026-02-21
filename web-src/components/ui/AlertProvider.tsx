@@ -1,14 +1,11 @@
 import React from "react";
 import { AlertDialog } from "./AlertDialog";
+import { AlertContext } from "./AlertContext";
 
 type AlertRequest = {
   title?: string;
   message: string;
 };
-
-const AlertContext = React.createContext<((message: string, title?: string) => Promise<void>) | null>(
-  null,
-);
 
 export function AlertProvider({ children }: React.PropsWithChildren) {
   const [queue, setQueue] = React.useState<Array<AlertRequest & { resolve: () => void }>>([]);
@@ -41,12 +38,4 @@ export function AlertProvider({ children }: React.PropsWithChildren) {
       />
     </AlertContext.Provider>
   );
-}
-
-export function useAlert() {
-  const ctx = React.useContext(AlertContext);
-  if (!ctx) {
-    throw new Error("useAlert must be used inside AlertProvider");
-  }
-  return ctx;
 }
