@@ -634,7 +634,7 @@ public:
                                                          });
                                if (!callback_called)
                                {
-                                   throw std::runtime_error("Non-accepting callback was not called");
+                                   throw std::runtime_error("failed to read transaction");
                                }
                            }
                            return txs; });
