@@ -517,7 +517,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
   return (
     <div className="space-y-5 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
-      <SectionPanel className="relative overflow-hidden p-4 sm:p-5 lg:sticky lg:top-4">
+      <SectionPanel className="relative overflow-hidden p-4 sm:p-5 lg:sticky lg:top-0">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_100%_0%,rgba(169,133,255,0.22),transparent_58%)]" />
         <div className="relative space-y-4">
           <div className="flex flex-col gap-3">
