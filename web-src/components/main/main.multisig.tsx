@@ -705,7 +705,7 @@ function MultisigReady({
           >
             {hasMultisigPartialKeyImages
               ? "Status: partial key images detected. Import updated participant files before signing."
-              : "Status: no partial key images pending right now."}
+              : "Status: ready to create or sign transactions"}
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button

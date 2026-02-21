@@ -349,10 +349,12 @@ export function TransactionsTab({
                           <span className="text-white/45">Note:</span> {p.note}
                         </div>
                       )}
-                      <div className="mt-1">
-                        <span className="text-white/45">Block:</span>{" "}
-                        {p.block_height.toString()}
-                      </div>
+                      {p.block_height > 0n && (
+                        <div className="mt-1">
+                          <span className="text-white/45">Block:</span>{" "}
+                          {p.block_height.toString()}
+                        </div>
+                      )}
                     </div>
                   )}
                 </SurfaceCard>

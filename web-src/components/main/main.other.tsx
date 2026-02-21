@@ -56,9 +56,6 @@ export function OtherTab({
   const alert = useAlert();
 
   React.useEffect(() => {
-    if (!priceFetchedAt) {
-      return;
-    }
     const timer = window.setInterval(() => {
       setNow(Date.now());
     }, 1000);
@@ -238,7 +235,7 @@ export function OtherTab({
       </Button>
       <div className="-mt-2 rounded-lg bg-white/5 px-2.5 py-2 text-center text-xs text-white/60">
         {lastRefreshTimestamp
-          ? `Last refresh: ${lastRefreshTimestamp.toLocaleTimeString()}`
+          ? `Last refresh: ${formatElapsedSince(lastRefreshTimestamp.getTime(), now)} ago`
           : "Last refresh: waiting for first sync"}
       </div>
       <Button
