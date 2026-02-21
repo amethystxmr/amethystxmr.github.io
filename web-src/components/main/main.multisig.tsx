@@ -362,6 +362,13 @@ export function MultisigTab({
                   </SurfaceCard>
                 )}
 
+                {isWalletSyncing && !IS_ALLOW_PREPARE_WHILE_SYNCING && (
+                  <SurfaceCard className="text-sm text-white/75">
+                    Wallet is syncing. Multisig setup is unavailable until sync
+                    completes.
+                  </SurfaceCard>
+                )}
+
                 {isWalletSyncing && IS_ALLOW_PREPARE_WHILE_SYNCING && (
                   <SurfaceCard className="space-y-2 text-sm text-white/75">
                     <div>Wallet is not synced yet.</div>
