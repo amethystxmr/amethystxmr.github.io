@@ -15,9 +15,10 @@ import {
 import {
   Button,
   ButtonsHolder,
-  MonoScrollPanel,
+  Input,
   OverlayDialog,
   SurfaceCard,
+  TextArea,
   useAlert,
 } from "../ui";
 
@@ -374,21 +375,28 @@ export function TransactionsTab({
               <>
                 <div className="space-y-1 text-xs text-white/70">
                   <div className="text-white/45">tx</div>
-                  <div className="break-all whitespace-normal text-white/90">
-                    {paymentProofState.txid}
-                  </div>
+                  <Input
+                    readOnly
+                    value={paymentProofState.txid}
+                    className="bg-white/[0.04] py-2 font-mono text-xs text-white/90"
+                  />
                 </div>
                 <div className="space-y-1 text-xs text-white/70">
                   <div className="text-white/45">address</div>
-                  <div className="break-all whitespace-normal text-white/90">
-                    {paymentProofState.address}
-                  </div>
+                  <Input
+                    readOnly
+                    value={paymentProofState.address}
+                    className="bg-white/[0.04] py-2 font-mono text-xs text-white/90"
+                  />
                 </div>
                 <div className="space-y-1 text-xs text-white/70">
                   <div className="text-white/45">payment proof</div>
-                  <MonoScrollPanel className="h-40 whitespace-pre-wrap text-xs">
-                    {paymentProofState.proof}
-                  </MonoScrollPanel>
+                  <TextArea
+                    readOnly
+                    value={paymentProofState.proof}
+                    className="scrollbar-glass h-40 resize-none overflow-y-auto bg-white/[0.04] py-2 font-mono text-xs text-white/90"
+                    spellCheck={false}
+                  />
                 </div>
               </>
             )}
@@ -424,21 +432,28 @@ export function TransactionsTab({
               <>
                 <div className="space-y-1 text-xs text-white/70">
                   <div className="text-white/45">tx</div>
-                  <div className="break-all whitespace-normal text-white/90">
-                    {paymentProofState.txid}
-                  </div>
+                  <Input
+                    readOnly
+                    value={paymentProofState.txid}
+                    className="bg-white/[0.04] py-2 font-mono text-xs text-white/90"
+                  />
                 </div>
                 <div className="space-y-1 text-xs text-white/70">
                   <div className="text-white/45">address</div>
-                  <div className="break-all whitespace-normal text-white/90">
-                    {paymentProofState.address}
-                  </div>
+                  <Input
+                    readOnly
+                    value={paymentProofState.address}
+                    className="bg-white/[0.04] py-2 font-mono text-xs text-white/90"
+                  />
                 </div>
                 <div className="space-y-1 text-xs text-white/70">
                   <div className="text-white/45">keysstring</div>
-                  <MonoScrollPanel className="h-28 whitespace-pre-wrap text-xs">
-                    {paymentProofState.keysString}
-                  </MonoScrollPanel>
+                  <TextArea
+                    readOnly
+                    value={paymentProofState.keysString}
+                    className="scrollbar-glass h-28 resize-none overflow-y-auto bg-white/[0.04] py-2 font-mono text-xs text-white/90"
+                    spellCheck={false}
+                  />
                 </div>
               </>
             )}

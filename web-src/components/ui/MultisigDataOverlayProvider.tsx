@@ -1,5 +1,6 @@
 import React from "react";
 import { downloadBlob } from "../utils";
+import { FullscreenOverlayPanel } from "./OverlayPrimitives";
 import { Button } from "./Button";
 import { TextArea } from "./TextArea";
 import {
@@ -308,128 +309,128 @@ function MultisigDataOverlayDialog({
     }
   };
 
-  return (
-    <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-[1px]">
-      <div className="flex h-full w-full flex-col bg-[#211239] p-3 ring-1 ring-white/15 sm:p-4">
-        <div className="space-y-1 border-b border-white/10 pb-3">
-          <div className="text-base font-semibold text-white/90">
-            {request.options.header}
+  const content = (
+    <>
+      <div className="space-y-1 border-b border-white/10 pb-3">
+        <div className="text-base font-semibold text-white/90">
+          {request.options.header}
+        </div>
+        {subheader ? (
+          <div className="text-sm text-white/70">{subheader}</div>
+        ) : null}
+      </div>
+
+      <div className="min-h-0 flex-1 py-3">
+        <TextArea
+          readOnly={isExport}
+          value={isExport ? exportPreview : inputText}
+          onChange={(event) => {
+            setInputText(event.target.value);
+            setErrorText("");
+          }}
+          className="scrollbar-glass h-full resize-none overflow-x-hidden overflow-y-scroll whitespace-pre-wrap break-all font-mono text-xs leading-relaxed sm:text-sm"
+          spellCheck={false}
+          wrap="soft"
+          placeholder={
+            isExport
+              ? ""
+              : mode === "hex"
+                ? "Paste hex data here"
+                : "Paste base64 data here"
+          }
+        />
+      </div>
+
+      <div className="space-y-2 border-t border-white/10 pt-3">
+        {errorText ? (
+          <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-100 ring-1 ring-red-300/30">
+            {errorText}
           </div>
-          {subheader ? (
-            <div className="text-sm text-white/70">{subheader}</div>
-          ) : null}
-        </div>
+        ) : null}
 
-        <div className="min-h-0 flex-1 py-3">
-          <TextArea
-            readOnly={isExport}
-            value={isExport ? exportPreview : inputText}
-            onChange={(event) => {
-              setInputText(event.target.value);
-              setErrorText("");
-            }}
-            className="scrollbar-glass h-full resize-none overflow-x-hidden overflow-y-scroll whitespace-pre-wrap break-all font-mono text-xs leading-relaxed sm:text-sm"
-            spellCheck={false}
-            wrap="soft"
-            placeholder={
-              isExport
-                ? ""
-                : mode === "hex"
-                  ? "Paste hex data here"
-                  : "Paste base64 data here"
-            }
-          />
-        </div>
-
-        <div className="space-y-2 border-t border-white/10 pt-3">
-          {errorText ? (
-            <div className="rounded-lg bg-red-500/15 px-3 py-2 text-sm text-red-100 ring-1 ring-red-300/30">
-              {errorText}
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-lg bg-white/5 p-1 ring-1 ring-white/15">
-                <Button
-                  type="button"
-                  variant={mode === "hex" ? "primary" : "soft"}
-                  className="!flex-none px-3 py-1.5 text-xs"
-                  onClick={() => {
-                    setMode("hex");
-                    setErrorText("");
-                  }}
-                >
-                  hex
-                </Button>
-                <Button
-                  type="button"
-                  variant={mode === "base64" ? "primary" : "soft"}
-                  className="!flex-none px-3 py-1.5 text-xs"
-                  onClick={() => {
-                    setMode("base64");
-                    setErrorText("");
-                  }}
-                >
-                  base64
-                </Button>
-              </div>
-
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg bg-white/5 p-1 ring-1 ring-white/15">
               <Button
                 type="button"
-                variant="soft"
+                variant={mode === "hex" ? "primary" : "soft"}
                 className="!flex-none px-3 py-1.5 text-xs"
-                onClick={handleFileButtonClick}
-              >
-                {leftFileButtonText}
-              </Button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                multiple={
-                  request.type === "import" &&
-                  request.options.allowMultifiles === true
-                }
-                onChange={(event) => {
-                  void handleImportFileChange(event);
+                onClick={() => {
+                  setMode("hex");
+                  setErrorText("");
                 }}
-              />
+              >
+                hex
+              </Button>
+              <Button
+                type="button"
+                variant={mode === "base64" ? "primary" : "soft"}
+                className="!flex-none px-3 py-1.5 text-xs"
+                onClick={() => {
+                  setMode("base64");
+                  setErrorText("");
+                }}
+              >
+                base64
+              </Button>
             </div>
 
             <Button
               type="button"
-              variant={isExport || !hasInput ? "soft" : "primary"}
+              variant="soft"
+              className="!flex-none px-3 py-1.5 text-xs"
+              onClick={handleFileButtonClick}
+            >
+              {leftFileButtonText}
+            </Button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              multiple={
+                request.type === "import" &&
+                request.options.allowMultifiles === true
+              }
+              onChange={(event) => {
+                void handleImportFileChange(event);
+              }}
+            />
+          </div>
+
+          <Button
+            type="button"
+            variant={isExport || !hasInput ? "soft" : "primary"}
+            className="!flex-none px-4 py-1.5 text-xs"
+            onClick={() => {
+              if (isExport) {
+                onClose();
+              } else {
+                handleImportFromTextarea();
+              }
+            }}
+          >
+            {rightButtonText}
+          </Button>
+          {exportAction ? (
+            <Button
+              type="button"
+              variant="primary"
               className="!flex-none px-4 py-1.5 text-xs"
               onClick={() => {
-                if (isExport) {
-                  onClose();
-                } else {
-                  handleImportFromTextarea();
-                }
+                void handleExportAction();
               }}
+              disabled={actionBusy}
             >
-              {rightButtonText}
+              {actionBusy ? `${exportAction.label}...` : exportAction.label}
             </Button>
-            {exportAction ? (
-              <Button
-                type="button"
-                variant="primary"
-                className="!flex-none px-4 py-1.5 text-xs"
-                onClick={() => {
-                  void handleExportAction();
-                }}
-                disabled={actionBusy}
-              >
-                {actionBusy ? `${exportAction.label}...` : exportAction.label}
-              </Button>
-            ) : null}
-          </div>
+          ) : null}
         </div>
       </div>
-    </div>
+    </>
   );
+
+  return <FullscreenOverlayPanel>{content}</FullscreenOverlayPanel>;
 }
 
 function decodeByMode(value: string, mode: EncodingMode): Uint8Array {
