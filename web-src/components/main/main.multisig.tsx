@@ -564,7 +564,7 @@ export function MultisigTab({
       <MultisigTabWrap>
         <SurfaceCard className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
           <div className="text-sm font-semibold text-white/85">
-            Setting up {multisigStatus.threshold}/{multisigStatus.total}{" "}
+            Setting up {multisigStatus.threshold}-of-{multisigStatus.total}{" "}
             multisig, round {thisRound} from {totalRounds}
           </div>
           <div className="space-y-1">
@@ -704,11 +704,10 @@ function MultisigReady({
     <>
       <MultisigTabWrap>
         <SurfaceCard className="space-y-3 text-sm text-white/75 lg:h-full">
+          {/*
           <div className="flex flex-wrap items-start justify-between gap-2 rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
             <div className="space-y-1">
-              <div className="text-base font-semibold text-white/90">
-                Multisig coordination
-              </div>
+              
               <div className="text-white/70">
                 Exchange latest participant data before signing or checking
                 spent outputs.
@@ -718,10 +717,13 @@ function MultisigReady({
               {multisigStatus.threshold}-of-{multisigStatus.total} active
             </div>
           </div>
+          */}
           <div className="rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
+            <div className="text-base font-semibold text-white/90 mb-2">
+              Multisig {multisigStatus.threshold}-of-{multisigStatus.total}
+            </div>
             <div className="text-white/75">
-              For {multisigStatus.threshold}-of-{multisigStatus.total}: import
-              at least {multisigStatus.threshold - 1} files from other
+              Import at least {multisigStatus.threshold - 1} files from other
               participants.
             </div>
             <div className="mt-1 text-white/75">
