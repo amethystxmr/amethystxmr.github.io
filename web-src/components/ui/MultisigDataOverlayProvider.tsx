@@ -2,38 +2,16 @@ import React from "react";
 import { downloadBlob } from "../utils";
 import { Button } from "./Button";
 import { TextArea } from "./TextArea";
+import {
+  MultisigDataOverlayContext,
+  MultisigDataOverlayExportOptions,
+  MultisigDataOverlayImportOptions,
+} from "./MultisigDataOverlayContext";
 
 type EncodingMode = "hex" | "base64";
 
 const TEXT_PREVIEW_LIMIT_BYTES = 1024 * 1024;
 const DEFAULT_MULTIFILES_SUBHEADER = "Split different messages by newline";
-
-export type MultisigDataOverlayExportOptions = {
-  data: Uint8Array;
-  header: string;
-  fileName: string;
-  action?: {
-    onAction: () => void | Promise<void>;
-    label: string;
-  };
-};
-
-export type MultisigDataOverlayImportOptions = {
-  header: string;
-  subheader?: string;
-  allowMultifiles?: boolean;
-};
-
-type ImportPromiseFn = {
-  (
-    options: MultisigDataOverlayImportOptions & { allowMultifiles: true },
-  ): Promise<Uint8Array[] | null>;
-  (
-    options: MultisigDataOverlayImportOptions & {
-      allowMultifiles?: false | undefined;
-    },
-  ): Promise<Uint8Array | null>;
-};
 
 type OverlayRequest =
   | {
@@ -46,11 +24,6 @@ type OverlayRequest =
       options: MultisigDataOverlayImportOptions;
       resolve: (value: Uint8Array | Uint8Array[] | null) => void;
     };
-
-const MultisigDataOverlayContext = React.createContext<{
-  openExport: (options: MultisigDataOverlayExportOptions) => Promise<void>;
-  openImport: ImportPromiseFn;
-} | null>(null);
 
 export function MultisigDataOverlayProvider({
   children,
@@ -171,26 +144,6 @@ export function MultisigDataOverlayProvider({
       />
     </MultisigDataOverlayContext.Provider>
   );
-}
-
-export function useMultisigDataOverlayExport() {
-  const ctx = React.useContext(MultisigDataOverlayContext);
-  if (!ctx) {
-    throw new Error(
-      "useMultisigDataOverlayExport must be used inside MultisigDataOverlayProvider",
-    );
-  }
-  return ctx.openExport;
-}
-
-export function useMultisigDataOverlayImport(): ImportPromiseFn {
-  const ctx = React.useContext(MultisigDataOverlayContext);
-  if (!ctx) {
-    throw new Error(
-      "useMultisigDataOverlayImport must be used inside MultisigDataOverlayProvider",
-    );
-  }
-  return ctx.openImport;
 }
 
 function MultisigDataOverlayDialog({

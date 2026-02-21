@@ -18,7 +18,8 @@ export { ShimmerStatus } from "./ShimmerStatus";
 export { Toggle } from "./Toggle";
 export { OverlayDialog } from "./OverlayDialog";
 export { AlertDialog } from "./AlertDialog";
-export { AlertProvider, useAlert } from "./AlertProvider";
+export { AlertProvider } from "./AlertProvider";
+export { useAlert } from "./useAlert";
 export { ConfirmByTextDialog } from "./ConfirmByTextDialog";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { PasswordPromptDialog } from "./PasswordPromptDialog";
@@ -26,6 +27,8 @@ export { usePasswordPrompt } from "./usePasswordPrompt";
 export { ProgressBar } from "./ProgressBar";
 export {
   MultisigDataOverlayProvider,
+} from "./MultisigDataOverlayProvider";
+export {
   useMultisigDataOverlayExport,
   useMultisigDataOverlayImport,
-} from "./MultisigDataOverlayProvider";
+} from "./useMultisigDataOverlay";
