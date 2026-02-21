@@ -1,4 +1,5 @@
 export { Header } from "./Header";
+export { Hint } from "./Hint";
 export { Label } from "./Label";
 export { Input } from "./Input";
 export { Select } from "./Select";

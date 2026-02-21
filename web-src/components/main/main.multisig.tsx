@@ -8,6 +8,7 @@ import {
   Button,
   ButtonRadioRow,
   ConfirmDialog,
+  Hint,
   Label,
   OverlayDialog,
   SurfaceCard,
@@ -400,7 +401,32 @@ export function MultisigTab({
             ) : (
               <>
                 <div className="space-y-1">
-                  <Label>Your round 1 message</Label>
+                  <div className="mb-1 flex items-center gap-2">
+                    <div className="text-sm font-semibold text-gray-300">
+                      Your round 1 message
+                    </div>
+                    <Hint>
+                      <div className="space-y-2">
+                        <p>
+                          This value is the same kind of message you get when
+                          running{" "}
+                          <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11px] text-white">
+                            prepare_multisig
+                          </code>{" "}
+                          in{" "}
+                          <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11px] text-white">
+                            monero-wallet-cli
+                          </code>
+                          .
+                        </p>
+                        <p>
+                          It may look slightly different each time you open
+                          this screen, but the underlying data is equivalent.
+                          You can safely reuse a previously saved message.
+                        </p>
+                      </div>
+                    </Hint>
+                  </div>
                   <TextArea
                     readOnly
                     rows={1}
