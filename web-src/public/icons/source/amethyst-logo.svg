@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Amethyst XMR">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1130" />
+      <stop offset="55%" stop-color="#2f1a53" />
+      <stop offset="100%" stop-color="#120a24" />
+    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="38%" r="58%">
+      <stop offset="0%" stop-color="#d8c5ff" stop-opacity="0.34" />
+      <stop offset="100%" stop-color="#d8c5ff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="amethystMain" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f2e6ff" />
+      <stop offset="42%" stop-color="#b072ff" />
+      <stop offset="100%" stop-color="#6d28d9" />
+    </linearGradient>
+    <linearGradient id="amethystDark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7c3aed" />
+      <stop offset="100%" stop-color="#4c1d95" />
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <circle cx="256" cy="216" r="190" fill="url(#halo)" />
+
+  <g transform="translate(0 -2)">
+    <path d="M256 74 L392 178 L336 382 H176 L120 178 Z" fill="url(#amethystDark)" />
+    <path d="M256 74 L392 178 L256 236 L120 178 Z" fill="#d9b8ff" fill-opacity="0.65" />
+    <path d="M256 236 L336 382 H176 Z" fill="#5b21b6" fill-opacity="0.9" />
+
+    <path d="M256 108 L329 184 L256 213 L183 184 Z" fill="url(#amethystMain)" />
+    <path d="M214 184 L256 213 L226 308 L182 242 Z" fill="#8b5cf6" />
+    <path d="M298 184 L256 213 L286 308 L330 242 Z" fill="#7c3aed" />
+    <path d="M226 308 L256 213 L286 308 L256 346 Z" fill="#4c1d95" />
+
+    <path d="M256 74 L256 382 M120 178 L256 236 L392 178" fill="none" stroke="#f8edff" stroke-opacity="0.23" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <text x="256" y="448" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="700" fill="#f4e9ff" letter-spacing="0.2">AmethystXMR</text>
+</svg>

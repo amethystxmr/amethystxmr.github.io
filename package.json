@@ -10,6 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
     "build": "vite build",
+    "logo-gen": "./scripts/generate-pwa-icons.sh",
     "preview": "vite preview",
     "lint": "eslint web-src monero-wasm-module vite.config.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
