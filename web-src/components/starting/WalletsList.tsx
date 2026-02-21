@@ -219,10 +219,10 @@ export function WalletsList() {
     );
   } else if (view.type === "list") {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
         <Header>Amethyst XMR Wallet</Header>
 
-        <SectionPanel className="space-y-4">
+        <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-white/70">Existing wallets</p>
             <span className="rounded-md bg-white/8 px-2 py-1 text-xs font-semibold text-white/65 ring-1 ring-white/10">
@@ -230,31 +230,35 @@ export function WalletsList() {
             </span>
           </div>
 
-          {view.walletNames.length === 0 ? (
-            <SurfaceCard className="text-sm text-white/60">
-              No wallets yet. Create or restore one below.
-            </SurfaceCard>
-          ) : (
-            <div className="space-y-2">
-              {view.walletNames.map((name) => (
-                <ListRowButton
-                  key={name}
-                  className="my-0"
-                  onClick={() => {
-                    setView({
-                      type: "opening",
-                      fileName: name,
-                      isStartupAutoOpen: false,
-                    });
-                  }}
-                >
-                  <span>{name}</span>
-                </ListRowButton>
-              ))}
-            </div>
-          )}
+          <div className="lg:min-h-0 lg:flex-1">
+            {view.walletNames.length === 0 ? (
+              <SurfaceCard className="text-sm text-white/60">
+                No wallets yet. Create or restore one below.
+              </SurfaceCard>
+            ) : (
+              <div className="scrollbar-glass h-auto overflow-visible lg:h-full lg:overflow-auto lg:pr-1">
+                <div className="space-y-2">
+                  {view.walletNames.map((name) => (
+                    <ListRowButton
+                      key={name}
+                      className="my-0"
+                      onClick={() => {
+                        setView({
+                          type: "opening",
+                          fileName: name,
+                          isStartupAutoOpen: false,
+                        });
+                      }}
+                    >
+                      <span>{name}</span>
+                    </ListRowButton>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 lg:shrink-0">
             <Button
               onClick={async () => {
                 setView({ type: "create-new-wallet" });
@@ -1594,56 +1598,60 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
   }, [alert, renameState]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>Manage wallets</Header>
 
-      <SectionPanel className="space-y-3">
+      <SectionPanel className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         {walletNames.length === 0 ? (
           <SurfaceCard className="text-sm text-white/60">
             No wallets available.
           </SurfaceCard>
         ) : (
-          walletNames.map((walletName) => (
-            <SurfaceCard
-              key={walletName}
-              className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="truncate text-sm text-white/85">{walletName}</div>
-              <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-nowrap sm:gap-2">
-                <Button
-                  className="!flex-none whitespace-nowrap sm:shrink-0"
-                  variant="soft"
-                  onClick={() => {
-                    setRemoveState({ type: "confirm", walletName });
-                  }}
+          <div className="scrollbar-glass h-auto overflow-visible lg:min-h-0 lg:flex-1 lg:overflow-auto lg:pr-1">
+            <div className="space-y-3">
+              {walletNames.map((walletName) => (
+                <SurfaceCard
+                  key={walletName}
+                  className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  🗑 Remove
-                </Button>
-                <Button
-                  className="!flex-none whitespace-nowrap sm:shrink-0"
-                  variant="soft"
-                  onClick={() => {
-                    setRenameState({
-                      type: "editing",
-                      oldWalletName: walletName,
-                      newWalletName: walletName,
-                    });
-                  }}
-                >
-                  ✎ Rename
-                </Button>
-                <Button
-                  className="!flex-none whitespace-nowrap sm:shrink-0"
-                  variant="soft"
-                  onClick={async () => {
-                    await doExportWallet(walletName);
-                  }}
-                >
-                  ⬇︎ Export
-                </Button>
-              </div>
-            </SurfaceCard>
-          ))
+                  <div className="truncate text-sm text-white/85">{walletName}</div>
+                  <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-nowrap sm:gap-2">
+                    <Button
+                      className="!flex-none whitespace-nowrap sm:shrink-0"
+                      variant="soft"
+                      onClick={() => {
+                        setRemoveState({ type: "confirm", walletName });
+                      }}
+                    >
+                      🗑 Remove
+                    </Button>
+                    <Button
+                      className="!flex-none whitespace-nowrap sm:shrink-0"
+                      variant="soft"
+                      onClick={() => {
+                        setRenameState({
+                          type: "editing",
+                          oldWalletName: walletName,
+                          newWalletName: walletName,
+                        });
+                      }}
+                    >
+                      ✎ Rename
+                    </Button>
+                    <Button
+                      className="!flex-none whitespace-nowrap sm:shrink-0"
+                      variant="soft"
+                      onClick={async () => {
+                        await doExportWallet(walletName);
+                      }}
+                    >
+                      ⬇︎ Export
+                    </Button>
+                  </div>
+                </SurfaceCard>
+              ))}
+            </div>
+          </div>
         )}
       </SectionPanel>
 
