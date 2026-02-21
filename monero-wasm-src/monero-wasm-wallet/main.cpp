@@ -850,10 +850,10 @@ public:
                                throw std::runtime_error("Tx secret key wasn't found in the wallet file.");
                            }
 
-                           std::string keys = epee::string_tools::pod_to_hex(tx_key);
+                           std::string keys = epee::string_tools::pod_to_hex(unwrap(unwrap(tx_key)));
                            for (const auto &key : additional_tx_keys)
                            {
-                               keys += epee::string_tools::pod_to_hex(key);
+                               keys += epee::string_tools::pod_to_hex(unwrap(unwrap(key)));
                            }
                            return keys; });
     }
