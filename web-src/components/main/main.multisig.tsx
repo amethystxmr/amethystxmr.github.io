@@ -324,7 +324,7 @@ export function MultisigTab({
     return (
       <MultisigTabWrap>
         <SurfaceCard className="text-sm text-white/75">
-          Loading initial status...
+          Loading multisig status...
         </SurfaceCard>
       </MultisigTabWrap>
     );
@@ -339,26 +339,27 @@ export function MultisigTab({
               <>
                 <div className="space-y-2 text-sm text-white/75">
                   <p>
-                    <b>Multisig</b> means that a transaction needs multiple
-                    signatures before it can be submitted to the Monero network
-                    and executed. Instead of one Monero wallet creating,
-                    signing, and submitting transactions all on its own, you
-                    will have a whole group of wallets and collaboration between
-                    them to transact.
+                    <b>Multisig</b> means a transaction needs multiple
+                    signatures before it can be submitted to the Monero
+                    network.
                   </p>
                   <p>
-                    Multisig setup will require several rounds of key exchange
-                    messages between participants.
+                    Instead of a single wallet creating and signing
+                    transactions on its own, participants must collaborate.
                   </p>
                   <p>
-                    Because wallet can not be multisig and non-multisig at the
-                    same time, a wallet with no transactions is required
+                    Setup requires several rounds of key-exchange messages.
+                  </p>
+                  <p>
+                    A wallet cannot be both multisig and non-multisig at the
+                    same time, so this requires a wallet with no transfers.
                   </p>
                 </div>
 
                 {isPrepareBlockedByPayments && (
                   <SurfaceCard className="text-sm text-white/75">
-                    Not possible when wallet has transfers.
+                    Multisig setup is unavailable for wallets with existing
+                    transfers.
                   </SurfaceCard>
                 )}
 
@@ -378,7 +379,7 @@ export function MultisigTab({
                           setAllowPrepareWhileSyncing(e.target.checked)
                         }
                       />
-                      Allow start multisig while syncing
+                      Allow starting multisig while syncing
                     </label>
                   </SurfaceCard>
                 )}
