@@ -34,7 +34,7 @@ import {
 } from "../../../monero-wasm-module/walletApi";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
-import { options } from "../options";
+import { DAEMON_PRESET_OPTIONS, options } from "../options";
 import { NiceTabs } from "../main/tabs";
 import { acquireWalletOpenLock, downloadBlob, withFsLock } from "../utils";
 
@@ -43,10 +43,6 @@ type OpenedWallet = {
   releaseWalletOpenLock: () => void;
 };
 
-const DAEMON_PRESET_OPTIONS = [
-  "http://localhost:18081",
-  "https://xmr-node.cakewallet.com:18081",
-] as const;
 const DAEMON_CUSTOM_OPTION = "__custom__";
 const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
 
