@@ -339,7 +339,10 @@ export function MultisigTab({
           <div className="space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
             {myRound1Message === null ? (
               <>
-                <div className="space-y-2 text-sm text-white/75">
+                <div className="text-base font-semibold text-white/90">
+                  Multisig setup
+                </div>
+                <div className="space-y-4 text-sm text-white/75">
                   <p>
                     <b>Multisig</b> means a transaction needs multiple
                     signatures before it can be submitted to the Monero network.
@@ -392,7 +395,7 @@ export function MultisigTab({
 
                 <Button
                   variant="primary"
-                  className="!flex-none w-full py-2.5"
+                  className="!flex-none mt-2 w-full py-2.5"
                   disabled={
                     busy || isPrepareBlockedByPayments || isPrepareBlockedBySync
                   }
