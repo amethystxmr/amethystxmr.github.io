@@ -284,6 +284,26 @@ public:
             });
     }
 
+    auto get_multisig_seed(std::string seedPassphrase)
+    {
+        return promise(
+            [this, seedPassphrase = std::move(seedPassphrase)]()
+            {
+                auto r = epee::wipeable_string{};
+                auto isOk = m_wallet.get_multisig_seed(r, seedPassphrase);
+                if (!isOk)
+                {
+                    throw std::runtime_error("Failed to get multisig seed");
+                }
+                return r;
+            },
+            [](const auto &r) -> emscripten::val
+            {
+                auto seedStr = std::string(r.data(), r.size());
+                return emscripten::val(seedStr);
+            });
+    }
+
     auto rewrite(const std::string &wallet_file, const std::string &password_str)
     {
         const epee::wipeable_string password{password_str};
@@ -1248,6 +1268,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("set_attribute", &MoneroWasmWallet::set_attribute)
         .function("get_attribute", &MoneroWasmWallet::get_attribute)
         .function("get_seed", &MoneroWasmWallet::get_seed)
+        .function("get_multisig_seed", &MoneroWasmWallet::get_multisig_seed)
         .function("get_wallet_file", &MoneroWasmWallet::get_wallet_file)
         .function("get_tx_proof", &MoneroWasmWallet::get_tx_proof)
         .function("get_tx_key", &MoneroWasmWallet::get_tx_key)

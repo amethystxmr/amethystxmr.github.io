@@ -32,6 +32,7 @@ export declare class MoneroWasmWallet {
     callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) => void;
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
+  get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
   get_wallet_file(): Promise<string>;
   get_tx_proof(txid: string, dstaddress: string, note: string): Promise<string>;
