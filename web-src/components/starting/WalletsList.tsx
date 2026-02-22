@@ -247,6 +247,10 @@ export function WalletsList() {
                     <li>Self-custodial</li>
                     <li>Send and receive XMR</li>
                     <li>Multisig support</li>
+                    <li>
+                      Import and export wallets compatible with
+                      monero-wallet-cli
+                    </li>
                   </ul>
                 </div>
                 <p className="text-white/65">
