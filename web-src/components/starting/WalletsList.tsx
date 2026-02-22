@@ -223,17 +223,40 @@ export function WalletsList() {
         <Header>Amethyst XMR Wallet</Header>
 
         <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-white/70">Existing wallets</p>
-            <span className="rounded-md bg-white/8 px-2 py-1 text-xs font-semibold text-white/65 ring-1 ring-white/10">
-              {view.walletNames.length}
-            </span>
-          </div>
+          {view.walletNames.length > 0 && (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-white/70">Existing wallets</p>
+              <span className="rounded-md bg-white/8 px-2 py-1 text-xs font-semibold text-white/65 ring-1 ring-white/10">
+                {view.walletNames.length}
+              </span>
+            </div>
+          )}
 
           <div className="lg:min-h-0 lg:flex-1">
             {view.walletNames.length === 0 ? (
-              <SurfaceCard className="text-sm text-white/60">
-                No wallets yet. Create or restore one below.
+              <SurfaceCard className="space-y-3 text-sm text-white/70">
+                <div className="text-base font-semibold text-white/90">
+                  Welcome to Amethyst XMR
+                </div>
+                <p>
+                  This is a self-custodial Monero wallet that runs in your
+                  browser using a WebAssembly build of libwallet.
+                </p>
+                <div className="text-white/65">
+                  <ul className="list-disc space-y-1 pl-5">
+                    <li>Self-custodial</li>
+                    <li>Send and receive XMR</li>
+                    <li>Multisig support</li>
+                    <li>
+                      Import and export wallets compatible with
+                      monero-wallet-cli
+                    </li>
+                  </ul>
+                </div>
+                <p className="text-white/65">
+                  To begin, create a new wallet or restore an existing one
+                  below.
+                </p>
               </SurfaceCard>
             ) : (
               <div className="scrollbar-glass h-auto overflow-visible lg:h-full lg:overflow-auto lg:pr-1">
