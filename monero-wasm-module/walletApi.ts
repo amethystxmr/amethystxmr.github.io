@@ -15,6 +15,12 @@ export declare class MoneroWasmWallet {
     recover: boolean,
     two_random: boolean,
   ): Promise<Uint8Array>;
+  generate_multisig_restore(
+    fileName: string,
+    password: string,
+    multisigDataHex: string,
+    createAddressFile: boolean,
+  ): Promise<boolean>;
   is_synced(): Promise<boolean>;
   store(): Promise<void>;
   set_attribute(key: string, value: string): Promise<boolean>;

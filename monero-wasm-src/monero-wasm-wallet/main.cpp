@@ -134,6 +134,37 @@ public:
             });
     }
 
+    auto generate_multisig_restore(
+        std::string fileName,
+        std::string password,
+        std::string multisig_data_hex,
+        bool create_address_file)
+    {
+        epee::wipeable_string password_w{password};
+        epee::wipeable_string multisig_seed_hex{multisig_data_hex};
+        auto multisig_seed_hex_ptr = std::make_shared<epee::wipeable_string>(std::move(multisig_seed_hex));
+        auto password_ptr = std::make_shared<epee::wipeable_string>(std::move(password_w));
+
+        return promise([this,
+                        fileName = std::move(fileName),
+                        password_ptr,
+                        multisig_seed_hex_ptr,
+                        create_address_file]()
+                       {
+                           const boost::optional<epee::wipeable_string> parsed = multisig_seed_hex_ptr->parse_hexstr();
+                           if (!parsed)
+                           {
+                               throw std::runtime_error("Multisig seed failed verification");
+                           }
+                           m_wallet.generate(
+                               fileName,
+                               *password_ptr,
+                               *parsed,
+                               create_address_file);
+                           return true;
+                       });
+    }
+
     auto store()
     {
         return promise([this]()
@@ -1249,6 +1280,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("init", &MoneroWasmWallet::init)
         .function("get_daemon_blockchain_height", &MoneroWasmWallet::get_daemon_blockchain_height)
         .function("generate", &MoneroWasmWallet::generate)
+        .function("generate_multisig_restore", &MoneroWasmWallet::generate_multisig_restore)
         .function("rewrite", &MoneroWasmWallet::rewrite)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
