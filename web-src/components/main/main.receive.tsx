@@ -6,6 +6,7 @@ import {
 } from "../../../monero-wasm-module/walletApi";
 import {
   balanceToString,
+  copyToClipboard,
   shortenAddress,
   splitAddressBy6,
   stringToBalance,
@@ -20,30 +21,6 @@ type ReceiveAddressesProps = {
   onAddSubaddressAdd: (newLabel: string) => Promise<void>;
   price: number | null;
 };
-
-async function copyToClipboard(text: string) {
-  // navigator.clipboard can fail on non-https / some embedded contexts
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.left = "-9999px";
-      ta.style.top = "-9999px";
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(ta);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
-}
 
 function AddressRow({
   title,

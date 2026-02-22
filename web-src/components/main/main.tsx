@@ -657,6 +657,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   onRefresh={stopWaitingOrScheduleNoWait}
                   lastRefreshTimestamp={status?.obtainedAt ?? null}
                   daemonLastBlockHeight={status?.daemonHeight ?? null}
+                  multisigStatus={status?.multisigStatus ?? null}
                   payments={status?.payments || null}
                   priceEur={priceInfo?.price ?? null}
                   priceSource={priceInfo?.source ?? null}

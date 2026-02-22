@@ -441,18 +441,19 @@ function RestoreView({
       `nephew renting dedicated fibula gecko verification`,
   );
   const [cakeSeed, setCakeSeed] = React.useState("");
+  const [multisigSeedHex, setMultisigSeedHex] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
 
   const [startingHeight, setStartingHeight] = React.useState("3603563");
   const [loadingHeight, setLoadingHeight] = React.useState(false);
-  const [seedType, setSeedType] = React.useState<"monero-25" | "cake-16">(
-    "monero-25",
-  );
+  const [seedType, setSeedType] = React.useState<
+    "monero-25" | "cake-16" | "multisig"
+  >("monero-25");
 
   const [restoring, setRestoring] = React.useState(false);
 
-  const doRestore = (seedType: "monero-25" | "cake-16") => {
+  const doRestore = (seedType: "monero-25" | "cake-16" | "multisig") => {
     if (!fileName) {
       void alert("Please enter wallet name");
       return;
@@ -466,13 +467,17 @@ function RestoreView({
       return;
     }
 
-    if (seedType === "monero-25") {
+    if (seedType === "monero-25" || seedType === "multisig") {
       if (loadingHeight) {
         void alert("Please wait until starting height is loaded");
         return;
       }
-      if (!moneroSeed) {
+      if (seedType === "monero-25" && !moneroSeed) {
         void alert("Please enter seed");
+        return;
+      }
+      if (seedType === "multisig" && !multisigSeedHex.trim()) {
+        void alert("Please enter multisig seed hex");
         return;
       }
     } else {
@@ -496,7 +501,7 @@ function RestoreView({
       let restoreHeight: bigint;
       let polyseedPrivateKey: Uint8Array | null = null;
 
-      if (seedType === "monero-25") {
+      if (seedType === "monero-25" || seedType === "multisig") {
         try {
           restoreHeight = BigInt(startingHeight);
         } catch {
@@ -530,18 +535,28 @@ function RestoreView({
 
       wallet = createWallet();
       await wallet.init();
-      const secret32 =
-        seedType === "monero-25"
-          ? wallet.words_to_bytes(moneroSeed, "English")
-          : polyseedPrivateKey;
-      if (!secret32 || secret32.length !== 32) {
-        throw new Error("Invalid seed phrase provided");
-      }
       await withFsLock(async () => {
         if (!wallet) {
           throw new Error("Wallet was unexpectedly undefined");
         }
-        await wallet.generate(fileName, password, secret32, true, false);
+        if (seedType === "multisig") {
+          const normalizedMultisigSeedHex = multisigSeedHex.replace(/\s+/g, "");
+          await wallet.generate_multisig_restore(
+            fileName,
+            password,
+            normalizedMultisigSeedHex,
+            false,
+          );
+        } else {
+          const secret32 =
+            seedType === "monero-25"
+              ? wallet.words_to_bytes(moneroSeed, "English")
+              : polyseedPrivateKey;
+          if (!secret32 || secret32.length !== 32) {
+            throw new Error("Invalid seed phrase provided");
+          }
+          await wallet.generate(fileName, password, secret32, true, false);
+        }
         await wallet.set_explicit_refresh_from_block_height(true);
         await wallet.set_refresh_from_block_height(restoreHeight);
         await wallet.rewrite(fileName, password);
@@ -596,6 +611,28 @@ function RestoreView({
       });
   };
 
+  const startingHeightBlock = (
+    <FormRow className="!mb-0">
+      <Label>Starting height</Label>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          value={!loadingHeight ? startingHeight : "Loading..."}
+          onChange={(e) => setStartingHeight(e.target.value)}
+          readOnly={loadingHeight || restoring}
+          disabled={loadingHeight || restoring}
+        />
+        <Input
+          type="date"
+          disabled={restoring}
+          onChange={(e) => onDateChange(e.target.value)}
+        />
+      </div>
+      <div className="mt-1 text-[11px] text-white/50">
+        Or pick a date to auto-fill block height.
+      </div>
+    </FormRow>
+  );
+
   return (
     <div className="space-y-4">
       <Header>Restore wallet</Header>
@@ -612,7 +649,7 @@ function RestoreView({
         <NiceTabs
           initialKey="monero-25"
           onTabChange={(key) => {
-            if (key === "monero-25" || key === "cake-16") {
+            if (key === "monero-25" || key === "cake-16" || key === "multisig") {
               setSeedType(key);
             }
           }}
@@ -632,25 +669,7 @@ function RestoreView({
                     ></TextArea>
                   </FormRow>
 
-                  <FormRow className="!mb-0">
-                    <Label>Starting height</Label>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Input
-                        value={!loadingHeight ? startingHeight : "Loading..."}
-                        onChange={(e) => setStartingHeight(e.target.value)}
-                        readOnly={loadingHeight || restoring}
-                        disabled={loadingHeight || restoring}
-                      />
-                      <Input
-                        type="date"
-                        disabled={restoring}
-                        onChange={(e) => onDateChange(e.target.value)}
-                      />
-                    </div>
-                    <div className="mt-1 text-[11px] text-white/50">
-                      Or pick a date to auto-fill block height.
-                    </div>
-                  </FormRow>
+                  {startingHeightBlock}
                 </div>
               ),
             },
@@ -671,6 +690,25 @@ function RestoreView({
                       Starting height is derived automatically from the seed
                     </div>
                   </FormRow>
+                </div>
+              ),
+            },
+            {
+              key: "multisig",
+              label: "Mulsitig",
+              content: (
+                <div className="space-y-4">
+                  <FormRow>
+                    <Label>Multisig seed (hex)</Label>
+                    <TextArea
+                      rows={4}
+                      value={multisigSeedHex}
+                      disabled={restoring}
+                      onChange={(e) => setMultisigSeedHex(e.target.value)}
+                    ></TextArea>
+                  </FormRow>
+
+                  {startingHeightBlock}
                 </div>
               ),
             },

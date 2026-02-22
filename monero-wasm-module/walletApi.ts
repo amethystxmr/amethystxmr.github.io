@@ -15,6 +15,12 @@ export declare class MoneroWasmWallet {
     recover: boolean,
     two_random: boolean,
   ): Promise<Uint8Array>;
+  generate_multisig_restore(
+    fileName: string,
+    password: string,
+    multisigDataHex: string,
+    createAddressFile: boolean,
+  ): Promise<boolean>;
   is_synced(): Promise<boolean>;
   store(): Promise<void>;
   set_attribute(key: string, value: string): Promise<boolean>;
@@ -32,6 +38,7 @@ export declare class MoneroWasmWallet {
     callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) => void;
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
+  get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
   get_wallet_file(): Promise<string>;
   get_tx_proof(txid: string, dstaddress: string, note: string): Promise<string>;
