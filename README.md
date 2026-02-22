@@ -1,5 +1,9 @@
 # Amethyst XMR Monero wallet
 
+Self-custodial Monero wallet in browser with multisig support
+
+Open it here: https://amethystxmr.github.io
+
 ## Building wasm module
 
 (check CI for the most up-to-date instructions)
