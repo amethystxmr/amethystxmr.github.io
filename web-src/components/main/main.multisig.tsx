@@ -504,6 +504,10 @@ export function MultisigTab({
                   disabled={busy}
                   onChange={setThreshold}
                 />
+                <div className="-mt-1 text-left text-xs text-white/60">
+                  {threshold}-of-{participants} multisig will require{" "}
+                  {participants - threshold + 2} key exchange rounds
+                </div>
 
                 <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
                   <div className="mb-1 flex items-center gap-2">
