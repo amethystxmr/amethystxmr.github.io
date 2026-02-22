@@ -690,6 +690,7 @@ function MultisigReady({
 
     const infos = await importOverlay({
       header: "Paste data from others here",
+      subheader: `Minimum ${multisigStatus.threshold - 1} data files from other participants are required. Split data from each participant by newline or space.`,
       allowMultifiles: true,
     });
     if (infos === null) {
@@ -721,19 +722,12 @@ function MultisigReady({
         <div className="space-y-3 text-sm text-white/75 lg:h-full">
           <div className="rounded-lg bg-white/5 px-3 py-2 ring-1 ring-white/10">
             <div className="text-base font-semibold text-white/90 mb-2">
-              Multisig {multisigStatus.threshold}-of-{multisigStatus.total}
+              Multisig {multisigStatus.threshold}-of-{multisigStatus.total} is
+              ready to use
             </div>
             <div className="text-white/75">
-              Import at least {multisigStatus.threshold - 1} files from other
-              participants.
-            </div>
-            <div className="mt-1 text-white/75">
-              Equivalent rule: have {multisigStatus.threshold} latest files in
-              total, including your own export.
-            </div>
-            <div className="mt-1 text-white/65">
-              Participants are the wallet owners who co-sign spending
-              transactions.
+              Now only {multisigStatus.threshold} participants are required to
+              cooperate in order to spend Monero from this wallet.
             </div>
           </div>
           <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-amber-100/95 ring-1 ring-amber-200/20">
@@ -749,7 +743,8 @@ function MultisigReady({
             }`}
           >
             {hasMultisigPartialKeyImages
-              ? "Status: partial key images detected. Import updated participant files before signing."
+              ? "Status: partial key images detected. Import updated participant files before signing. " +
+                "Also, the balance may not be fully up to date until all key images are imported."
               : "Status: ready to create or sign transactions"}
           </div>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
