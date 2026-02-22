@@ -218,3 +218,27 @@ export function downloadBlob(
     URL.revokeObjectURL(url);
   }, revokeDelayMs);
 }
+
+export async function copyToClipboard(text: string): Promise<boolean> {
+  // navigator.clipboard can fail on non-https / embedded contexts
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.style.top = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import React from "react";
 import { refreshXmrPrice } from "./useXmrPrice";
 import {
+  MultisigAccountStatus,
   MoneroWasmWallet,
   PaymentDetailsTransformed,
 } from "../../../monero-wasm-module/walletApi";
@@ -12,7 +13,7 @@ import {
   Toggle,
   useAlert,
 } from "../ui";
-import { formatWalletTimestamp, withFsLock } from "../utils";
+import { copyToClipboard, formatWalletTimestamp, withFsLock } from "../utils";
 
 type SeedRevealState =
   | { type: "hidden-idle" }
@@ -28,6 +29,7 @@ export function OtherTab({
   onRefresh,
   lastRefreshTimestamp,
   daemonLastBlockHeight,
+  multisigStatus,
   payments,
   priceEur,
   priceSource,
@@ -38,6 +40,7 @@ export function OtherTab({
   onRefresh: () => void;
   lastRefreshTimestamp: Date | null;
   daemonLastBlockHeight: bigint | null;
+  multisigStatus: MultisigAccountStatus | null;
   payments: PaymentDetailsTransformed[] | null;
   priceEur: number | null;
   priceSource: string | null;
@@ -46,6 +49,9 @@ export function OtherTab({
   const [seedState, setSeedState] = React.useState<SeedRevealState>({
     type: "hidden-idle",
   });
+  const [seedCopyState, setSeedCopyState] = React.useState<
+    "idle" | "ok" | "fail"
+  >("idle");
   const [now, setNow] = React.useState(() => Date.now());
   const [rescanState, setRescanState] = React.useState({
     open: false,
@@ -113,8 +119,12 @@ export function OtherTab({
     seedState.type === "visible-loading" ||
     seedState.type === "visible-loaded" ||
     seedState.type === "visible-error";
+  const isSeedButtonDisabled = multisigStatus === null;
 
   const onToggleSeed = async () => {
+    if (multisigStatus === null) {
+      return;
+    }
     if (seedState.type === "visible-loading") {
       setSeedState({ type: "hidden-idle" });
       return;
@@ -136,9 +146,19 @@ export function OtherTab({
       return;
     }
 
+    if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
+      setSeedState({
+        type: "visible-error",
+        error: "Unable to get seed while multisig setup is in progress",
+      });
+      return;
+    }
+
     setSeedState({ type: "visible-loading" });
     try {
-      const nextSeed = await wallet.get_seed("English", "");
+      const nextSeed = multisigStatus.multisig_is_active
+        ? await wallet.get_multisig_seed("")
+        : await wallet.get_seed("English", "");
       setSeedState({ type: "visible-loaded", seed: nextSeed });
     } catch (e) {
       console.error("Failed to load wallet seed:", e);
@@ -147,6 +167,17 @@ export function OtherTab({
         error: (e as Error).message || "Unknown error",
       });
     }
+  };
+
+  const onCopySeed = async () => {
+    if (seedState.type !== "visible-loaded") {
+      return;
+    }
+
+    setSeedCopyState("idle");
+    const ok = await copyToClipboard(seedState.seed);
+    setSeedCopyState(ok ? "ok" : "fail");
+    window.setTimeout(() => setSeedCopyState("idle"), 1500);
   };
 
   const onOpenRescanDialog = () => {
@@ -187,6 +218,7 @@ export function OtherTab({
       <Button
         className="w-full py-2 text-sm font-semibold"
         variant="neutral"
+        disabled={isSeedButtonDisabled}
         onClick={onToggleSeed}
       >
         {isSeedVisible ? "Hide seed phrase" : "Show seed phrase"}
@@ -197,15 +229,33 @@ export function OtherTab({
             Suggested restore scan start block (
             {suggestedRestoreSourceText.toLowerCase()})
           </div>
-          <div className="font-mono text-sm text-white/90">
-            {suggestedRestoreHeight !== null
-              ? suggestedRestoreHeight.toString()
-              : "Loading..."}
-            {firstConfirmedDateText ? (
-              <span className="font-sans text-xs text-white/60">
-                , {firstConfirmedDateText}
-              </span>
-            ) : null}
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-mono text-sm text-white/90">
+              {suggestedRestoreHeight !== null
+                ? suggestedRestoreHeight.toString()
+                : "Loading..."}
+              {firstConfirmedDateText ? (
+                <span className="font-sans text-sm text-white/60">
+                  {" "}
+                  ({firstConfirmedDateText})
+                </span>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="soft"
+              className="!flex-none px-2.5 py-1 text-xs"
+              disabled={seedState.type !== "visible-loaded"}
+              onClick={() => {
+                void onCopySeed();
+              }}
+            >
+              {seedCopyState === "ok"
+                ? "Copied"
+                : seedCopyState === "fail"
+                  ? "Copy failed"
+                  : "Copy"}
+            </Button>
           </div>
           {seedState.type === "visible-loading" ? (
             <div className="text-xs text-white/60">Loading seed...</div>
@@ -215,7 +265,7 @@ export function OtherTab({
             <TextArea
               readOnly
               rows={3}
-              className="font-mono text-sm leading-relaxed"
+              className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
               value={
                 seedState.type === "visible-loaded"
                   ? seedState.seed
