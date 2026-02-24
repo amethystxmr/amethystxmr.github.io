@@ -1,6 +1,11 @@
 name: Update Monero Submodule
 
 on:
+  # TEMP for testing before merging to master.
+  # Revert after validation.
+  pull_request:
+    paths:
+      - ".github/workflows/update-monero.yml"
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
