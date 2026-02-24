@@ -104,10 +104,8 @@ jobs:
         with:
           branch: chore/update-monero-submodule
           delete-branch: false
-          commit-message: |
-            chore(monero): update submodule to ${{ steps.update.outputs.target_sha_short }}
-          title: |
-            chore(monero): update to ${{ steps.update.outputs.target_sha_short }}
+          commit-message: "chore(monero): update submodule to ${{ steps.update.outputs.target_sha_short }}"
+          title: "chore(monero): update to ${{ steps.update.outputs.target_sha_short }}"
           body: |
             Automated update of `monero-wasm-src/monero` submodule.
 
