@@ -102,6 +102,7 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
+          base: ${{ github.event.repository.default_branch }}
           branch: chore/update-monero-submodule
           delete-branch: false
           commit-message: "chore(monero): update submodule to ${{ steps.update.outputs.target_sha_short }}"
