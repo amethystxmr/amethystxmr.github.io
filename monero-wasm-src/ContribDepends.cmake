@@ -18,26 +18,35 @@ set(BUILD_DEPENDS_ROOT "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}")
 file(MAKE_DIRECTORY "${BUILD_DEPENDS_ROOT}")
 
 function(read_depends_package_meta package out_version out_file_name)
-    set(PACKAGE_MK "${CMAKE_SOURCE_DIR}/monero/contrib/depends/packages/${package}.mk")
-    if(NOT EXISTS "${PACKAGE_MK}")
-        message(FATAL_ERROR "Missing contrib depends package file: ${PACKAGE_MK}")
+    set(DEPENDS_DIR "${CMAKE_SOURCE_DIR}/monero/contrib/depends")
+    if(NOT EXISTS "${DEPENDS_DIR}/Makefile")
+        message(FATAL_ERROR "Missing contrib depends Makefile at ${DEPENDS_DIR}")
     endif()
 
-    file(STRINGS "${PACKAGE_MK}" PACKAGE_VERSION_LINE REGEX "^\\$\\(package\\)_version=" LIMIT_COUNT 1)
-    if(PACKAGE_VERSION_LINE STREQUAL "")
-        message(FATAL_ERROR "Could not read ${package} version from ${PACKAGE_MK}")
+    execute_process(
+        COMMAND make -s "print-${package}_version" "print-${package}_download_file"
+        WORKING_DIRECTORY "${DEPENDS_DIR}"
+        RESULT_VARIABLE DEPENDS_META_RC
+        OUTPUT_VARIABLE DEPENDS_META_OUT
+        ERROR_VARIABLE DEPENDS_META_ERR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT DEPENDS_META_RC EQUAL 0)
+        message(FATAL_ERROR "Failed to read ${package} metadata from contrib/depends.\n${DEPENDS_META_ERR}")
     endif()
-    string(REGEX REPLACE "^\\$\\(package\\)_version=" "" PACKAGE_VERSION "${PACKAGE_VERSION_LINE}")
 
-    file(STRINGS "${PACKAGE_MK}" PACKAGE_FILE_NAME_LINE REGEX "^\\$\\(package\\)_file_name=" LIMIT_COUNT 1)
-    if(PACKAGE_FILE_NAME_LINE STREQUAL "")
-        message(FATAL_ERROR "Could not read ${package} file name from ${PACKAGE_MK}")
+    string(REPLACE "\r\n" "\n" DEPENDS_META_OUT "${DEPENDS_META_OUT}")
+    string(REPLACE "\n" ";" DEPENDS_META_LINES "${DEPENDS_META_OUT}")
+    list(LENGTH DEPENDS_META_LINES DEPENDS_META_LEN)
+    if(NOT DEPENDS_META_LEN EQUAL 2)
+        message(FATAL_ERROR "Unexpected metadata format for ${package}: '${DEPENDS_META_OUT}'")
     endif()
-    string(REGEX REPLACE "^\\$\\(package\\)_file_name=" "" PACKAGE_FILE_NAME_RAW "${PACKAGE_FILE_NAME_LINE}")
 
-    set(PACKAGE_FILE_NAME "${PACKAGE_FILE_NAME_RAW}")
-    string(REPLACE "$(package)" "${package}" PACKAGE_FILE_NAME "${PACKAGE_FILE_NAME}")
-    string(REPLACE "$($(package)_version)" "${PACKAGE_VERSION}" PACKAGE_FILE_NAME "${PACKAGE_FILE_NAME}")
+    list(GET DEPENDS_META_LINES 0 PACKAGE_VERSION)
+    list(GET DEPENDS_META_LINES 1 PACKAGE_FILE_NAME)
+    if(PACKAGE_VERSION STREQUAL "" OR PACKAGE_FILE_NAME STREQUAL "")
+        message(FATAL_ERROR "Incomplete metadata from contrib/depends for ${package}: '${DEPENDS_META_OUT}'")
+    endif()
 
     set(${out_version} "${PACKAGE_VERSION}" PARENT_SCOPE)
     set(${out_file_name} "${PACKAGE_FILE_NAME}" PARENT_SCOPE)
