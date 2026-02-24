@@ -17,6 +17,41 @@ endif()
 set(BUILD_DEPENDS_ROOT "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}")
 file(MAKE_DIRECTORY "${BUILD_DEPENDS_ROOT}")
 
+function(read_depends_package_meta package out_version out_file_name)
+    set(DEPENDS_DIR "${CMAKE_SOURCE_DIR}/monero/contrib/depends")
+    if(NOT EXISTS "${DEPENDS_DIR}/Makefile")
+        message(FATAL_ERROR "Missing contrib depends Makefile at ${DEPENDS_DIR}")
+    endif()
+
+    execute_process(
+        COMMAND make -s "print-${package}_version" "print-${package}_download_file"
+        WORKING_DIRECTORY "${DEPENDS_DIR}"
+        RESULT_VARIABLE DEPENDS_META_RC
+        OUTPUT_VARIABLE DEPENDS_META_OUT
+        ERROR_VARIABLE DEPENDS_META_ERR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT DEPENDS_META_RC EQUAL 0)
+        message(FATAL_ERROR "Failed to read ${package} metadata from contrib/depends.\n${DEPENDS_META_ERR}")
+    endif()
+
+    string(REPLACE "\r\n" "\n" DEPENDS_META_OUT "${DEPENDS_META_OUT}")
+    string(REPLACE "\n" ";" DEPENDS_META_LINES "${DEPENDS_META_OUT}")
+    list(LENGTH DEPENDS_META_LINES DEPENDS_META_LEN)
+    if(NOT DEPENDS_META_LEN EQUAL 2)
+        message(FATAL_ERROR "Unexpected metadata format for ${package}: '${DEPENDS_META_OUT}'")
+    endif()
+
+    list(GET DEPENDS_META_LINES 0 PACKAGE_VERSION)
+    list(GET DEPENDS_META_LINES 1 PACKAGE_FILE_NAME)
+    if(PACKAGE_VERSION STREQUAL "" OR PACKAGE_FILE_NAME STREQUAL "")
+        message(FATAL_ERROR "Incomplete metadata from contrib/depends for ${package}: '${DEPENDS_META_OUT}'")
+    endif()
+
+    set(${out_version} "${PACKAGE_VERSION}" PARENT_SCOPE)
+    set(${out_file_name} "${PACKAGE_FILE_NAME}" PARENT_SCOPE)
+endfunction()
+
 
 
 #
@@ -24,8 +59,8 @@ file(MAKE_DIRECTORY "${BUILD_DEPENDS_ROOT}")
 # ==============================================================================================
 
 # == Boost ==
-set(BOOST_ARCHIVE_NAME "boost-1.89.0-b2-nodocs.tar.gz")
-set(BOOST_WITH_VERSION "boost-1.89.0")
+read_depends_package_meta(boost BOOST_VERSION BOOST_ARCHIVE_NAME)
+set(BOOST_WITH_VERSION "boost-${BOOST_VERSION}")
 
 set(BOOST_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${BOOST_ARCHIVE_NAME}")
 set(BOOST_EXTRACT_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/boost")
@@ -192,7 +227,8 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 # zeromq
 include(ExternalProject)
 
-set(ZMQ_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/zeromq-4.3.5.tar.gz")
+read_depends_package_meta(zeromq ZMQ_VERSION ZMQ_ARCHIVE_NAME)
+set(ZMQ_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${ZMQ_ARCHIVE_NAME}")
 set(ZMQ_SRC_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/zeromq-src")
 set(ZMQ_BINARY_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/zeromq-build")
 set(ZMQ_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/zeromq-install")
@@ -282,7 +318,8 @@ add_library(PkgConfig::libzmq ALIAS ZeroMQ::libzmq)
 
 include(ExternalProject)
 
-set(SODIUM_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/libsodium-1.0.18.tar.gz")
+read_depends_package_meta(sodium SODIUM_VERSION SODIUM_ARCHIVE_NAME)
+set(SODIUM_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${SODIUM_ARCHIVE_NAME}")
 set(SODIUM_SRC_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/libsodium-src")
 set(SODIUM_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/libsodium-install")
 file(MAKE_DIRECTORY "${SODIUM_SRC_DIR}")
@@ -343,8 +380,8 @@ include_directories(SYSTEM ${sodium_INCLUDE_DIR})
 
 include(ExternalProject)
 
-set(OPENSSL_VERSION "3.5.4")
-set(OPENSSL_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/openssl-${OPENSSL_VERSION}.tar.gz")
+read_depends_package_meta(openssl OPENSSL_VERSION OPENSSL_ARCHIVE_NAME)
+set(OPENSSL_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${OPENSSL_ARCHIVE_NAME}")
 set(OPENSSL_SRC_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/openssl-src")
 set(OPENSSL_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/openssl-install")
 file(MAKE_DIRECTORY "${OPENSSL_SRC_DIR}")
