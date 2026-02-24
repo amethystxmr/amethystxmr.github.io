@@ -24,8 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Update submodule to latest Monero release
         id: update
@@ -45,14 +43,18 @@ jobs:
             exit 1
           fi
 
+          git submodule sync -- "${SUBMODULE_PATH}"
+          git submodule update --init --depth 1 -- "${SUBMODULE_PATH}"
+
           release_ref="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | jq -r '.tag_name')"
           if [ -z "${release_ref}" ] || [ "${release_ref}" = "null" ]; then
             echo "Failed to resolve latest release reference for ${REPO}" >&2
             exit 1
           fi
 
-          git submodule sync --recursive
-          git -C "${SUBMODULE_PATH}" fetch --tags origin
+          # Only fetch tags/commits for the Monero submodule itself.
+          # Recursive fetching can fail on nested submodule refs that are not needed here.
+          git -C "${SUBMODULE_PATH}" fetch --tags --no-recurse-submodules origin
 
           target_sha="$(git -C "${SUBMODULE_PATH}" rev-list -n 1 "${release_ref}")"
           if [ -z "${target_sha}" ]; then
