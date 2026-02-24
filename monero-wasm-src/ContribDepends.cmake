@@ -17,6 +17,32 @@ endif()
 set(BUILD_DEPENDS_ROOT "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}")
 file(MAKE_DIRECTORY "${BUILD_DEPENDS_ROOT}")
 
+function(read_depends_package_meta package out_version out_file_name)
+    set(PACKAGE_MK "${CMAKE_SOURCE_DIR}/monero/contrib/depends/packages/${package}.mk")
+    if(NOT EXISTS "${PACKAGE_MK}")
+        message(FATAL_ERROR "Missing contrib depends package file: ${PACKAGE_MK}")
+    endif()
+
+    file(STRINGS "${PACKAGE_MK}" PACKAGE_VERSION_LINE REGEX "^\\$\\(package\\)_version=" LIMIT_COUNT 1)
+    if(PACKAGE_VERSION_LINE STREQUAL "")
+        message(FATAL_ERROR "Could not read ${package} version from ${PACKAGE_MK}")
+    endif()
+    string(REGEX REPLACE "^\\$\\(package\\)_version=" "" PACKAGE_VERSION "${PACKAGE_VERSION_LINE}")
+
+    file(STRINGS "${PACKAGE_MK}" PACKAGE_FILE_NAME_LINE REGEX "^\\$\\(package\\)_file_name=" LIMIT_COUNT 1)
+    if(PACKAGE_FILE_NAME_LINE STREQUAL "")
+        message(FATAL_ERROR "Could not read ${package} file name from ${PACKAGE_MK}")
+    endif()
+    string(REGEX REPLACE "^\\$\\(package\\)_file_name=" "" PACKAGE_FILE_NAME_RAW "${PACKAGE_FILE_NAME_LINE}")
+
+    set(PACKAGE_FILE_NAME "${PACKAGE_FILE_NAME_RAW}")
+    string(REPLACE "$(package)" "${package}" PACKAGE_FILE_NAME "${PACKAGE_FILE_NAME}")
+    string(REPLACE "$($(package)_version)" "${PACKAGE_VERSION}" PACKAGE_FILE_NAME "${PACKAGE_FILE_NAME}")
+
+    set(${out_version} "${PACKAGE_VERSION}" PARENT_SCOPE)
+    set(${out_file_name} "${PACKAGE_FILE_NAME}" PARENT_SCOPE)
+endfunction()
+
 
 
 #
@@ -24,8 +50,8 @@ file(MAKE_DIRECTORY "${BUILD_DEPENDS_ROOT}")
 # ==============================================================================================
 
 # == Boost ==
-set(BOOST_ARCHIVE_NAME "boost-1.89.0-b2-nodocs.tar.gz")
-set(BOOST_WITH_VERSION "boost-1.89.0")
+read_depends_package_meta(boost BOOST_VERSION BOOST_ARCHIVE_NAME)
+set(BOOST_WITH_VERSION "boost-${BOOST_VERSION}")
 
 set(BOOST_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${BOOST_ARCHIVE_NAME}")
 set(BOOST_EXTRACT_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/boost")
@@ -192,7 +218,8 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 # zeromq
 include(ExternalProject)
 
-set(ZMQ_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/zeromq-4.3.5.tar.gz")
+read_depends_package_meta(zeromq ZMQ_VERSION ZMQ_ARCHIVE_NAME)
+set(ZMQ_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${ZMQ_ARCHIVE_NAME}")
 set(ZMQ_SRC_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/zeromq-src")
 set(ZMQ_BINARY_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/zeromq-build")
 set(ZMQ_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/zeromq-install")
@@ -282,7 +309,8 @@ add_library(PkgConfig::libzmq ALIAS ZeroMQ::libzmq)
 
 include(ExternalProject)
 
-set(SODIUM_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/libsodium-1.0.18.tar.gz")
+read_depends_package_meta(sodium SODIUM_VERSION SODIUM_ARCHIVE_NAME)
+set(SODIUM_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${SODIUM_ARCHIVE_NAME}")
 set(SODIUM_SRC_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/libsodium-src")
 set(SODIUM_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/libsodium-install")
 file(MAKE_DIRECTORY "${SODIUM_SRC_DIR}")
@@ -343,8 +371,8 @@ include_directories(SYSTEM ${sodium_INCLUDE_DIR})
 
 include(ExternalProject)
 
-set(OPENSSL_VERSION "3.5.4")
-set(OPENSSL_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/openssl-${OPENSSL_VERSION}.tar.gz")
+read_depends_package_meta(openssl OPENSSL_VERSION OPENSSL_ARCHIVE_NAME)
+set(OPENSSL_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${OPENSSL_ARCHIVE_NAME}")
 set(OPENSSL_SRC_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/openssl-src")
 set(OPENSSL_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/openssl-install")
 file(MAKE_DIRECTORY "${OPENSSL_SRC_DIR}")
