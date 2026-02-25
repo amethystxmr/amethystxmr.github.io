@@ -103,18 +103,6 @@ if(EXISTS "${BOOST_IS_UNSIGNED_HPP}")
     set(BOOST_IS_UNSIGNED_ORIG_LINES
 "   static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
    static const no_cv_t zero = (static_cast<no_cv_t>(0));")
-    set(BOOST_IS_UNSIGNED_PREV_PATCH_LINES
-"   static const no_cv_t minus_one = (static_cast<no_cv_t>(__is_enum(no_cv_t) ? 1 : -1));
-   static const no_cv_t zero = (static_cast<no_cv_t>(0));")
-    set(BOOST_IS_UNSIGNED_OLDER_PATCH_LINES
-"   typedef typename boost::conditional<
-      boost::is_enum<no_cv_t>::value,
-      typename std::underlying_type<no_cv_t>::type,
-      no_cv_t
-   >::type test_t;
-
-   static const test_t minus_one = static_cast<test_t>(-1);
-   static const test_t zero      = static_cast<test_t>(0);")
     set(BOOST_IS_UNSIGNED_PATCHED_LINES
 "   template<typename U, bool IsEnum>
    struct enum_probe_type { typedef U type; };
@@ -126,8 +114,6 @@ if(EXISTS "${BOOST_IS_UNSIGNED_HPP}")
    static const test_t minus_one = static_cast<test_t>(-1);
    static const test_t zero      = static_cast<test_t>(0);")
     string(REPLACE "${BOOST_IS_UNSIGNED_ORIG_LINES}" "${BOOST_IS_UNSIGNED_PATCHED_LINES}" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
-    string(REPLACE "${BOOST_IS_UNSIGNED_PREV_PATCH_LINES}" "${BOOST_IS_UNSIGNED_PATCHED_LINES}" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
-    string(REPLACE "${BOOST_IS_UNSIGNED_OLDER_PATCH_LINES}" "${BOOST_IS_UNSIGNED_PATCHED_LINES}" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
     file(WRITE "${BOOST_IS_UNSIGNED_HPP}" "${BOOST_IS_UNSIGNED_CONTENT}")
 endif()
 
