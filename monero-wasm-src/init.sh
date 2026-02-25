@@ -10,7 +10,7 @@ fi
 (
     cd monero
     shopt -s nullglob
-    for patch_file in ../patches/*.patch; do
+    for patch_file in ../patches/monero/*.patch; do
         if patch --batch --forward --dry-run -p1 -i "${patch_file}" >/dev/null 2>&1; then
             patch --batch --forward -p1 -i "${patch_file}"
         elif patch --batch --reverse --dry-run -p1 -i "${patch_file}" >/dev/null 2>&1; then

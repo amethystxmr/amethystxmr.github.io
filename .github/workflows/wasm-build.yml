@@ -13,7 +13,7 @@ jobs:
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
       WASM_CACHE_EPOCH: v6-depends-meta
-      MONERO_SRC_CACHE_EPOCH: v2-depends-meta
+      MONERO_SRC_CACHE_EPOCH: v3-patches-layout
 
     steps:
       - name: Checkout
@@ -32,7 +32,7 @@ jobs:
             ~/emsdk
             ~/.emscripten_cache
             monero-wasm-src/built-*
-          key: ${{ runner.os }}-wasm-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-${{ hashFiles('monero-wasm-src/ContribDepends.cmake', 'monero-wasm-src/build.sh', 'monero-wasm-src/build-wasm-cmds.sh', 'monero-wasm-src/CMakeLists.txt', 'monero-wasm-src/monero/contrib/depends/packages/*.mk') }}
+          key: ${{ runner.os }}-wasm-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-${{ hashFiles('monero-wasm-src/ContribDepends.cmake', 'monero-wasm-src/build.sh', 'monero-wasm-src/build-wasm-cmds.sh', 'monero-wasm-src/CMakeLists.txt', 'monero-wasm-src/patches/boost/*.patch', 'monero-wasm-src/patches/monero/*.patch', 'monero-wasm-src/monero/contrib/depends/packages/*.mk') }}
           restore-keys: |
             ${{ runner.os }}-wasm-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-
 
@@ -62,7 +62,7 @@ jobs:
           path: |
             monero-wasm-src/monero
             .git/modules/monero-wasm-src/monero
-          key: ${{ runner.os }}-monero-src-${{ env.MONERO_SRC_CACHE_EPOCH }}-${{ steps.monero_ref.outputs.sha }}-${{ hashFiles('monero-wasm-src/init.sh', 'monero-wasm-src/patches/*') }}
+          key: ${{ runner.os }}-monero-src-${{ env.MONERO_SRC_CACHE_EPOCH }}-${{ steps.monero_ref.outputs.sha }}-${{ hashFiles('monero-wasm-src/init.sh', 'monero-wasm-src/patches/monero/*.patch') }}
 
       - name: Init
         if: steps.monero_cache_restore.outputs.cache-hit != 'true'

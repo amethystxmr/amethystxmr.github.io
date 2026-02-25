@@ -66,6 +66,41 @@ function(find_boost_source_subdir boost_extract_dir out_subdir)
     set(${out_subdir} "" PARENT_SCOPE)
 endfunction()
 
+function(apply_patch_with_reverse_check target_dir patch_file patch_label)
+    execute_process(
+        COMMAND patch --batch --forward --dry-run -p1 -i "${patch_file}"
+        WORKING_DIRECTORY "${target_dir}"
+        RESULT_VARIABLE PATCH_FWD_DRY_RC
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+    if(PATCH_FWD_DRY_RC EQUAL 0)
+        execute_process(
+            COMMAND patch --batch --forward -p1 -i "${patch_file}"
+            WORKING_DIRECTORY "${target_dir}"
+            RESULT_VARIABLE PATCH_APPLY_RC
+        )
+        if(NOT PATCH_APPLY_RC EQUAL 0)
+            message(FATAL_ERROR "Failed to apply ${patch_label}: ${patch_file}")
+        endif()
+        return()
+    endif()
+
+    execute_process(
+        COMMAND patch --batch --reverse --dry-run -p1 -i "${patch_file}"
+        WORKING_DIRECTORY "${target_dir}"
+        RESULT_VARIABLE PATCH_REV_DRY_RC
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+    if(PATCH_REV_DRY_RC EQUAL 0)
+        message(STATUS "Patch already applied (${patch_label}): ${patch_file}")
+        return()
+    endif()
+
+    message(FATAL_ERROR "Patch does not apply cleanly (${patch_label}): ${patch_file}")
+endfunction()
+
 
 
 #
@@ -95,39 +130,13 @@ endif()
 set(BOOST_ROOT "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}" CACHE PATH "" FORCE)
 set(Boost_INCLUDE_DIR "${BOOST_ROOT}" CACHE PATH "" FORCE)
 
-# Compatibility patch for enum handling in Boost type traits with newer clang/emscripten.
-# Keep behavior close to upstream by comparing through underlying type for enums.
-set(BOOST_MPL_INTEGRAL_WRAPPER "${BOOST_ROOT}/boost/mpl/aux_/integral_wrapper.hpp")
-if(EXISTS "${BOOST_MPL_INTEGRAL_WRAPPER}")
-    file(READ "${BOOST_MPL_INTEGRAL_WRAPPER}" BOOST_MPL_CONTENT)
-    set(BOOST_MPL_ORIG_LINES
-"    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;
-    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;")
-    set(BOOST_MPL_PATCHED_LINES
-"    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) ? value : (value + 1))) ) next;
-    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) ? value : (value - 1))) ) prior;")
-    string(REPLACE "${BOOST_MPL_ORIG_LINES}" "${BOOST_MPL_PATCHED_LINES}" BOOST_MPL_CONTENT "${BOOST_MPL_CONTENT}")
-    file(WRITE "${BOOST_MPL_INTEGRAL_WRAPPER}" "${BOOST_MPL_CONTENT}")
-endif()
-
-set(BOOST_IS_UNSIGNED_HPP "${BOOST_ROOT}/boost/type_traits/is_unsigned.hpp")
-if(EXISTS "${BOOST_IS_UNSIGNED_HPP}")
-    file(READ "${BOOST_IS_UNSIGNED_HPP}" BOOST_IS_UNSIGNED_CONTENT)
-    set(BOOST_IS_UNSIGNED_ORIG_LINES
-"   static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
-   static const no_cv_t zero = (static_cast<no_cv_t>(0));")
-    set(BOOST_IS_UNSIGNED_PATCHED_LINES
-"   template<typename U, bool IsEnum>
-   struct enum_probe_type { typedef U type; };
-   template<typename U>
-   struct enum_probe_type<U, true> { typedef typename std::underlying_type<U>::type type; };
-
-   typedef typename enum_probe_type<no_cv_t, boost::is_enum<no_cv_t>::value>::type test_t;
-
-   static const test_t minus_one = static_cast<test_t>(-1);
-   static const test_t zero      = static_cast<test_t>(0);")
-    string(REPLACE "${BOOST_IS_UNSIGNED_ORIG_LINES}" "${BOOST_IS_UNSIGNED_PATCHED_LINES}" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
-    file(WRITE "${BOOST_IS_UNSIGNED_HPP}" "${BOOST_IS_UNSIGNED_CONTENT}")
+set(BOOST_PATCH_DIR "${CMAKE_SOURCE_DIR}/patches/boost")
+if(EXISTS "${BOOST_PATCH_DIR}")
+    file(GLOB BOOST_PATCH_FILES "${BOOST_PATCH_DIR}/*.patch")
+    list(SORT BOOST_PATCH_FILES)
+    foreach(boost_patch IN LISTS BOOST_PATCH_FILES)
+        apply_patch_with_reverse_check("${BOOST_ROOT}" "${boost_patch}" "boost")
+    endforeach()
 endif()
 
 message(STATUS " BOOST_ROOT='${BOOST_ROOT}'")
