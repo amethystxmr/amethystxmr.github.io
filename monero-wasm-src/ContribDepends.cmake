@@ -163,8 +163,9 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
         "./b2 -j \
         toolset=${BOOST_B2_TOOLSET} \
         link=static runtime-link=static \
-        cxxflags='-O3 -std=gnu++14' \
+        cxxflags='-O3' \
         linkflags='-O3' \
+        cxxstd=14 \
         --with-program_options \
         --with-filesystem \
         --with-chrono \
