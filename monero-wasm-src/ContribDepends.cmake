@@ -95,26 +95,27 @@ endif()
 set(BOOST_ROOT "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}" CACHE PATH "" FORCE)
 set(Boost_INCLUDE_DIR "${BOOST_ROOT}" CACHE PATH "" FORCE)
 
-# Minimal compatibility patch for older Boost MPL with modern clang/emscripten.
-set(BOOST_MPL_INTEGRAL_WRAPPER "${BOOST_ROOT}/boost/mpl/aux_/integral_wrapper.hpp")
-if(EXISTS "${BOOST_MPL_INTEGRAL_WRAPPER}")
-    file(READ "${BOOST_MPL_INTEGRAL_WRAPPER}" BOOST_MPL_CONTENT)
-    set(BOOST_MPL_ORIG_PRIOR "typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;")
-    set(BOOST_MPL_ORIG_NEXT "typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;")
-    set(BOOST_MPL_PATCHED_PRIOR "typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) ? value : (value - 1))) ) prior;")
-    set(BOOST_MPL_PATCHED_NEXT "typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) ? value : (value + 1))) ) next;")
-    string(REPLACE "${BOOST_MPL_ORIG_PRIOR}" "${BOOST_MPL_PATCHED_PRIOR}" BOOST_MPL_CONTENT "${BOOST_MPL_CONTENT}")
-    string(REPLACE "${BOOST_MPL_ORIG_NEXT}" "${BOOST_MPL_PATCHED_NEXT}" BOOST_MPL_CONTENT "${BOOST_MPL_CONTENT}")
-    file(WRITE "${BOOST_MPL_INTEGRAL_WRAPPER}" "${BOOST_MPL_CONTENT}")
-endif()
-
 # Compatibility patch for enum handling in Boost type traits with newer clang/emscripten.
+# Keep behavior close to upstream by comparing through underlying type for enums.
 set(BOOST_IS_UNSIGNED_HPP "${BOOST_ROOT}/boost/type_traits/is_unsigned.hpp")
 if(EXISTS "${BOOST_IS_UNSIGNED_HPP}")
     file(READ "${BOOST_IS_UNSIGNED_HPP}" BOOST_IS_UNSIGNED_CONTENT)
-    set(BOOST_IS_UNSIGNED_ORIG "static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));")
-    set(BOOST_IS_UNSIGNED_PATCHED "static const no_cv_t minus_one = (static_cast<no_cv_t>(__is_enum(no_cv_t) ? 1 : -1));")
+    set(BOOST_IS_UNSIGNED_ORIG
+"   typedef typename remove_cv<T>::type no_cv_t;
+   static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
+   static const no_cv_t zero = (static_cast<no_cv_t>(0));")
+    set(BOOST_IS_UNSIGNED_PATCHED
+"   typedef typename remove_cv<T>::type no_cv_t;
+   typedef typename boost::conditional<
+      boost::is_enum<no_cv_t>::value,
+      typename std::underlying_type<no_cv_t>::type,
+      no_cv_t
+   >::type test_t;
+
+   static const test_t minus_one = static_cast<test_t>(-1);
+   static const test_t zero      = static_cast<test_t>(0);")
     string(REPLACE "${BOOST_IS_UNSIGNED_ORIG}" "${BOOST_IS_UNSIGNED_PATCHED}" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
+    string(REPLACE "static const no_cv_t minus_one = (static_cast<no_cv_t>(__is_enum(no_cv_t) ? 1 : -1));" "static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
     file(WRITE "${BOOST_IS_UNSIGNED_HPP}" "${BOOST_IS_UNSIGNED_CONTENT}")
 endif()
 

@@ -1,57 +1,24 @@
 diff --git a/src/common/command_line.h b/src/common/command_line.h
-index d80a1b0df..b24a84e28 100644
+index d80a1b0df..d58de89d2 100644
 --- a/src/common/command_line.h
 +++ b/src/common/command_line.h
-@@ -184,19 +184,19 @@ namespace command_line
+@@ -184,7 +184,8 @@ namespace command_line
    }
  
    template<typename T, bool required, bool dependent, int NUM_DEPS>
 -  void add_arg(boost::program_options::options_description& description, const arg_descriptor<T, required, dependent, NUM_DEPS>& arg, bool unique = true)
-+  void add_arg_with_type(boost::program_options::options_description& description, const arg_descriptor<T, required, dependent, NUM_DEPS>& arg, std::false_type)
-   {
--    if (0 != description.find_nothrow(arg.name, false))
--    {
--      CHECK_AND_ASSERT_MES(!unique, void(), "Argument already exists: " << arg.name);
--      return;
--    }
--
-     description.add_options()(arg.name, make_semantic(arg), arg.description);
-   }
- 
--  template<typename T>
--  void add_arg(boost::program_options::options_description& description, const arg_descriptor<T, false>& arg, const T& def, bool unique = true)
-+  template<bool required, bool dependent, int NUM_DEPS>
-+  void add_arg_with_type(boost::program_options::options_description& description, const arg_descriptor<bool, required, dependent, NUM_DEPS>& arg, std::true_type)
-+  {
-+    description.add_options()(arg.name, boost::program_options::bool_switch(), arg.description);
-+  }
-+
-+  template<typename T, bool required, bool dependent, int NUM_DEPS>
-+  void add_arg(boost::program_options::options_description& description, const arg_descriptor<T, required, dependent, NUM_DEPS>& arg, bool unique = true)
++  typename std::enable_if<!std::is_same<T, bool>::value, void>::type
++  add_arg(boost::program_options::options_description& description, const arg_descriptor<T, required, dependent, NUM_DEPS>& arg, bool unique = true)
    {
      if (0 != description.find_nothrow(arg.name, false))
      {
-@@ -204,11 +204,11 @@ namespace command_line
-       return;
-     }
- 
--    description.add_options()(arg.name, make_semantic(arg, def), arg.description);
-+    add_arg_with_type(description, arg, std::is_same<T, bool>());
+@@ -207,8 +208,7 @@ namespace command_line
+     description.add_options()(arg.name, make_semantic(arg, def), arg.description);
    }
  
 -  template<>
 -  inline void add_arg(boost::program_options::options_description& description, const arg_descriptor<bool, false>& arg, bool unique)
-+  template<typename T>
-+  void add_arg(boost::program_options::options_description& description, const arg_descriptor<T, false>& arg, const T& def, bool unique = true)
++  inline void add_arg(boost::program_options::options_description& description, const arg_descriptor<bool, false>& arg, bool unique = true)
    {
      if (0 != description.find_nothrow(arg.name, false))
      {
-@@ -216,7 +216,7 @@ namespace command_line
-       return;
-     }
- 
--    description.add_options()(arg.name, boost::program_options::bool_switch(), arg.description);
-+    description.add_options()(arg.name, make_semantic(arg, def), arg.description);
-   }
- 
-   template<typename charT>
