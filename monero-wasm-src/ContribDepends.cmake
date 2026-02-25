@@ -159,7 +159,7 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
     endif()
     execute_process(
         COMMAND bash -lc
-        "./b2 -j \
+        "./b2 -j4 \
         toolset=${BOOST_B2_TOOLSET} \
         link=static runtime-link=static \
         cxxflags='-O3' \
