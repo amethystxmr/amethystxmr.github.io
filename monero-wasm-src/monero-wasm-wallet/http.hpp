@@ -188,6 +188,15 @@ public:
         // TODO: What is CRITICAL_REGION_LOCAL
         return invoke(uri, "GET", body, timeout, ppresponse_info, additional_params);
     }
+    bool invoke_post(
+        const boost::string_ref uri,
+        const std::string &body,
+        std::chrono::milliseconds timeout,
+        const epee::net_utils::http::http_response_info **ppresponse_info = NULL,
+        const epee::net_utils::http::fields_list &additional_params = epee::net_utils::http::fields_list())
+    {
+        return invoke(uri, "POST", body, timeout, ppresponse_info, additional_params);
+    }
     uint64_t get_bytes_sent() const
     {
         // TODO: Count bytes

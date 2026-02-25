@@ -350,6 +350,15 @@ public:
         bool receivedMoney;
     };
 
+    struct MultisigStatus
+    {
+        bool multisig_is_active;
+        bool kex_is_done;
+        bool is_ready;
+        uint32_t threshold;
+        uint32_t total;
+    };
+
     auto refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
     {
         return promise([this, trusted_daemon, start_height, check_pool, try_incremental, max_blocks]()
@@ -792,7 +801,7 @@ public:
         return promise(
             [this, ptx_vector]()
             {
-                auto status = m_wallet.get_multisig_status();
+                auto status = get_multisig_status_compat();
                 if (!status.multisig_is_active)
                 {
                     throw std::runtime_error("Wallet is not multisig");
@@ -848,7 +857,7 @@ public:
         std::set<uint32_t> subaddr_indices;
 
         auto ptx_vector = m_wallet.create_transactions_2(dsts, fake_outs_count,
-                                                         static_cast<tools::fee_priority>(priority),
+                                                         priority,
                                                          extra,
                                                          0, subaddr_indices);
         if (ptx_vector.empty())
@@ -962,7 +971,7 @@ public:
     auto get_multisig_status()
     {
         return promise([this]()
-                       { return m_wallet.get_multisig_status(); });
+                       { return get_multisig_status_compat(); });
     }
 
     auto has_multisig_partial_key_images()
@@ -1007,7 +1016,7 @@ public:
                                throw std::runtime_error("invalid password");
                            }
 
-                           if (m_wallet.get_multisig_status().multisig_is_active)
+                           if (get_multisig_status_compat().multisig_is_active)
                            {
                                throw std::runtime_error("Wallet is already multisig");
                            };
@@ -1038,7 +1047,7 @@ public:
                            {
                                throw std::runtime_error("invalid password");
                            }
-                           if (!m_wallet.get_multisig_status().multisig_is_active)
+                           if (!get_multisig_status_compat().multisig_is_active)
                            {
                                throw std::runtime_error("Wallet is not multisig");
                            };
@@ -1053,7 +1062,7 @@ public:
                            {
                                throw std::runtime_error("Wallet must be empty to prepare multisig");
                            }
-                           if (m_wallet.get_multisig_status().multisig_is_active)
+                           if (get_multisig_status_compat().multisig_is_active)
                            {
                                throw std::runtime_error("Wallet is already multisig");
                            }
@@ -1065,7 +1074,7 @@ public:
         return promise(
             [this]()
             {
-                auto status = m_wallet.get_multisig_status();
+                auto status = get_multisig_status_compat();
                 if (!status.multisig_is_active)
                 {
                     throw std::runtime_error("Wallet is not multisig");
@@ -1096,7 +1105,7 @@ public:
         return promise(
             [this, info = std::move(info)]()
             {
-                auto status = m_wallet.get_multisig_status();
+                auto status = get_multisig_status_compat();
                 if (!status.multisig_is_active)
                 {
                     throw std::runtime_error("Wallet is not multisig");
@@ -1123,6 +1132,21 @@ public:
     }
 
 private:
+    MultisigStatus get_multisig_status_compat() const
+    {
+        const auto state = m_wallet.get_multisig_wallet_state();
+        uint32_t threshold = 0;
+        uint32_t total = 0;
+        const bool multisig = m_wallet.multisig(nullptr, &threshold, &total);
+        return MultisigStatus{
+            multisig,
+            state.multisig_rounds_passed > 0,
+            state.multisig_is_ready,
+            threshold,
+            total,
+        };
+    }
+
     template <typename T, typename ParseItemFn>
     static std::vector<T> parse_js_array(const emscripten::val &js_array, ParseItemFn &&parse_item)
     {
@@ -1338,12 +1362,12 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
     emscripten::class_<tools::wallet2::multisig_tx_set>("MultisigTxSetHandle")
         .smart_ptr<std::shared_ptr<tools::wallet2::multisig_tx_set>>("MultisigTxSetHandle");
 
-    emscripten::value_object<struct multisig::multisig_account_status>("MultisigAccountStatus")
-        .field("multisig_is_active", &multisig::multisig_account_status::multisig_is_active)
-        .field("kex_is_done", &multisig::multisig_account_status::kex_is_done)
-        .field("is_ready", &multisig::multisig_account_status::is_ready)
-        .field("threshold", &multisig::multisig_account_status::threshold)
-        .field("total", &multisig::multisig_account_status::total);
+    emscripten::value_object<MoneroWasmWallet::MultisigStatus>("MultisigAccountStatus")
+        .field("multisig_is_active", &MoneroWasmWallet::MultisigStatus::multisig_is_active)
+        .field("kex_is_done", &MoneroWasmWallet::MultisigStatus::kex_is_done)
+        .field("is_ready", &MoneroWasmWallet::MultisigStatus::is_ready)
+        .field("threshold", &MoneroWasmWallet::MultisigStatus::threshold)
+        .field("total", &MoneroWasmWallet::MultisigStatus::total);
 
     /*
 emscripten::class_<tools::wallet2::transfer_details>("TransferDetails")
