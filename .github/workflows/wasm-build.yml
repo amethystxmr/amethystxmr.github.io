@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
-      WASM_CACHE_EPOCH: v6-depends-meta
+      WASM_CACHE_EPOCH: v7-depends-meta
       MONERO_SRC_CACHE_EPOCH: v3-patches-layout
 
     steps:
