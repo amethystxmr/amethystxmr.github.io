@@ -355,6 +355,7 @@ public:
         bool multisig_is_active;
         bool kex_is_done;
         bool is_ready;
+        uint32_t multisig_rounds_passed;
         uint32_t threshold;
         uint32_t total;
     };
@@ -1142,6 +1143,7 @@ private:
             multisig,
             state.multisig_rounds_passed > 0,
             state.multisig_is_ready,
+            state.multisig_rounds_passed,
             threshold,
             total,
         };
@@ -1366,6 +1368,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .field("multisig_is_active", &MoneroWasmWallet::MultisigStatus::multisig_is_active)
         .field("kex_is_done", &MoneroWasmWallet::MultisigStatus::kex_is_done)
         .field("is_ready", &MoneroWasmWallet::MultisigStatus::is_ready)
+        .field("multisig_rounds_passed", &MoneroWasmWallet::MultisigStatus::multisig_rounds_passed)
         .field("threshold", &MoneroWasmWallet::MultisigStatus::threshold)
         .field("total", &MoneroWasmWallet::MultisigStatus::total);
 
