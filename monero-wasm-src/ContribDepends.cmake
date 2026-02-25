@@ -100,13 +100,14 @@ set(Boost_INCLUDE_DIR "${BOOST_ROOT}" CACHE PATH "" FORCE)
 set(BOOST_IS_UNSIGNED_HPP "${BOOST_ROOT}/boost/type_traits/is_unsigned.hpp")
 if(EXISTS "${BOOST_IS_UNSIGNED_HPP}")
     file(READ "${BOOST_IS_UNSIGNED_HPP}" BOOST_IS_UNSIGNED_CONTENT)
-    set(BOOST_IS_UNSIGNED_ORIG
-"   typedef typename remove_cv<T>::type no_cv_t;
-   static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
+    set(BOOST_IS_UNSIGNED_ORIG_LINES
+"   static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
    static const no_cv_t zero = (static_cast<no_cv_t>(0));")
-    set(BOOST_IS_UNSIGNED_PATCHED
-"   typedef typename remove_cv<T>::type no_cv_t;
-   typedef typename boost::conditional<
+    set(BOOST_IS_UNSIGNED_PREV_PATCH_LINES
+"   static const no_cv_t minus_one = (static_cast<no_cv_t>(__is_enum(no_cv_t) ? 1 : -1));
+   static const no_cv_t zero = (static_cast<no_cv_t>(0));")
+    set(BOOST_IS_UNSIGNED_PATCHED_LINES
+"   typedef typename boost::conditional<
       boost::is_enum<no_cv_t>::value,
       typename std::underlying_type<no_cv_t>::type,
       no_cv_t
@@ -114,8 +115,8 @@ if(EXISTS "${BOOST_IS_UNSIGNED_HPP}")
 
    static const test_t minus_one = static_cast<test_t>(-1);
    static const test_t zero      = static_cast<test_t>(0);")
-    string(REPLACE "${BOOST_IS_UNSIGNED_ORIG}" "${BOOST_IS_UNSIGNED_PATCHED}" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
-    string(REPLACE "static const no_cv_t minus_one = (static_cast<no_cv_t>(__is_enum(no_cv_t) ? 1 : -1));" "static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
+    string(REPLACE "${BOOST_IS_UNSIGNED_ORIG_LINES}" "${BOOST_IS_UNSIGNED_PATCHED_LINES}" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
+    string(REPLACE "${BOOST_IS_UNSIGNED_PREV_PATCH_LINES}" "${BOOST_IS_UNSIGNED_PATCHED_LINES}" BOOST_IS_UNSIGNED_CONTENT "${BOOST_IS_UNSIGNED_CONTENT}")
     file(WRITE "${BOOST_IS_UNSIGNED_HPP}" "${BOOST_IS_UNSIGNED_CONTENT}")
 endif()
 
