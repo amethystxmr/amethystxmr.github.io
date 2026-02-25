@@ -858,7 +858,7 @@ public:
         std::set<uint32_t> subaddr_indices;
 
         auto ptx_vector = m_wallet.create_transactions_2(dsts, fake_outs_count,
-                                                         static_cast<tools::fee_priority>(priority),
+                                                         priority,
                                                          extra,
                                                          0, subaddr_indices);
         if (ptx_vector.empty())
