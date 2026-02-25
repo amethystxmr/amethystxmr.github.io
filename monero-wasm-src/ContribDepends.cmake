@@ -70,7 +70,7 @@ function(apply_patch_with_reverse_check target_dir patch_file patch_label)
     # `patch` uses hunk context matching (with fuzz), so it tolerates line shifts
     # better than direct line-number anchored edits across minor upstream updates.
     execute_process(
-        COMMAND patch --batch --forward --dry-run -p1 -i "${patch_file}"
+        COMMAND patch --batch --forward --dry-run -F 3 -p1 -i "${patch_file}"
         WORKING_DIRECTORY "${target_dir}"
         RESULT_VARIABLE PATCH_FWD_DRY_RC
         OUTPUT_QUIET
@@ -78,7 +78,7 @@ function(apply_patch_with_reverse_check target_dir patch_file patch_label)
     )
     if(PATCH_FWD_DRY_RC EQUAL 0)
         execute_process(
-            COMMAND patch --batch --forward -p1 -i "${patch_file}"
+            COMMAND patch --batch --forward -F 3 -p1 -i "${patch_file}"
             WORKING_DIRECTORY "${target_dir}"
             RESULT_VARIABLE PATCH_APPLY_RC
         )
@@ -89,7 +89,7 @@ function(apply_patch_with_reverse_check target_dir patch_file patch_label)
     endif()
 
     execute_process(
-        COMMAND patch --batch --reverse --dry-run -p1 -i "${patch_file}"
+        COMMAND patch --batch --reverse --dry-run -F 3 -p1 -i "${patch_file}"
         WORKING_DIRECTORY "${target_dir}"
         RESULT_VARIABLE PATCH_REV_DRY_RC
         OUTPUT_QUIET

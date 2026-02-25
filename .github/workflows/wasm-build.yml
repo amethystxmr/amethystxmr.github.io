@@ -19,6 +19,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve monero submodule ref
+        id: monero_ref
+        run: echo "sha=$(git rev-parse HEAD:monero-wasm-src/monero)" >> "$GITHUB_OUTPUT"
+
       - name: Install ccache
         run: |
           sudo apt-get update
@@ -32,7 +36,7 @@ jobs:
             ~/emsdk
             ~/.emscripten_cache
             monero-wasm-src/built-*
-          key: ${{ runner.os }}-wasm-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-${{ hashFiles('monero-wasm-src/ContribDepends.cmake', 'monero-wasm-src/build.sh', 'monero-wasm-src/build-wasm-cmds.sh', 'monero-wasm-src/CMakeLists.txt', 'monero-wasm-src/patches/boost/*.patch', 'monero-wasm-src/patches/monero/*.patch', 'monero-wasm-src/monero/contrib/depends/packages/*.mk') }}
+          key: ${{ runner.os }}-wasm-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-${{ steps.monero_ref.outputs.sha }}-${{ hashFiles('monero-wasm-src/ContribDepends.cmake', 'monero-wasm-src/build.sh', 'monero-wasm-src/build-wasm-cmds.sh', 'monero-wasm-src/CMakeLists.txt', 'monero-wasm-src/patches/boost/*.patch', 'monero-wasm-src/patches/monero/*.patch', 'monero-wasm-src/monero/contrib/depends/packages/*.mk') }}
           restore-keys: |
             ${{ runner.os }}-wasm-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-
 
@@ -50,10 +54,6 @@ jobs:
           echo "EM_COMPILER_WRAPPER=ccache" >> "$GITHUB_ENV"
           mkdir -p "${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}"
           mkdir -p "$HOME/.emscripten_cache"
-
-      - name: Resolve monero submodule ref
-        id: monero_ref
-        run: echo "sha=$(git rev-parse HEAD:monero-wasm-src/monero)" >> "$GITHUB_OUTPUT"
 
       - name: Restore monero source cache
         id: monero_cache_restore

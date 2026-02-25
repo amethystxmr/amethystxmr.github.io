@@ -15,11 +15,11 @@ diff --git a/boost/type_traits/is_unsigned.hpp b/boost/type_traits/is_unsigned.h
 -   static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
 -   static const no_cv_t zero = (static_cast<no_cv_t>(0));
 +   template<typename U, bool IsEnum>
-+   struct enum_probe_type { typedef U type; };
++   struct enum_underlying_or_self { typedef U type; };
 +   template<typename U>
-+   struct enum_probe_type<U, true> { typedef typename std::underlying_type<U>::type type; };
++   struct enum_underlying_or_self<U, true> { typedef typename std::underlying_type<U>::type type; };
 +
-+   typedef typename enum_probe_type<no_cv_t, boost::is_enum<no_cv_t>::value>::type enum_or_self_t;
++   typedef typename enum_underlying_or_self<no_cv_t, boost::is_enum<no_cv_t>::value>::type enum_or_self_t;
 +   static const enum_or_self_t minus_one = static_cast<enum_or_self_t>(-1);
 +   static const enum_or_self_t zero      = static_cast<enum_or_self_t>(0);
  };

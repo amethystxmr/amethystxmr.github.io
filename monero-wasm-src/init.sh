@@ -11,9 +11,9 @@ fi
     cd monero
     shopt -s nullglob
     for patch_file in ../patches/monero/*.patch; do
-        if patch --batch --forward --dry-run -p1 -i "${patch_file}" >/dev/null 2>&1; then
-            patch --batch --forward -p1 -i "${patch_file}"
-        elif patch --batch --reverse --dry-run -p1 -i "${patch_file}" >/dev/null 2>&1; then
+        if patch --batch --forward --dry-run -F 3 -p1 -i "${patch_file}" >/dev/null 2>&1; then
+            patch --batch --forward -F 3 -p1 -i "${patch_file}"
+        elif patch --batch --reverse --dry-run -F 3 -p1 -i "${patch_file}" >/dev/null 2>&1; then
             echo "Patch already applied: ${patch_file}"
         else
             echo "Failed to apply patch cleanly: ${patch_file}"
