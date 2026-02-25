@@ -97,6 +97,19 @@ set(Boost_INCLUDE_DIR "${BOOST_ROOT}" CACHE PATH "" FORCE)
 
 # Compatibility patch for enum handling in Boost type traits with newer clang/emscripten.
 # Keep behavior close to upstream by comparing through underlying type for enums.
+set(BOOST_MPL_INTEGRAL_WRAPPER "${BOOST_ROOT}/boost/mpl/aux_/integral_wrapper.hpp")
+if(EXISTS "${BOOST_MPL_INTEGRAL_WRAPPER}")
+    file(READ "${BOOST_MPL_INTEGRAL_WRAPPER}" BOOST_MPL_CONTENT)
+    set(BOOST_MPL_ORIG_LINES
+"    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;
+    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;")
+    set(BOOST_MPL_PATCHED_LINES
+"    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N + 1)) ) next;
+    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N - 1)) ) prior;")
+    string(REPLACE "${BOOST_MPL_ORIG_LINES}" "${BOOST_MPL_PATCHED_LINES}" BOOST_MPL_CONTENT "${BOOST_MPL_CONTENT}")
+    file(WRITE "${BOOST_MPL_INTEGRAL_WRAPPER}" "${BOOST_MPL_CONTENT}")
+endif()
+
 set(BOOST_IS_UNSIGNED_HPP "${BOOST_ROOT}/boost/type_traits/is_unsigned.hpp")
 if(EXISTS "${BOOST_IS_UNSIGNED_HPP}")
     file(READ "${BOOST_IS_UNSIGNED_HPP}" BOOST_IS_UNSIGNED_CONTENT)
