@@ -107,11 +107,12 @@ if(EXISTS "${BOOST_IS_UNSIGNED_HPP}")
 "   static const no_cv_t minus_one = (static_cast<no_cv_t>(__is_enum(no_cv_t) ? 1 : -1));
    static const no_cv_t zero = (static_cast<no_cv_t>(0));")
     set(BOOST_IS_UNSIGNED_PATCHED_LINES
-"   typedef typename boost::conditional<
-      boost::is_enum<no_cv_t>::value,
-      typename std::underlying_type<no_cv_t>::type,
-      no_cv_t
-   >::type test_t;
+"   template<typename U, bool IsEnum>
+   struct enum_probe_type { typedef U type; };
+   template<typename U>
+   struct enum_probe_type<U, true> { typedef typename std::underlying_type<U>::type type; };
+
+   typedef typename enum_probe_type<no_cv_t, boost::is_enum<no_cv_t>::value>::type test_t;
 
    static const test_t minus_one = static_cast<test_t>(-1);
    static const test_t zero      = static_cast<test_t>(0);")
