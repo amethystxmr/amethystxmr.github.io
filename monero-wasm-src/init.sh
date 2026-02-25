@@ -1,7 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-git submodule update --init --recursive
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    git submodule update --init --recursive --force
+else
+    git submodule update --init --recursive
+fi
 
 (
     cd monero
