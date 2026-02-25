@@ -8,7 +8,8 @@ diff --git a/boost/type_traits/is_unsigned.hpp b/boost/type_traits/is_unsigned.h
 +#include <type_traits>
  
  namespace boost {
-@@ -35,8 +36,14 @@ struct is_unsigned_values
+ 
+@@ -35,8 +36,14 @@
     // the correct answer.
     //
     typedef typename remove_cv<T>::type no_cv_t;

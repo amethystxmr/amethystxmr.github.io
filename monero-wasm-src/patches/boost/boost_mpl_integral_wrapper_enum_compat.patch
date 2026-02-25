@@ -1,10 +1,7 @@
 diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapper.hpp
 --- a/boost/mpl/aux_/integral_wrapper.hpp
 +++ b/boost/mpl/aux_/integral_wrapper.hpp
-@@ -68,8 +68,8 @@ struct AUX_WRAPPER_NAME
- #elif BOOST_WORKAROUND(__BORLANDC__, BOOST_TESTED_AT(0x561)) \
-     || BOOST_WORKAROUND(__IBMCPP__, BOOST_TESTED_AT(502)) \
-     || (BOOST_WORKAROUND(__HP_aCC, <= 53800) && (BOOST_WORKAROUND(__hpxstd98, != 1)))
+@@ -72,8 +72,8 @@ struct AUX_WRAPPER_NAME
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N + 1)) ) next;
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N - 1)) ) prior;
  #else
@@ -13,5 +10,5 @@ diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapp
 +    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) ? value : (value + 1))) ) next;
 +    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) ? value : (value - 1))) ) prior;
  #endif
-
+ 
      // enables uniform function call syntax for families of overloaded
