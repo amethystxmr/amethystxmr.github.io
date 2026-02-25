@@ -23,6 +23,8 @@ function(read_depends_package_meta package out_version out_file_name)
         message(FATAL_ERROR "Missing contrib depends Makefile at ${DEPENDS_DIR}")
     endif()
 
+    # Query package metadata from contrib/depends via a temporary evaluated make target.
+    # The extra escaping preserves `$` through CMake -> shell -> make parsing layers.
     execute_process(
         COMMAND bash -lc "make -s --eval 'print-meta: ; @echo \\$(${package}_version); echo \\$(${package}_download_file)' print-meta"
         WORKING_DIRECTORY "${DEPENDS_DIR}"
@@ -158,7 +160,7 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
     endif()
     execute_process(
         COMMAND bash -lc
-        "./b2 -j4 \
+        "./b2 -j \
         toolset=${BOOST_B2_TOOLSET} \
         link=static runtime-link=static \
         cxxflags='-O3 -std=gnu++14' \
