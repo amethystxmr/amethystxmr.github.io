@@ -31,7 +31,6 @@ monero_add_executable(monero-wasm-wallet
     ${monero_wasm_wallet_private_headers}
 )
 target_compile_features(monero-wasm-wallet PRIVATE cxx_std_17)
-target_compile_definitions(monero-wasm-wallet PRIVATE _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION)
 
 target_include_directories(monero-wasm-wallet
     PRIVATE
