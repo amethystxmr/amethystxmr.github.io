@@ -67,6 +67,8 @@ function(find_boost_source_subdir boost_extract_dir out_subdir)
 endfunction()
 
 function(apply_patch_with_reverse_check target_dir patch_file patch_label)
+    # `patch` uses hunk context matching (with fuzz), so it tolerates line shifts
+    # better than direct line-number anchored edits across minor upstream updates.
     execute_process(
         COMMAND patch --batch --forward --dry-run -p1 -i "${patch_file}"
         WORKING_DIRECTORY "${target_dir}"
