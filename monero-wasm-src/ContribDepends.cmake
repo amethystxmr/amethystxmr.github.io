@@ -185,9 +185,14 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
     else()
         set(BOOST_B2_CXXSTD "14")
     endif()
+    include(ProcessorCount)
+    ProcessorCount(BOOST_B2_JOBS)
+    if(NOT BOOST_B2_JOBS OR BOOST_B2_JOBS LESS 1)
+        set(BOOST_B2_JOBS 2)
+    endif()
     execute_process(
         COMMAND bash -lc
-        "./b2 -j \
+        "./b2 -j${BOOST_B2_JOBS} \
         toolset=${BOOST_B2_TOOLSET} \
         link=static runtime-link=static \
         cxxflags='-O3' \
