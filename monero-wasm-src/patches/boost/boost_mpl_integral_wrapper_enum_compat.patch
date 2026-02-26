@@ -12,5 +12,5 @@ diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapp
 +    typedef typename enum_or_self<AUX_WRAPPER_VALUE_TYPE, __is_enum(AUX_WRAPPER_VALUE_TYPE)>::type next_prior_t;
 +
 +    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) + 1)) ) next;
-+    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) - 1)) ) prior;
++    typedef AUX_WRAPPER_INST( __is_enum(AUX_WRAPPER_VALUE_TYPE) ? BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) - 1)) : BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;
  #endif
