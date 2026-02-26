@@ -1,22 +1,14 @@
 diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapper.hpp
 --- a/boost/mpl/aux_/integral_wrapper.hpp
 +++ b/boost/mpl/aux_/integral_wrapper.hpp
-@@ -23,6 +23,7 @@
- #include <boost/mpl/aux_/na_spec.hpp>
- #include <boost/mpl/aux_/static_cast.hpp>
- #include <boost/preprocessor/tuple/elem.hpp>
-+#include <boost/type_traits/is_enum.hpp>
- #include <boost/mpl/aux_/config/static_constant.hpp>
- 
- namespace boost { namespace mpl {
-@@ -72,8 +73,8 @@ struct AUX_WRAPPER_NAME
+@@ -72,8 +72,8 @@ struct AUX_WRAPPER_NAME
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N + 1)) ) next;
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N - 1)) ) prior;
  #else
 -    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;
 -    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;
-+    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (boost::is_enum<AUX_WRAPPER_VALUE_TYPE>::value ? value : (value + 1))) ) next;
-+    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (boost::is_enum<AUX_WRAPPER_VALUE_TYPE>::value ? value : (value - 1))) ) prior;
++    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(long long, value) + 1)) ) next;
++    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(long long, value) - 1)) ) prior;
  #endif
  
      // enables uniform function call syntax for families of overloaded
