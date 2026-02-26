@@ -1,7 +1,7 @@
 diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapper.hpp
 --- a/boost/mpl/aux_/integral_wrapper.hpp
 +++ b/boost/mpl/aux_/integral_wrapper.hpp
-@@ -70,6 +70,12 @@ struct AUX_WRAPPER_NAME
+@@ -70,6 +70,15 @@ struct AUX_WRAPPER_NAME
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N + 1)) ) next;
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N - 1)) ) prior;
 +#elif defined(__EMSCRIPTEN__) && BOOST_WORKAROUND(__clang__, >= 1)
@@ -9,7 +9,10 @@ diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapp
 +    template<class U> struct enum_or_self_t<U, true> { typedef __underlying_type(U) type; };
 +    typedef typename enum_or_self_t<AUX_WRAPPER_VALUE_TYPE, __is_enum(AUX_WRAPPER_VALUE_TYPE)>::type next_prior_t;
 +    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) + 1)) ) next;
-+    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) && BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) == 0 ? BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) : (BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) - 1))) ) prior;
++    struct prior_of_minimum_ {};
++    template<bool IsMin_, bool D_ = false> struct prior_sel_ { typedef prior_of_minimum_ type; };
++    template<bool D_> struct prior_sel_<false, D_> { typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) - 1)) ) type; };
++    typedef typename prior_sel_<__is_enum(AUX_WRAPPER_VALUE_TYPE) && BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) == 0>::type prior;
  #else
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;
