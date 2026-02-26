@@ -714,7 +714,7 @@ function MultisigReady({
     } finally {
       setBusyAction("idle");
     }
-  }, [alert, importOverlay, isBusy, onRefresh, wallet]);
+  }, [alert, importOverlay, isBusy, multisigStatus.threshold, onRefresh, wallet]);
 
   return (
     <>
