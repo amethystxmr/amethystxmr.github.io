@@ -177,10 +177,8 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
     message(STATUS " =========== Running b2...")
     if(EMSCRIPTEN)
         set(BOOST_B2_TOOLSET "clang-emscripten")
-        set(BOOST_B2_TARGET_OS_ARG "target-os=none")
     else()
         set(BOOST_B2_TOOLSET "clang")
-        set(BOOST_B2_TARGET_OS_ARG "")
     endif()
     if(DEFINED CMAKE_CXX_STANDARD AND NOT CMAKE_CXX_STANDARD STREQUAL "")
         set(BOOST_B2_CXXSTD "${CMAKE_CXX_STANDARD}")
@@ -196,7 +194,6 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
         COMMAND bash -lc
         "./b2 -j${BOOST_B2_JOBS} \
         toolset=${BOOST_B2_TOOLSET} \
-        ${BOOST_B2_TARGET_OS_ARG} \
         link=static runtime-link=static \
         cxxflags='-O3' \
         linkflags='-O3' \
