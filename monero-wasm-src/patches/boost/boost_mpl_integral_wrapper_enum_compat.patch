@@ -7,8 +7,8 @@ diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapp
  #else
 -    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;
 -    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;
-+    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(long long, value) + 1)) ) next;
-+    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(long long, value) - 1)) ) prior;
++    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) ? value : (value + 1))) ) next;
++    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (__is_enum(AUX_WRAPPER_VALUE_TYPE) ? value : (value - 1))) ) prior;
  #endif
  
      // enables uniform function call syntax for families of overloaded
