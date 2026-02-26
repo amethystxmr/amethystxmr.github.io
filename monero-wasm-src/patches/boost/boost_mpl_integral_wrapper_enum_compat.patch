@@ -1,21 +1,15 @@
 diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapper.hpp
 --- a/boost/mpl/aux_/integral_wrapper.hpp
 +++ b/boost/mpl/aux_/integral_wrapper.hpp
-@@ -72,8 +72,16 @@ struct AUX_WRAPPER_NAME
+@@ -72,6 +72,9 @@ struct AUX_WRAPPER_NAME
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N + 1)) ) next;
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N - 1)) ) prior;
  #else
 -    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;
 -    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;
-+    template<typename T, bool IsEnum>
-+    struct enum_underlying_or_self { typedef T type; };
-+    template<typename T>
-+    struct enum_underlying_or_self<T, true> { typedef __underlying_type(T) type; };
-+
++    template<typename T, bool IsEnum> struct enum_underlying_or_self { typedef T type; };
++    template<typename T> struct enum_underlying_or_self<T, true> { typedef __underlying_type(T) type; };
 +    typedef typename enum_underlying_or_self<AUX_WRAPPER_VALUE_TYPE, __is_enum(AUX_WRAPPER_VALUE_TYPE)>::type next_prior_t;
-+
 +    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) + 1)) ) next;
 +    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (BOOST_MPL_AUX_STATIC_CAST(next_prior_t, value) - 1)) ) prior;
  #endif
- 
-     // enables uniform function call syntax for families of overloaded
