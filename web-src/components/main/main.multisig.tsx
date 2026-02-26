@@ -129,7 +129,7 @@ export function MultisigTab({
     let cancelled = false;
     setMyLastKexMessage({ type: "loading" });
 
-    Promise.resolve(wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE))
+    wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE)
       .then((lastKexMessage) => {
         if (cancelled) {
           return;

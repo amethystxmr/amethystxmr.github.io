@@ -24,9 +24,8 @@ function(read_depends_package_meta package out_version out_file_name)
     endif()
 
     # Query package metadata from contrib/depends via a temporary evaluated make target.
-    # The extra escaping preserves `$` through CMake -> shell -> make parsing layers.
     execute_process(
-        COMMAND bash -lc "make -s --eval 'print-meta: ; @echo \\$(${package}_version); echo \\$(${package}_download_file)' print-meta"
+        COMMAND make -s --eval "print-meta: ; @echo $(${package}_version); echo $(${package}_download_file)" print-meta
         WORKING_DIRECTORY "${DEPENDS_DIR}"
         RESULT_VARIABLE DEPENDS_META_RC
         OUTPUT_VARIABLE DEPENDS_META_OUT
@@ -181,14 +180,19 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
     else()
         set(BOOST_B2_TOOLSET "clang")
     endif()
+    if(DEFINED CMAKE_CXX_STANDARD AND NOT CMAKE_CXX_STANDARD STREQUAL "")
+        set(BOOST_B2_CXXSTD "${CMAKE_CXX_STANDARD}")
+    else()
+        set(BOOST_B2_CXXSTD "14")
+    endif()
     execute_process(
         COMMAND bash -lc
-        "./b2 -j$(nproc) \
+        "./b2 -j \
         toolset=${BOOST_B2_TOOLSET} \
         link=static runtime-link=static \
         cxxflags='-O3' \
         linkflags='-O3' \
-        cxxstd=14 \
+        cxxstd=${BOOST_B2_CXXSTD} \
         --with-program_options \
         --with-filesystem \
         --with-chrono \
