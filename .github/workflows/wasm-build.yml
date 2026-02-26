@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
-  WASM_CACHE_EPOCH: v8-boost-mpl-patch
+      WASM_CACHE_EPOCH: v8-boost-mpl-patch
       MONERO_SRC_CACHE_EPOCH: v3-patches-layout
 
     steps:
