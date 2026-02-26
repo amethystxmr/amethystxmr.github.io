@@ -33,9 +33,7 @@ monero_add_executable(monero-wasm-wallet
 target_compile_features(monero-wasm-wallet PRIVATE cxx_std_17)
 # Keep this while building with older Boost on libc++/C++17:
 # Boost may still reference std::unary_function/std::binary_function, removed in C++17.
-if(EMSCRIPTEN)
-    target_compile_definitions(monero-wasm-wallet PRIVATE _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION)
-endif()
+target_compile_definitions(monero-wasm-wallet PRIVATE _LIBCPP_ENABLE_CXX17_REMOVED_UNARY_BINARY_FUNCTION)
 
 target_include_directories(monero-wasm-wallet
     PRIVATE
