@@ -1,17 +1,18 @@
 diff --git a/boost/type_traits/is_unsigned.hpp b/boost/type_traits/is_unsigned.hpp
 --- a/boost/type_traits/is_unsigned.hpp
 +++ b/boost/type_traits/is_unsigned.hpp
-@@ -14,6 +14,7 @@
- #include <boost/type_traits/ice.hpp>
+@@ -13,7 +13,10 @@
+ #include <boost/type_traits/is_integral.hpp>
+ #include <boost/type_traits/is_enum.hpp>
  #include <boost/type_traits/remove_cv.hpp>
- #include <boost/type_traits/conditional.hpp>
++#include <boost/type_traits/conditional.hpp>
  
  #include <climits>
 +#include <type_traits>
  
  namespace boost {
- 
-@@ -35,8 +36,13 @@
++
+@@ -35,8 +37,14 @@ struct is_unsigned_values
     // the correct answer.
     //
     typedef typename remove_cv<T>::type no_cv_t;
