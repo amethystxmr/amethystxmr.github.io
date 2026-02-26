@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
-      WASM_CACHE_EPOCH: v10-boost-enum-nevertype
+      WASM_CACHE_EPOCH: v11-boost-patch-hunk-only
       MONERO_SRC_CACHE_EPOCH: v3-patches-layout
 
     steps:

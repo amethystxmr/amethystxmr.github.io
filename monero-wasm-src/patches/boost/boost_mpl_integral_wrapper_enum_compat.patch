@@ -1,30 +1,27 @@
 diff --git a/boost/mpl/aux_/integral_wrapper.hpp b/boost/mpl/aux_/integral_wrapper.hpp
 --- a/boost/mpl/aux_/integral_wrapper.hpp
 +++ b/boost/mpl/aux_/integral_wrapper.hpp
-@@ -16,6 +16,8 @@
- #include <boost/mpl/aux_/config/workaround.hpp>
- 
- #include <boost/preprocessor/cat.hpp>
-+#include <boost/type_traits/conditional.hpp>
-+#include <boost/type_traits/is_enum.hpp>
- 
- #if !defined(AUX_WRAPPER_NAME)
- #   define AUX_WRAPPER_NAME BOOST_PP_CAT(AUX_WRAPPER_VALUE_TYPE,_)
-@@ -72,8 +74,12 @@ struct AUX_WRAPPER_NAME
+@@ -72,8 +72,20 @@ struct AUX_WRAPPER_NAME
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N + 1)) ) next;
      typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (N - 1)) ) prior;
  #else
 -    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;
 -    typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;
-+    struct enum_next_prior_unavailable;
-+    typedef typename boost::conditional<
-+        boost::is_enum<AUX_WRAPPER_VALUE_TYPE>::value,
-+        enum_next_prior_unavailable,
-+        AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) >::type next;
-+    typedef typename boost::conditional<
-+        boost::is_enum<AUX_WRAPPER_VALUE_TYPE>::value,
-+        enum_next_prior_unavailable,
-+        AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) >::type prior;
++    template<bool IsEnum> struct next_prior_selector;
++    template<> struct next_prior_selector<false>
++    {
++        typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value + 1)) ) next;
++        typedef AUX_WRAPPER_INST( BOOST_MPL_AUX_STATIC_CAST(AUX_WRAPPER_VALUE_TYPE, (value - 1)) ) prior;
++    };
++    template<> struct next_prior_selector<true>
++    {
++        struct unavailable;
++        typedef unavailable next;
++        typedef unavailable prior;
++    };
++
++    typedef typename next_prior_selector<__is_enum(AUX_WRAPPER_VALUE_TYPE)>::next next;
++    typedef typename next_prior_selector<__is_enum(AUX_WRAPPER_VALUE_TYPE)>::prior prior;
  #endif
  
      // enables uniform function call syntax for families of overloaded
