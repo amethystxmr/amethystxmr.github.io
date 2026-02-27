@@ -2,10 +2,10 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include "emscripten/proxying.h"
+#include <algorithm>
 #include <sodium/core.h>
 #include <sodium/utils.h>
 #include <sodium/randombytes.h>
-#include <boost/locale.hpp>
 #include <polyseed.h>
 
 #include <string.h>
@@ -74,11 +74,31 @@ void crypto_pbkdf2_sha256(const uint8_t *passwd, size_t passwdlen,
     sodium_memzero((void *)&PShctx, sizeof PShctx);
 }
 
-static std::locale locale;
+EM_JS(void, normalize_utf8_js, (const char *str, const char *form, char *norm, size_t norm_str_size), {
+    const input = UTF8ToString(str);
+    const normalizeForm = UTF8ToString(form);
+    let output = input;
+    try
+    {
+        output = input.normalize(normalizeForm);
+    }
+    catch (e)
+    {
+        output = input;
+    }
+    stringToUTF8(output, norm, norm_str_size);
+});
+
+static std::string normalize_utf8(const char *str, const char *form)
+{
+    polyseed_str norm;
+    normalize_utf8_js(str, form, norm, POLYSEED_STR_SIZE);
+    return std::string(norm);
+}
 
 static size_t utf8_nfc(const char *str, polyseed_str norm)
 {
-    auto s = boost::locale::normalize(str, boost::locale::norm_type::norm_nfc, locale);
+    auto s = normalize_utf8(str, "NFC");
     size_t size = std::min(s.size(), (size_t)POLYSEED_STR_SIZE - 1);
     s.copy(norm, size);
     norm[size] = '\0';
@@ -91,7 +111,7 @@ static size_t utf8_nfc(const char *str, polyseed_str norm)
 
 static size_t utf8_nfkd(const char *str, polyseed_str norm)
 {
-    auto s = boost::locale::normalize(str, boost::locale::norm_type::norm_nfkd, locale);
+    auto s = normalize_utf8(str, "NFKD");
     // polyseed expects the normalized separator to be ASCII space.
     // Ensure U+3000 IDEOGRAPHIC SPACE is mapped to ' '.
     for (size_t i = 0; i + 2 < s.size();)
@@ -126,10 +146,6 @@ public:
         {
             throw std::runtime_error("sodium_init failed");
         }
-
-        boost::locale::generator gen;
-        gen.locale_cache_enabled(true);
-        locale = gen("");
 
         polyseed_dependency pd;
         pd.randbytes = &randombytes_buf;
