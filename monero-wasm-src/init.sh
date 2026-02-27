@@ -1,11 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-    git submodule update --init --recursive --force
-else
-    git submodule update --init --recursive
-fi
+# Always reset submodules to the recorded commits before applying patches.
+git submodule update --init --recursive --force
 
 (
     cd monero
