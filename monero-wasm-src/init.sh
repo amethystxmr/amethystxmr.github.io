@@ -4,6 +4,7 @@ set -euo pipefail
 # Always reset submodules to the recorded commits before applying patches.
 git submodule update --init --recursive --force
 
+
 (
     cd monero
     shopt -s nullglob
