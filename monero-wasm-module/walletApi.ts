@@ -21,6 +21,21 @@ export declare class MoneroWasmWallet {
     multisigDataHex: string,
     createAddressFile: boolean,
   ): Promise<boolean>;
+  generate_from_keys(
+    fileName: string,
+    password: string,
+    address: string,
+    secretViewKey: Uint8Array,
+    secretSpendKey: Uint8Array,
+    createAddressFile: boolean,
+  ): Promise<boolean>;
+  generate_view_only_from_keys(
+    fileName: string,
+    password: string,
+    address: string,
+    secretViewKey: Uint8Array,
+    createAddressFile: boolean,
+  ): Promise<boolean>;
   is_synced(): Promise<boolean>;
   store(): Promise<void>;
   set_attribute(key: string, value: string): Promise<boolean>;

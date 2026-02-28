@@ -105,6 +105,7 @@ public:
         bool recover,
         bool two_random)
     {
+        validate_js_uint8_array_len(secretArrayBuf, 32, "secret32");
         auto secretKey = std::make_shared<crypto::secret_key>();
         copy_js_uint8_array_to(secretArrayBuf, reinterpret_cast<std::uint8_t *>(secretKey->data), 32);
 
@@ -160,6 +161,88 @@ public:
                                fileName,
                                *password_ptr,
                                *parsed,
+                               create_address_file);
+                           return true;
+                       });
+    }
+
+    auto generate_from_keys(
+        std::string fileName,
+        std::string password,
+        std::string address,
+        emscripten::val secret_view_key_buf,
+        emscripten::val secret_spend_key_buf,
+        bool create_address_file)
+    {
+        validate_js_uint8_array_len(secret_view_key_buf, 32, "secretViewKey");
+        validate_js_uint8_array_len(secret_spend_key_buf, 32, "secretSpendKey");
+        auto viewkey = std::make_shared<crypto::secret_key>();
+        auto spendkey = std::make_shared<crypto::secret_key>();
+        copy_js_uint8_array_to(secret_view_key_buf, reinterpret_cast<std::uint8_t *>(viewkey->data), 32);
+        copy_js_uint8_array_to(secret_spend_key_buf, reinterpret_cast<std::uint8_t *>(spendkey->data), 32);
+
+        return promise([this,
+                        fileName = std::move(fileName),
+                        password = std::move(password),
+                        address = std::move(address),
+                        viewkey,
+                        spendkey,
+                        create_address_file]()
+                       {
+                           cryptonote::address_parse_info info;
+                           if (!cryptonote::get_account_address_from_str(info, m_wallet.nettype(), address))
+                           {
+                               throw std::runtime_error("Invalid wallet address");
+                           }
+                           if (info.is_subaddress)
+                           {
+                               throw std::runtime_error("Subaddress cannot be used for restore from keys");
+                           }
+
+                           m_wallet.generate(
+                               fileName,
+                               epee::wipeable_string(password),
+                               info.address,
+                               *spendkey,
+                               *viewkey,
+                               create_address_file);
+                           return true;
+                       });
+    }
+
+    auto generate_view_only_from_keys(
+        std::string fileName,
+        std::string password,
+        std::string address,
+        emscripten::val secret_view_key_buf,
+        bool create_address_file)
+    {
+        validate_js_uint8_array_len(secret_view_key_buf, 32, "secretViewKey");
+        auto viewkey = std::make_shared<crypto::secret_key>();
+        copy_js_uint8_array_to(secret_view_key_buf, reinterpret_cast<std::uint8_t *>(viewkey->data), 32);
+
+        return promise([this,
+                        fileName = std::move(fileName),
+                        password = std::move(password),
+                        address = std::move(address),
+                        viewkey,
+                        create_address_file]()
+                       {
+                           cryptonote::address_parse_info info;
+                           if (!cryptonote::get_account_address_from_str(info, m_wallet.nettype(), address))
+                           {
+                               throw std::runtime_error("Invalid wallet address");
+                           }
+                           if (info.is_subaddress)
+                           {
+                               throw std::runtime_error("Subaddress cannot be used for restore from keys");
+                           }
+
+                           m_wallet.generate(
+                               fileName,
+                               epee::wipeable_string(password),
+                               info.address,
+                               *viewkey,
                                create_address_file);
                            return true;
                        });
@@ -1204,6 +1287,21 @@ private:
         }
     }
 
+    static void validate_js_uint8_array_len(const emscripten::val &js_uint8_array, size_t expected_len, const char *field_name)
+    {
+        if (!js_uint8_array.instanceof(emscripten::val::global("Uint8Array")))
+        {
+            throw std::runtime_error(std::string(field_name) + " must be Uint8Array");
+        }
+
+        const auto len = js_uint8_array["length"].as<size_t>();
+        if (len != expected_len)
+        {
+            throw std::runtime_error(
+                std::string(field_name) + " must be " + std::to_string(expected_len) + " bytes, got " + std::to_string(len));
+        }
+    }
+
     static std::vector<std::vector<std::uint8_t>> parse_js_uint8_array_array(const emscripten::val &js_array)
     {
         return parse_js_array<std::vector<std::uint8_t>>(
@@ -1307,6 +1405,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_daemon_blockchain_height", &MoneroWasmWallet::get_daemon_blockchain_height)
         .function("generate", &MoneroWasmWallet::generate)
         .function("generate_multisig_restore", &MoneroWasmWallet::generate_multisig_restore)
+        .function("generate_from_keys", &MoneroWasmWallet::generate_from_keys)
+        .function("generate_view_only_from_keys", &MoneroWasmWallet::generate_view_only_from_keys)
         .function("rewrite", &MoneroWasmWallet::rewrite)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
