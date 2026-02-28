@@ -3,7 +3,8 @@ cmake_minimum_required(VERSION 3.10)
 project(ProjectName)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
+# Monero core currently builds under C++14; monero-wasm-wallet opts into C++17 in its own target.
+set(CMAKE_CXX_STANDARD 14)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 

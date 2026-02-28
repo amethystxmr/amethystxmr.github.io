@@ -1,0 +1,26 @@
+diff --git a/boost/type_traits/is_unsigned.hpp b/boost/type_traits/is_unsigned.hpp
+--- a/boost/type_traits/is_unsigned.hpp
++++ b/boost/type_traits/is_unsigned.hpp
+@@ -14,6 +14,7 @@
+ #include <boost/type_traits/is_enum.hpp>
+ #include <boost/type_traits/remove_cv.hpp>
+ 
++#include <type_traits>
+ #include <climits>
+ 
+ namespace boost {
+@@ -35,8 +36,12 @@ struct is_unsigned_values
+    // the correct answer.
+    //
+    typedef typename remove_cv<T>::type no_cv_t;
+-   static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
+-   static const no_cv_t zero = (static_cast<no_cv_t>(0));
++   template<class U, bool IsEnum> struct enum_or_self_t { typedef U type; };
++   template<class U> struct enum_or_self_t<U, true> { typedef typename std::underlying_type<U>::type type; };
++   typedef typename enum_or_self_t<no_cv_t, boost::is_enum<no_cv_t>::value>::type test_t;
++
++   static const test_t minus_one = (static_cast<test_t>(-1));
++   static const test_t zero = (static_cast<test_t>(0));
+ };
+ 
+ template <class T>

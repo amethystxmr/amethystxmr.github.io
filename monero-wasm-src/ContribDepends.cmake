@@ -23,8 +23,9 @@ function(read_depends_package_meta package out_version out_file_name)
         message(FATAL_ERROR "Missing contrib depends Makefile at ${DEPENDS_DIR}")
     endif()
 
+    # Query package metadata from contrib/depends via a temporary evaluated make target.
     execute_process(
-        COMMAND make -s "print-${package}_version" "print-${package}_download_file"
+        COMMAND make -s --eval "print-meta: ; @echo $(${package}_version); echo $(${package}_download_file)" print-meta
         WORKING_DIRECTORY "${DEPENDS_DIR}"
         RESULT_VARIABLE DEPENDS_META_RC
         OUTPUT_VARIABLE DEPENDS_META_OUT
@@ -52,6 +53,55 @@ function(read_depends_package_meta package out_version out_file_name)
     set(${out_file_name} "${PACKAGE_FILE_NAME}" PARENT_SCOPE)
 endfunction()
 
+function(find_boost_source_subdir boost_extract_dir out_subdir)
+    file(GLOB BOOST_DIR_CANDIDATES RELATIVE "${boost_extract_dir}" "${boost_extract_dir}/boost*")
+    foreach(candidate IN LISTS BOOST_DIR_CANDIDATES)
+        if(IS_DIRECTORY "${boost_extract_dir}/${candidate}"
+           AND EXISTS "${boost_extract_dir}/${candidate}/boost/type_traits/is_unsigned.hpp")
+            set(${out_subdir} "${candidate}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+    set(${out_subdir} "" PARENT_SCOPE)
+endfunction()
+
+function(apply_patch_with_reverse_check target_dir patch_file patch_label)
+    # `patch` uses hunk context matching (with fuzz), so it tolerates line shifts
+    # better than direct line-number anchored edits across minor upstream updates.
+    execute_process(
+        COMMAND patch --batch --forward --dry-run -F 3 -p1 -i "${patch_file}"
+        WORKING_DIRECTORY "${target_dir}"
+        RESULT_VARIABLE PATCH_FWD_DRY_RC
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+    if(PATCH_FWD_DRY_RC EQUAL 0)
+        execute_process(
+            COMMAND patch --batch --forward -F 3 -p1 -i "${patch_file}"
+            WORKING_DIRECTORY "${target_dir}"
+            RESULT_VARIABLE PATCH_APPLY_RC
+        )
+        if(NOT PATCH_APPLY_RC EQUAL 0)
+            message(FATAL_ERROR "Failed to apply ${patch_label}: ${patch_file}")
+        endif()
+        return()
+    endif()
+
+    execute_process(
+        COMMAND patch --batch --reverse --dry-run -F 3 -p1 -i "${patch_file}"
+        WORKING_DIRECTORY "${target_dir}"
+        RESULT_VARIABLE PATCH_REV_DRY_RC
+        OUTPUT_QUIET
+        ERROR_QUIET
+    )
+    if(PATCH_REV_DRY_RC EQUAL 0)
+        message(STATUS "Patch already applied (${patch_label}): ${patch_file}")
+        return()
+    endif()
+
+    message(FATAL_ERROR "Patch does not apply cleanly (${patch_label}): ${patch_file}")
+endfunction()
+
 
 
 #
@@ -60,83 +110,35 @@ endfunction()
 
 # == Boost ==
 read_depends_package_meta(boost BOOST_VERSION BOOST_ARCHIVE_NAME)
-set(BOOST_WITH_VERSION "boost-${BOOST_VERSION}")
 
 set(BOOST_ARCHIVE "${CMAKE_SOURCE_DIR}/monero/contrib/depends/sources/${BOOST_ARCHIVE_NAME}")
 set(BOOST_EXTRACT_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/boost")
 file(MAKE_DIRECTORY "${BOOST_EXTRACT_DIR}")
 message(STATUS "Using Boost from ${BOOST_EXTRACT_DIR}")
 
-
-
-if(NOT EXISTS "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}/boost")
+find_boost_source_subdir("${BOOST_EXTRACT_DIR}" BOOST_WITH_VERSION)
+if(BOOST_WITH_VERSION STREQUAL "")
     message(STATUS " =========== Extracting Boost...")
     file(ARCHIVE_EXTRACT
         INPUT "${BOOST_ARCHIVE}"
         DESTINATION "${BOOST_EXTRACT_DIR}"
     )
-    # TODO: Patch ${BUILD_DEPENDS_FOLDER}/boost/boost_1_84_0/boost/type_traits/is_unsigned.hpp
-    # Comment those lines:
-    #  static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
-    #  static const no_cv_t zero = (static_cast<no_cv_t>(0));
-    # And replace with (formatted of course):
-    #       typedef typename boost::conditional<
-    #       boost::is_enum<no_cv_t>::value,
-    #      typename std::underlying_type<no_cv_t>::type,
-    #      no_cv_t
-    #     >::type test_t;
-    #    static const test_t minus_one = static_cast<test_t>(-1);
-    #    static const test_t zero      = static_cast<test_t>(0);
-
-    if(1) # Patch the is_unsigned.hpp file
-        message(STATUS "==== Pathing boost")
-        set(BOOST_IS_UNSIGNED_HPP
-            "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}/boost/type_traits/is_unsigned.hpp"
-        )
-
-
-        file(COPY
-            "${BOOST_IS_UNSIGNED_HPP}"
-            DESTINATION "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}/boost/type_traits/tmp-backups"
-        )
-
-        file(WRITE "${BOOST_EXTRACT_DIR}/boost_is_unsigned.patch" "
---- a/boost/type_traits/is_unsigned.hpp
-+++ b/boost/type_traits/is_unsigned.hpp
-@@ -35,8 +35,14 @@
-    // the correct answer.
-    //
-    typedef typename remove_cv<T>::type no_cv_t;
--   static const no_cv_t minus_one = (static_cast<no_cv_t>(-1));
--   static const no_cv_t zero = (static_cast<no_cv_t>(0));
-+   typedef typename boost::conditional<
-+      boost::is_enum<no_cv_t>::value,
-+      typename std::underlying_type<no_cv_t>::type,
-+      no_cv_t
-+   >::type test_t;
-+
-+   static const test_t minus_one = static_cast<test_t>(-1);
-+   static const test_t zero      = static_cast<test_t>(0);
- };
- 
- template <class T>
-")
-
-
-        execute_process(
-            COMMAND patch --forward -p1 -i "${BOOST_EXTRACT_DIR}/boost_is_unsigned.patch"
-            WORKING_DIRECTORY "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}"
-            RESULT_VARIABLE PATCH_RESULT
-        )
-
-        if(NOT PATCH_RESULT EQUAL 0)
-            message(FATAL_ERROR "Failed to apply Boost is_unsigned.hpp patch")
-        endif()
-
+    find_boost_source_subdir("${BOOST_EXTRACT_DIR}" BOOST_WITH_VERSION)
+    if(BOOST_WITH_VERSION STREQUAL "")
+        message(FATAL_ERROR "Could not detect extracted Boost source dir in ${BOOST_EXTRACT_DIR}")
     endif()
 endif()
 set(BOOST_ROOT "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}" CACHE PATH "" FORCE)
 set(Boost_INCLUDE_DIR "${BOOST_ROOT}" CACHE PATH "" FORCE)
+
+set(BOOST_PATCH_DIR "${CMAKE_SOURCE_DIR}/patches/boost")
+if(EXISTS "${BOOST_PATCH_DIR}")
+    file(GLOB BOOST_PATCH_FILES "${BOOST_PATCH_DIR}/*.patch")
+    list(SORT BOOST_PATCH_FILES)
+    foreach(boost_patch IN LISTS BOOST_PATCH_FILES)
+        apply_patch_with_reverse_check("${BOOST_ROOT}" "${boost_patch}" "boost")
+    endforeach()
+endif()
 
 message(STATUS " BOOST_ROOT='${BOOST_ROOT}'")
 set(Boost_NO_SYSTEM_PATHS ON CACHE BOOL "" FORCE)
@@ -149,7 +151,8 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 set(BOOST_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/boost-install")
 file(MAKE_DIRECTORY "${BOOST_INSTALL_DIR}")
 if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
-   NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_locale.a")
+   NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_locale.a" OR
+   NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_regex.a")
     message(STATUS " =========== Building Boost...")
     set(BOOST_SRC_DIR "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}")
 
@@ -177,14 +180,24 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
     else()
         set(BOOST_B2_TOOLSET "clang")
     endif()
+    if(DEFINED CMAKE_CXX_STANDARD AND NOT CMAKE_CXX_STANDARD STREQUAL "")
+        set(BOOST_B2_CXXSTD "${CMAKE_CXX_STANDARD}")
+    else()
+        set(BOOST_B2_CXXSTD "14")
+    endif()
+    include(ProcessorCount)
+    ProcessorCount(BOOST_B2_JOBS)
+    if(NOT BOOST_B2_JOBS OR BOOST_B2_JOBS LESS 1)
+        set(BOOST_B2_JOBS 2)
+    endif()
     execute_process(
         COMMAND bash -lc
-        "./b2 -j \
+        "./b2 -j${BOOST_B2_JOBS} \
         toolset=${BOOST_B2_TOOLSET} \
-        target-os=none \
         link=static runtime-link=static \
         cxxflags='-O3' \
         linkflags='-O3' \
+        cxxstd=${BOOST_B2_CXXSTD} \
         --with-program_options \
         --with-filesystem \
         --with-chrono \
@@ -193,6 +206,8 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
         --with-date_time \
         --with-serialization \
         --with-locale \
+        --with-regex \
+        --with-atomic \
         --prefix='${BOOST_INSTALL_DIR}' \
         install"
         WORKING_DIRECTORY "${BOOST_SRC_DIR}"
@@ -215,7 +230,7 @@ message(STATUS "BOOST_ROOT='${BOOST_ROOT}'")
 message(STATUS "Boost_INCLUDE_DIR='${Boost_INCLUDE_DIR}'")
 message(STATUS "Boost_LIBRARY_DIR='${Boost_LIBRARY_DIR}'")
 
-find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono serialization program_options locale)
+find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono serialization program_options locale regex)
 
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
@@ -272,6 +287,7 @@ ExternalProject_Add(zeromq_ep
     -DZMQ_BUILD_TESTS=OFF
     -DZMQ_BUILD_TESTS_TIMEOUT=OFF
     -DZMQ_BUILD_FRAMEWORK=OFF
+    -DENABLE_CURVE=OFF
     -DZMQ_ENABLE_CURVE=OFF
     -DZMQ_HAVE_SO_KEEPALIVE=OFF
     -DZMQ_HAVE_EVENTFD=OFF
@@ -365,6 +381,8 @@ set_target_properties(sodium PROPERTIES
 # Optional: if your subprojects expect the old-style variables
 set(sodium_LIBRARIES "${SODIUM_INSTALL_DIR}/lib/libsodium.a" CACHE FILEPATH "" FORCE)
 set(sodium_INCLUDE_DIR "${SODIUM_INSTALL_DIR}/include" CACHE PATH "" FORCE)
+set(SODIUM_LIBRARY "${SODIUM_INSTALL_DIR}/lib/libsodium.a" CACHE FILEPATH "" FORCE)
+set(SODIUM_INCLUDE_DIR "${SODIUM_INSTALL_DIR}/include" CACHE PATH "" FORCE)
 
 
 include_directories(SYSTEM ${sodium_INCLUDE_DIR})

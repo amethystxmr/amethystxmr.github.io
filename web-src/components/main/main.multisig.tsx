@@ -27,7 +27,6 @@ function MultisigTabWrap({ children }: React.PropsWithChildren) {
 }
 
 const LAST_KEX_MESSAGE_ATTRIBUTE = "amethystxmr_last_kex_message";
-const LAST_MULTISIG_KEX_ROUND_ATTRIBUTE = "amethystxmr_last_multisig_kex_round";
 
 type LoadableString =
   | { type: "loading" }
@@ -86,9 +85,6 @@ export function MultisigTab({
   // Active multisig setup state
   const [myLastKexMessage, setMyLastKexMessage] =
     React.useState<LoadableString>({ type: "loading" });
-  const [myLastKexRound, setMyLastKexRound] = React.useState<LoadableString>({
-    type: "loading",
-  });
   const [othersRoundMessages, setOthersRoundMessages] = React.useState("");
 
   const isWalletSyncing =
@@ -132,18 +128,13 @@ export function MultisigTab({
 
     let cancelled = false;
     setMyLastKexMessage({ type: "loading" });
-    setMyLastKexRound({ type: "loading" });
 
-    Promise.all([
-      wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE),
-      wallet.get_attribute(LAST_MULTISIG_KEX_ROUND_ATTRIBUTE),
-    ])
-      .then(([lastKexMessage, lastKexRound]) => {
+    wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE)
+      .then((lastKexMessage) => {
         if (cancelled) {
           return;
         }
         setMyLastKexMessage({ type: "ready", value: lastKexMessage });
-        setMyLastKexRound({ type: "ready", value: lastKexRound });
       })
       .catch((e) => {
         if (cancelled) {
@@ -151,7 +142,6 @@ export function MultisigTab({
         }
         const message = (e as Error)?.message || "Unknown error";
         setMyLastKexMessage({ type: "error", error: message });
-        setMyLastKexRound({ type: "error", error: message });
       });
 
     return () => {
@@ -222,7 +212,6 @@ export function MultisigTab({
           threshold,
         );
         await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
-        await wallet.set_attribute(LAST_MULTISIG_KEX_ROUND_ATTRIBUTE, "1");
         await wallet.store();
       });
 
@@ -282,15 +271,6 @@ export function MultisigTab({
           messages,
         );
         await wallet.set_attribute(LAST_KEX_MESSAGE_ATTRIBUTE, nextKexMessage);
-
-        const nextRound =
-          myLastKexRound.type === "ready" && myLastKexRound.value !== ""
-            ? String(Number(myLastKexRound.value) + 1)
-            : "";
-        await wallet.set_attribute(
-          LAST_MULTISIG_KEX_ROUND_ATTRIBUTE,
-          nextRound,
-        );
         await wallet.store();
       });
 
@@ -314,7 +294,6 @@ export function MultisigTab({
   }, [
     alert,
     busy,
-    myLastKexRound,
     onRefresh,
     othersRoundMessages,
     requestValidWalletPassword,
@@ -563,14 +542,7 @@ export function MultisigTab({
     );
   }
 
-  const thisRound =
-    myLastKexRound.type === "loading"
-      ? "[...]"
-      : myLastKexRound.type === "error"
-        ? `[${myLastKexRound.error}]`
-        : myLastKexRound.value === ""
-          ? "[error]"
-          : Number(myLastKexRound.value) + 1;
+  const thisRound = multisigStatus.multisig_rounds_passed + 1;
 
   const totalRounds = multisigStatus.total - multisigStatus.threshold + 2;
 

@@ -175,6 +175,8 @@ interface multisig_account_status {
   kex_is_done: boolean;
   // is the multisig account ready to use?
   is_ready: boolean;
+  // number of setup rounds already completed by this wallet
+  multisig_rounds_passed: number;
   // multisig is: M-of-N
   threshold: number; // M
   total: number; // N

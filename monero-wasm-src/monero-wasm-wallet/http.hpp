@@ -53,7 +53,7 @@ public:
         m_is_connected = false;
         return true;
     }
-    bool is_connected(bool *ssl = NULL)
+    bool is_connected(bool *ssl = nullptr)
     {
         printf("js_http_client(%i)::is_connected called\n", m_my_id);
         return m_is_connected;
@@ -63,7 +63,7 @@ public:
         const boost::string_ref method,
         const boost::string_ref body,
         std::chrono::milliseconds timeout,
-        const epee::net_utils::http::http_response_info **ppresponse_info = NULL,
+        const epee::net_utils::http::http_response_info **ppresponse_info = nullptr,
         const epee::net_utils::http::fields_list &additional_params = epee::net_utils::http::fields_list())
     {
         if (m_is_busy)
@@ -182,11 +182,20 @@ public:
         const boost::string_ref uri,
         std::chrono::milliseconds timeout,
         const std::string &body = std::string(),
-        const epee::net_utils::http::http_response_info **ppresponse_info = NULL,
+        const epee::net_utils::http::http_response_info **ppresponse_info = nullptr,
         const epee::net_utils::http::fields_list &additional_params = epee::net_utils::http::fields_list())
     {
         // TODO: What is CRITICAL_REGION_LOCAL
         return invoke(uri, "GET", body, timeout, ppresponse_info, additional_params);
+    }
+    bool invoke_post(
+        const boost::string_ref uri,
+        const std::string &body,
+        std::chrono::milliseconds timeout,
+        const epee::net_utils::http::http_response_info **ppresponse_info = nullptr,
+        const epee::net_utils::http::fields_list &additional_params = epee::net_utils::http::fields_list())
+    {
+        return invoke(uri, "POST", body, timeout, ppresponse_info, additional_params);
     }
     uint64_t get_bytes_sent() const
     {
