@@ -363,7 +363,7 @@ export function OtherTab({
             title={
               isViewOnly === true
                 ? "Export key images is unavailable for view-only wallet"
-                : undefined
+                : "Exported key images can be imported into another view-only wallet so it can show accurate outgoing history and balance"
             }
             onClick={() => {
               setIsExportModeDialogOpen(true);
@@ -374,7 +374,12 @@ export function OtherTab({
           <Button
             className="w-full py-2 text-sm font-semibold"
             variant="neutral"
-            disabled={isBusy}
+            disabled={isBusy || hasUnknownKeyImages !== true}
+            title={
+              hasUnknownKeyImages === true
+                ? "Import key images data"
+                : "Import is not needed now because this wallet has no missing key images"
+            }
             onClick={() => {
               void onImportKeyImages();
             }}
