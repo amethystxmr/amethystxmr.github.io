@@ -16,20 +16,18 @@ function useMounted() {
 }
 
 function useAppOverlayRoot(mounted: boolean) {
-  const [root, setRoot] = React.useState<HTMLElement | null>(null);
+  const [root, setRoot] = React.useState<HTMLElement | null>(() => {
+    if (typeof document === "undefined") {
+      return null;
+    }
+    return document.querySelector<HTMLElement>(APP_OVERLAY_ROOT_SELECTOR);
+  });
 
   React.useEffect(() => {
     if (!mounted) {
       return;
     }
-
-    const resolveRoot = () => {
-      setRoot(document.querySelector<HTMLElement>(APP_OVERLAY_ROOT_SELECTOR));
-    };
-
-    resolveRoot();
-    const id = window.setTimeout(resolveRoot, 0);
-    return () => window.clearTimeout(id);
+    setRoot(document.querySelector<HTMLElement>(APP_OVERLAY_ROOT_SELECTOR));
   }, [mounted]);
 
   return root;
@@ -47,9 +45,10 @@ export function CenteredOverlayBackdrop({
     return null;
   }
 
-  const portalRoot = isMobileView ? document.body : appOverlayRoot ?? document.body;
-  const positionClass =
-    !isMobileView && appOverlayRoot ? "absolute" : "fixed";
+  const portalRoot = isMobileView
+    ? document.body
+    : appOverlayRoot ?? document.body;
+  const positionClass = !isMobileView && appOverlayRoot ? "absolute" : "fixed";
 
   return createPortal(
     <div
@@ -71,9 +70,10 @@ export function AppFullscreenOverlay({ children }: React.PropsWithChildren) {
     return null;
   }
 
-  const portalRoot = isMobileView ? document.body : appOverlayRoot ?? document.body;
-  const positionClass =
-    !isMobileView && appOverlayRoot ? "absolute" : "fixed";
+  const portalRoot = isMobileView
+    ? document.body
+    : appOverlayRoot ?? document.body;
+  const positionClass = !isMobileView && appOverlayRoot ? "absolute" : "fixed";
   const zIndexClass = isMobileView ? "z-[70]" : "z-[60]";
 
   return createPortal(
