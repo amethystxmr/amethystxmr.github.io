@@ -162,7 +162,7 @@ export function SendTab({
   scheduleRefresh: () => void;
   price: number | null;
   showMultisigActions: boolean;
-  isViewOnly: boolean;
+  isViewOnly: boolean | undefined;
 }) {
   const [recipients, setRecipients] = React.useState<RecipientInput[]>([
     { address: "", amount: "" },
@@ -876,7 +876,7 @@ export function SendTab({
   );
 
   const renderEnterTxInfoData = () =>
-    state.type === "entering" && !isViewOnly ? (
+    state.type === "entering" && isViewOnly === false ? (
       <>
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -1051,7 +1051,7 @@ export function SendTab({
           {state.type === "entering" && (
             <>
               {renderEnterTxInfoData()}
-              {isViewOnly && (
+              {isViewOnly === true && (
                 <SurfaceCard className="text-sm text-white/75">
                   Wallet is view-only
                 </SurfaceCard>
@@ -1068,7 +1068,7 @@ export function SendTab({
                   >
                     Show coins
                   </Button>
-                  {!isViewOnly && showMultisigActions && (
+                  {isViewOnly === false && showMultisigActions && (
                     <Button
                       variant="neutral"
                       type="button"
