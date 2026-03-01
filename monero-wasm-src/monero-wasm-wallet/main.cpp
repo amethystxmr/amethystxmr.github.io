@@ -5,6 +5,7 @@
 #include <utility>
 #include "wallet/wallet2.h"
 #include "wallet/api/wallet2_api.h"
+#include "version.h"
 #include "mnemonics/electrum-words.h"
 #include <thread>
 #include "memwipe.h"
@@ -1590,6 +1591,10 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
         "set_max_concurrency",
         emscripten::optional_override([](uint32_t threads) -> void
                                       { tools::set_max_concurrency(std::max<uint32_t>(1, threads)); }));
+    emscripten::function(
+        "get_monero_version_full",
+        emscripten::optional_override([]() -> std::string
+                                      { return MONERO_VERSION_FULL; }));
 };
 
 int main()

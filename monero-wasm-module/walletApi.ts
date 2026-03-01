@@ -275,6 +275,7 @@ interface Module {
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
   set_max_concurrency(threads: number): void;
+  get_monero_version_full(): string;
   decodePolyseed(moneroPolyseed: string): {
     birthday: bigint;
     privateKey: Uint8Array;
@@ -350,6 +351,13 @@ export function decodePolyseed(moneroPolyseed: string) {
     throw new Error("Module not initialized");
   }
   return module.decodePolyseed(moneroPolyseed);
+}
+
+export function getMoneroVersionFull() {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.get_monero_version_full();
 }
 
 export async function loadFilesystem() {
