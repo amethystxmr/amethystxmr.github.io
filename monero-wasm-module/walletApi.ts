@@ -439,6 +439,27 @@ export function createWallet() {
   return wallet;
 }
 
+export function readFile(path: string): Uint8Array {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.FS.readFile(path);
+}
+
+export function writeFile(path: string, data: Uint8Array): void {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  module.FS.writeFile(path, data);
+}
+
+export function unlinkFile(path: string): void {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  module.FS.unlink(path);
+}
+
 export function isWalletFileExists(walletName: string) {
   const names = new Set(module.FS.readdir("."));
   return names.has(walletName) || names.has(`${walletName}.keys`);
