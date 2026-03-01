@@ -1338,18 +1338,27 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   const [daemonTestStatus, setDaemonTestStatus] =
     React.useState<DaemonTestStatus>("idle");
   const buildInfoText = React.useMemo(() => {
-    if (import.meta.env.DEV) {
-      return "Development mode via Vite dev server.";
-    }
-    const ts = import.meta.env.VITE_BUILD_TIMESTAMP || "unknown time";
-    const hash = import.meta.env.VITE_GIT_HASH || "unknown";
-    return `Built ${ts}, git ${hash}.`;
+    const ts = import.meta.env.DEV
+      ? new Date().toISOString()
+      : import.meta.env.VITE_BUILD_TIMESTAMP || "";
+    const hash = import.meta.env.DEV
+      ? "000000000000"
+      : import.meta.env.VITE_GIT_HASH || "unknown";
+    const parsedTs = ts ? new Date(ts) : null;
+    const prettyTs =
+      parsedTs && Number.isFinite(parsedTs.getTime())
+        ? new Intl.DateTimeFormat(undefined, {
+            dateStyle: "medium",
+            timeStyle: "short",
+          }).format(parsedTs)
+        : ts || "unknown time";
+    return `Built ${prettyTs}, git ${hash}`;
   }, []);
   const moneroVersionText = React.useMemo(() => {
     try {
-      return `Monero core: ${getMoneroVersionFull()}`;
+      return `Monero ${getMoneroVersionFull()}`;
     } catch {
-      return "Monero core: unknown";
+      return "Monero unknown";
     }
   }, []);
 
@@ -1507,12 +1516,13 @@ function OptionsView({ onBack }: { onBack: () => void }) {
         </FormRow>
       </SectionPanel>
 
-      <div className="mt-1">
-        <div className="mb-2 text-center text-[10px] text-white/45">
-          {buildInfoText}
-        </div>
-        <div className="mb-2 text-center text-[10px] text-white/45">
-          {moneroVersionText}
+      <div className="mt-2">
+        <div className="mb-3 px-2 text-center text-[10px] text-white/45">
+          <div className="space-y-1 sm:hidden">
+            <div>{buildInfoText}</div>
+            <div>{moneroVersionText}</div>
+          </div>
+          <div className="hidden sm:block">{`${buildInfoText}, ${moneroVersionText}`}</div>
         </div>
         <ButtonsHolder>
           <Button className="w-full" variant="soft" onClick={onBack}>
