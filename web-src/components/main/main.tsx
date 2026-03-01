@@ -525,7 +525,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         status.hasMultisigPartialKeyImages
       ? "User action required in multisig tab to import multisig data"
       : status.hasUnknownKeyImages
-        ? "Some transactions have unknown key images, please check transactions tab"
+        ? "We do not know some of key images in this wallet, check transactions tab for details"
         : "";
 
   return (
