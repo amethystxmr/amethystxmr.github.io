@@ -164,8 +164,8 @@ export function TransactionsTab({
   }, [paymentProofState]);
 
   const unknownKeyImagesMessage = isMultisigWallet
-    ? "We are missing key images for some transactions. Outgoing tx-es might be listed here as incoming and balance might be wrong. Import multisig data in the Multisig tab."
-    : "We are missing key images for some transactions. Outgoing tx-es might be listed here as incoming and balance might be wrong. Import data in Other tab.";
+    ? "We are missing key images for some transactions. Outgoing transactions might be listed here as incoming and your balance might be wrong. Import multisig key images in the Multisig tab."
+    : "We are missing key images for some transactions. Outgoing transactions might be listed here as incoming and your balance might be wrong. Import key images in the Other tab.";
 
   return (
     <>
