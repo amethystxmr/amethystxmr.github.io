@@ -12,6 +12,7 @@ export const TextArea = React.forwardRef<
       ref={ref}
       className={clsx(
         baseClasses,
+        "resize-none",
         error
           ? "border-red-400 focus-visible:border-red-400 focus-visible:ring-4 focus-visible:ring-red-400/30"
           : "border-white/20 focus-visible:border-white/40 focus-visible:ring-2 focus-visible:ring-white/20",
