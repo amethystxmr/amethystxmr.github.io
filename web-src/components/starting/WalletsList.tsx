@@ -23,6 +23,7 @@ import {
   decodePolyseed,
   deleteWalletFiles,
   getMaxConcurrency,
+  getMoneroVersionFull,
   getWalletFilesData,
   getRecommendedMaxConcurrency,
   isWalletFileExists,
@@ -1344,6 +1345,13 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     const hash = import.meta.env.VITE_GIT_HASH || "unknown";
     return `Built ${ts}, git ${hash}.`;
   }, []);
+  const moneroVersionText = React.useMemo(() => {
+    try {
+      return `Monero core: ${getMoneroVersionFull()}`;
+    } catch {
+      return "Monero core: unknown";
+    }
+  }, []);
 
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
@@ -1502,6 +1510,9 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       <div className="mt-1">
         <div className="mb-2 text-center text-[10px] text-white/45">
           {buildInfoText}
+        </div>
+        <div className="mb-2 text-center text-[10px] text-white/45">
+          {moneroVersionText}
         </div>
         <ButtonsHolder>
           <Button className="w-full" variant="soft" onClick={onBack}>
