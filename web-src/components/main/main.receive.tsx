@@ -101,7 +101,7 @@ function AddressRow({
             variant="primary"
             className="!flex-none rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            {isQrOpen ? "Hide QR" : "QR"}
+            {isQrOpen ? "✖ Hide QR" : "▣ QR"}
           </Button>
           <Button
             type="button"
@@ -110,10 +110,10 @@ function AddressRow({
             className="!flex-none rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
             {copied === "ok"
-              ? "Copied"
+              ? "✓ Copied"
               : copied === "fail"
-                ? "Copy failed"
-                : "Copy"}
+                ? "✖ Copy failed"
+                : "⎘ Copy"}
           </Button>
         </div>
       </div>

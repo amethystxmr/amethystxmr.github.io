@@ -382,7 +382,7 @@ export function MultisigTab({
                     void handlePrepareMultisig();
                   }}
                 >
-                  {busy ? "Preparing multisig..." : "Prepare multisig"}
+                  {busy ? "→ Preparing multisig..." : "→ Prepare multisig"}
                 </Button>
               </>
             ) : (
@@ -517,8 +517,8 @@ export function MultisigTab({
                   }}
                 >
                   {busy
-                    ? `Making ${threshold}/${participants} multisig...`
-                    : `Make ${threshold}/${participants} multisig`}
+                    ? `→ Making ${threshold}/${participants} multisig...`
+                    : `→ Make ${threshold}/${participants} multisig`}
                 </Button>
               </>
             )}
@@ -588,7 +588,7 @@ export function MultisigTab({
               void handleExchangeMultisigKeys();
             }}
           >
-            {busy ? "Exchanging keys..." : "Exchange multisig keys"}
+            {busy ? "→ Exchanging keys..." : "→ Exchange multisig keys"}
           </Button>
         </div>
       </MultisigTabWrap>
@@ -729,8 +729,8 @@ function MultisigReady({
               }}
             >
               {busyAction === "export"
-                ? "Exporting..."
-                : "Export latest multisig data"}
+                ? "⬇︎ Exporting..."
+                : "⬇︎ Export latest multisig data"}
             </Button>
             <Button
               variant="neutral"
@@ -741,8 +741,8 @@ function MultisigReady({
               }}
             >
               {busyAction === "import"
-                ? "Importing..."
-                : "Import participant data"}
+                ? "⬆︎ Importing..."
+                : "⬆︎ Import participant data"}
             </Button>
           </div>
         </div>

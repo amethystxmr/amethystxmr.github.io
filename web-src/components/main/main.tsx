@@ -609,7 +609,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           tabs={[
             {
               key: "receive",
-              label: "Receive",
+              label: "⬇︎ Receive",
               disabled: isMainTabsLockedByMultisig,
               content: (
                 <ReceiveAddresses
@@ -629,13 +629,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             },
             {
               key: "send",
-              label: "Send",
+              label: "⬆︎ Send",
               disabled: isMainTabsLockedByMultisig,
               content: sendTabContent,
             },
             {
               key: "transactions",
-              label: "Transactions",
+              label: "☰ Transactions",
               disabled: isMainTabsLockedByMultisig,
               content: (
                 <TransactionsTab
@@ -656,7 +656,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               ? [
                   {
                     key: "multisig",
-                    label: "Multisig",
+                    label: "✎ Multisig",
                     content: (
                       <MultisigTab
                         wallet={wallet}
@@ -676,7 +676,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               : []),
             {
               key: "other",
-              label: "Other",
+              label: "⚙ Other",
               content: (
                 <OtherTab
                   onExit={onExit}
