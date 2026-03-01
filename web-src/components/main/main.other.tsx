@@ -145,7 +145,8 @@ export function OtherTab({
       : "Waiting for daemon height...";
 
   const isSeedButtonDisabled = multisigStatus === null;
-  const [isExportModeDialogOpen, setIsExportModeDialogOpen] = React.useState(false);
+  const [isExportModeDialogOpen, setIsExportModeDialogOpen] =
+    React.useState(false);
   const [busyAction, setBusyAction] = React.useState<
     "idle" | "export" | "import"
   >("idle");
