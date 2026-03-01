@@ -21,6 +21,21 @@ export declare class MoneroWasmWallet {
     multisigDataHex: string,
     createAddressFile: boolean,
   ): Promise<boolean>;
+  generate_from_keys(
+    fileName: string,
+    password: string,
+    address: string,
+    secretViewKey: Uint8Array,
+    secretSpendKey: Uint8Array,
+    createAddressFile: boolean,
+  ): Promise<boolean>;
+  generate_view_only_from_keys(
+    fileName: string,
+    password: string,
+    address: string,
+    secretViewKey: Uint8Array,
+    createAddressFile: boolean,
+  ): Promise<boolean>;
   is_synced(): Promise<boolean>;
   store(): Promise<void>;
   set_attribute(key: string, value: string): Promise<boolean>;
@@ -40,6 +55,8 @@ export declare class MoneroWasmWallet {
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
+  watch_only(): Promise<boolean>;
+  is_deterministic(): Promise<boolean>;
   get_wallet_file(): Promise<string>;
   get_tx_proof(txid: string, dstaddress: string, note: string): Promise<string>;
   get_tx_key(txid: string): Promise<string>;
@@ -79,6 +96,7 @@ export declare class MoneroWasmWallet {
     index_minor: number,
   ): Promise<string>;
   get_wallet_addresses(accountId: number): Promise<EmbindVector<WalletAddress>>;
+  get_keys(accountIdx: number): Promise<WalletKeys>;
   add_subaddress(index_major: number, label: string): Promise<void>;
   transfer_prepare(
     destinations: string[],
@@ -166,6 +184,18 @@ export interface WalletAddress {
   address: string;
   label: string;
   indexMinor: number;
+}
+
+export interface WalletKeys {
+  address: string;
+  viewKey: {
+    private: Uint8Array;
+    public: Uint8Array;
+  };
+  spendKey: {
+    private: Uint8Array | null;
+    public: Uint8Array;
+  };
 }
 
 interface multisig_account_status {

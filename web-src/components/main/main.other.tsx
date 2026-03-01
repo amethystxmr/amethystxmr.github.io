@@ -4,24 +4,36 @@ import {
   MultisigAccountStatus,
   MoneroWasmWallet,
   PaymentDetailsTransformed,
+  WalletKeys,
 } from "../../../monero-wasm-module/walletApi";
 import {
   Button,
   ButtonsHolder,
+  FullscreenOverlayPanel,
   OverlayDialog,
   TextArea,
   Toggle,
   useAlert,
+  useIsMobileView,
 } from "../ui";
-import { copyToClipboard, formatWalletTimestamp, withFsLock } from "../utils";
+import {
+  bytesToHex,
+  copyToClipboard,
+  formatWalletTimestamp,
+  withFsLock,
+} from "../utils";
 
 type SeedRevealState =
-  | { type: "hidden-idle" }
-  | { type: "hidden-loaded"; seed: string }
-  | { type: "hidden-error"; error: string }
-  | { type: "visible-loading" }
-  | { type: "visible-loaded"; seed: string }
-  | { type: "visible-error"; error: string };
+  | { open: false }
+  | { open: true; type: "loading" }
+  | {
+      open: true;
+      type: "loaded";
+      seed: string | null;
+      seedMessage: string | null;
+      keys: WalletKeys;
+    }
+  | { open: true; type: "error"; error: string };
 
 export function OtherTab({
   onExit,
@@ -47,7 +59,7 @@ export function OtherTab({
   priceFetchedAt: number | null;
 }) {
   const [seedState, setSeedState] = React.useState<SeedRevealState>({
-    type: "hidden-idle",
+    open: false,
   });
   const [seedCopyState, setSeedCopyState] = React.useState<
     "idle" | "ok" | "fail"
@@ -60,6 +72,10 @@ export function OtherTab({
     busy: false,
   });
   const alert = useAlert();
+  const isMobileView = useIsMobileView();
+  const seedRows = isMobileView ? 6 : 2;
+  const addressRows = isMobileView ? 3 : 1;
+  const keyRows = isMobileView ? 2 : 1;
 
   React.useEffect(() => {
     const timer = window.setInterval(() => {
@@ -115,62 +131,56 @@ export function OtherTab({
       ? "No confirmed history found yet, using current daemon height."
       : "Waiting for daemon height...";
 
-  const isSeedVisible =
-    seedState.type === "visible-loading" ||
-    seedState.type === "visible-loaded" ||
-    seedState.type === "visible-error";
   const isSeedButtonDisabled = multisigStatus === null;
 
-  const onToggleSeed = async () => {
+  const onOpenSeedKeys = async () => {
     if (multisigStatus === null) {
-      return;
-    }
-    if (seedState.type === "visible-loading") {
-      setSeedState({ type: "hidden-idle" });
-      return;
-    }
-    if (seedState.type === "visible-loaded") {
-      setSeedState({ type: "hidden-loaded", seed: seedState.seed });
-      return;
-    }
-    if (seedState.type === "visible-error") {
-      setSeedState({ type: "hidden-error", error: seedState.error });
-      return;
-    }
-    if (seedState.type === "hidden-loaded") {
-      setSeedState({ type: "visible-loaded", seed: seedState.seed });
-      return;
-    }
-    if (seedState.type === "hidden-error") {
-      setSeedState({ type: "visible-error", error: seedState.error });
       return;
     }
 
     if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
       setSeedState({
-        type: "visible-error",
+        open: true,
+        type: "error",
         error: "Unable to get seed while multisig setup is in progress",
       });
       return;
     }
 
-    setSeedState({ type: "visible-loading" });
+    setSeedState({ open: true, type: "loading" });
     try {
-      const nextSeed = multisigStatus.multisig_is_active
-        ? await wallet.get_multisig_seed("")
-        : await wallet.get_seed("English", "");
-      setSeedState({ type: "visible-loaded", seed: nextSeed });
+      const keys = await wallet.get_keys(0);
+      let seed: string | null = null;
+      let seedMessage: string | null = null;
+
+      try {
+        if (multisigStatus.multisig_is_active) {
+          seed = await wallet.get_multisig_seed("");
+        } else {
+          const deterministic = await wallet.is_deterministic();
+          if (!deterministic) {
+            seedMessage = "Wallet is not deterministic";
+          } else {
+            seed = await wallet.get_seed("English", "");
+          }
+        }
+      } catch (e) {
+        seedMessage = (e as Error).message || "Failed to load wallet seed";
+      }
+
+      setSeedState({ open: true, type: "loaded", seed, seedMessage, keys });
     } catch (e) {
-      console.error("Failed to load wallet seed:", e);
+      console.error("Failed to load wallet seed/keys:", e);
       setSeedState({
-        type: "visible-error",
+        open: true,
+        type: "error",
         error: (e as Error).message || "Unknown error",
       });
     }
   };
 
   const onCopySeed = async () => {
-    if (seedState.type !== "visible-loaded") {
+    if (!seedState.open || seedState.type !== "loaded" || !seedState.seed) {
       return;
     }
 
@@ -219,62 +229,12 @@ export function OtherTab({
         className="w-full py-2 text-sm font-semibold"
         variant="neutral"
         disabled={isSeedButtonDisabled}
-        onClick={onToggleSeed}
+        onClick={() => {
+          void onOpenSeedKeys();
+        }}
       >
-        {isSeedVisible ? "Hide seed phrase" : "Show seed phrase"}
+        Show seed/keys
       </Button>
-      {isSeedVisible && (
-        <div className="-mt-2 space-y-2 rounded-lg bg-white/6 p-2.5">
-          <div className="text-[11px] text-white/50">
-            Suggested restore scan start block (
-            {suggestedRestoreSourceText.toLowerCase()})
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-mono text-sm text-white/90">
-              {suggestedRestoreHeight !== null
-                ? suggestedRestoreHeight.toString()
-                : "Loading..."}
-              {firstConfirmedDateText ? (
-                <span className="font-sans text-sm text-white/60">
-                  {" "}
-                  ({firstConfirmedDateText})
-                </span>
-              ) : null}
-            </div>
-            <Button
-              type="button"
-              variant="soft"
-              className="!flex-none px-2.5 py-1 text-xs"
-              disabled={seedState.type !== "visible-loaded"}
-              onClick={() => {
-                void onCopySeed();
-              }}
-            >
-              {seedCopyState === "ok"
-                ? "Copied"
-                : seedCopyState === "fail"
-                  ? "Copy failed"
-                  : "Copy"}
-            </Button>
-          </div>
-          {seedState.type === "visible-loading" ? (
-            <div className="text-xs text-white/60">Loading seed...</div>
-          ) : seedState.type === "visible-error" ? (
-            <div className="text-xs text-red-300">{seedState.error}</div>
-          ) : (
-            <TextArea
-              readOnly
-              rows={3}
-              className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
-              value={
-                seedState.type === "visible-loaded"
-                  ? seedState.seed
-                  : "Seed unavailable"
-              }
-            />
-          )}
-        </div>
-      )}
 
       <Button
         className="w-full py-2 text-sm font-semibold"
@@ -384,6 +344,130 @@ export function OtherTab({
             </ButtonsHolder>
           </form>
         </OverlayDialog>
+      )}
+      {seedState.open && (
+        <FullscreenOverlayPanel>
+          <div className="flex h-full w-full flex-col">
+            <div className="flex items-center justify-between gap-2 pb-2">
+              <div className="text-base font-semibold text-white">
+                Seed and keys
+              </div>
+              <Button
+                type="button"
+                variant="soft"
+                className="!flex-none px-3 py-1.5 text-xs"
+                onClick={() => {
+                  setSeedState({ open: false });
+                }}
+              >
+                Close
+              </Button>
+            </div>
+
+            <div className="scrollbar-glass scrollbar-hidden-mobile flex-1 space-y-3 overflow-y-auto rounded-xl bg-white/[0.03] p-3 ring-1 ring-white/10">
+              <div className="text-[11px] text-white/50">
+                Suggested restore scan start block (
+                {suggestedRestoreSourceText.toLowerCase()})
+              </div>
+              <div className="font-mono text-sm text-white/90">
+                {suggestedRestoreHeight !== null
+                  ? suggestedRestoreHeight.toString()
+                  : "Loading..."}
+                {firstConfirmedDateText ? (
+                  <span className="font-sans text-sm text-white/60">
+                    {" "}
+                    ({firstConfirmedDateText})
+                  </span>
+                ) : null}
+              </div>
+
+              {seedState.type === "loading" ? (
+                <div className="text-xs text-white/60">
+                  Loading seed/keys...
+                </div>
+              ) : seedState.type === "error" ? (
+                <div className="text-xs text-red-300">{seedState.error}</div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-white/55">Seed</div>
+                    {seedState.seed ? (
+                      <Button
+                        type="button"
+                        variant="soft"
+                        className="!flex-none px-2.5 py-1 text-xs"
+                        onClick={() => {
+                          void onCopySeed();
+                        }}
+                      >
+                        {seedCopyState === "ok"
+                          ? "Copied"
+                          : seedCopyState === "fail"
+                            ? "Copy failed"
+                            : "Copy"}
+                      </Button>
+                    ) : null}
+                  </div>
+                  <TextArea
+                    readOnly
+                    rows={seedRows}
+                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    value={
+                      seedState.seed ??
+                      (seedState.seedMessage
+                        ? `(${seedState.seedMessage})`
+                        : "")
+                    }
+                  />
+
+                  <div className="text-xs text-white/55">Address</div>
+                  <TextArea
+                    readOnly
+                    rows={addressRows}
+                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    value={seedState.keys.address}
+                  />
+
+                  <div className="text-xs text-white/55">Private view key</div>
+                  <TextArea
+                    readOnly
+                    rows={keyRows}
+                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    value={bytesToHex(seedState.keys.viewKey.private)}
+                  />
+
+                  <div className="text-xs text-white/55">Public view key</div>
+                  <TextArea
+                    readOnly
+                    rows={keyRows}
+                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    value={bytesToHex(seedState.keys.viewKey.public)}
+                  />
+
+                  <div className="text-xs text-white/55">Private spend key</div>
+                  <TextArea
+                    readOnly
+                    rows={keyRows}
+                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    value={
+                      seedState.keys.spendKey.private
+                        ? bytesToHex(seedState.keys.spendKey.private)
+                        : "(Not available)"
+                    }
+                  />
+
+                  <div className="text-xs text-white/55">Public spend key</div>
+                  <TextArea
+                    readOnly
+                    rows={keyRows}
+                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    value={bytesToHex(seedState.keys.spendKey.public)}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        </FullscreenOverlayPanel>
       )}
     </div>
   );

@@ -156,11 +156,13 @@ export function SendTab({
   scheduleRefresh,
   price,
   showMultisigActions,
+  isViewOnly,
 }: {
   wallet: MoneroWasmWallet;
   scheduleRefresh: () => void;
   price: number | null;
   showMultisigActions: boolean;
+  isViewOnly: boolean | undefined;
 }) {
   const [recipients, setRecipients] = React.useState<RecipientInput[]>([
     { address: "", amount: "" },
@@ -873,6 +875,174 @@ export function SendTab({
     </>
   );
 
+  const renderEnterTxInfoData = () =>
+    state.type === "entering" && isViewOnly === false ? (
+      <>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <Label>Recipients</Label>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="soft"
+                type="button"
+                onClick={addRecipient}
+                className="!flex-none px-2.5 py-1 text-xs"
+              >
+                Add destination
+              </Button>
+              <Button
+                variant="soft"
+                type="button"
+                onClick={() => setScannerOpen((s) => !s)}
+                className="!flex-none px-2.5 py-1 text-xs"
+              >
+                {scannerOpen ? "Close scanner" : "Scan QR"}
+              </Button>
+            </div>
+          </div>
+
+          {scannerOpen && (
+            <SurfaceCard className="space-y-2 p-2.5">
+              <video
+                ref={videoRef}
+                className="w-full rounded-lg bg-black/30"
+                autoPlay
+                playsInline
+                muted
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="soft"
+                  className="w-full text-xs"
+                  onClick={toggleCamera}
+                  disabled={cameraState.deviceIds.length < 2}
+                >
+                  Switch camera
+                </Button>
+                <Button
+                  type="button"
+                  variant="soft"
+                  className="w-full text-xs"
+                  onClick={() => {
+                    void toggleTorch();
+                  }}
+                  disabled={
+                    !cameraState.torchAvailable || cameraState.torchBusy
+                  }
+                >
+                  {cameraState.torchOn ? "Light off" : "Light on"}
+                </Button>
+              </div>
+              <div className="text-xs text-white/55">
+                Scan a QR with one or many recipients as plain addresses or{" "}
+                <span className="font-mono">monero:</span> URIs.
+              </div>
+              {scannerError && (
+                <div className="rounded-md bg-red-500/10 p-2 text-xs text-red-300 ring-1 ring-red-500/30">
+                  {scannerError}
+                </div>
+              )}
+            </SurfaceCard>
+          )}
+
+          {recipients.map((recipient, index) => {
+            const parsedAmount = parseXmrToAtomic(recipient.amount);
+            const fiatValue =
+              parsedAmount !== null && parsedAmount > 0n && price
+                ? toFiat(parsedAmount, price)
+                : null;
+
+            return (
+              <SurfaceCard key={index} className="space-y-3 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-white/60">
+                    Recipient #{index + 1}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="soft"
+                    className="!flex-none px-2.5 py-1 text-xs"
+                    onClick={() => removeRecipient(index)}
+                    disabled={recipients.length <= 1}
+                  >
+                    Remove
+                  </Button>
+                </div>
+
+                <div>
+                  <Label>Recipient address</Label>
+                  <Input
+                    value={recipient.address}
+                    onChange={(e) =>
+                      updateRecipient(index, {
+                        address: e.target.value,
+                      })
+                    }
+                    placeholder="Enter Monero address"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="font-mono text-sm"
+                  />
+                </div>
+
+                <div>
+                  <Label>Amount (XMR)</Label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={recipient.amount}
+                    onChange={(e) =>
+                      updateRecipient(index, {
+                        amount: e.target.value,
+                      })
+                    }
+                    placeholder="0.000000000000"
+                    autoComplete="off"
+                  />
+                  {fiatValue !== null && (
+                    <div className="mt-1 text-xs text-white/50">
+                      ≈ {fiatValue.toFixed(2)} EUR
+                    </div>
+                  )}
+                </div>
+              </SurfaceCard>
+            );
+          })}
+
+          <div>
+            <Label>Priority</Label>
+            <Select.Root
+              value={String(feePriority)}
+              onValueChange={(next) => {
+                setFeePriority(Number(next) as FeePriorityValue);
+              }}
+            >
+              <Select.Trigger>
+                <Select.Value>{FEE_PRIORITY_LABELS[feePriority]}</Select.Value>
+              </Select.Trigger>
+              <Select.Content>
+                {FEE_PRIORITY_OPTIONS.map((option) => (
+                  <Select.Option key={option.value} value={option.value}>
+                    {option.label}
+                  </Select.Option>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </div>
+        </div>
+
+        <Button
+          variant="primary"
+          disabled={!isValid}
+          onClick={handleCreateTx}
+          className="w-full text-sm font-semibold"
+        >
+          Review transaction
+        </Button>
+      </>
+    ) : null;
+
   return (
     <>
       <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
@@ -880,167 +1050,12 @@ export function SendTab({
           {/* ENTERING */}
           {state.type === "entering" && (
             <>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <Label>Recipients</Label>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="soft"
-                      type="button"
-                      onClick={addRecipient}
-                      className="!flex-none px-2.5 py-1 text-xs"
-                    >
-                      Add destination
-                    </Button>
-                    <Button
-                      variant="soft"
-                      type="button"
-                      onClick={() => setScannerOpen((s) => !s)}
-                      className="!flex-none px-2.5 py-1 text-xs"
-                    >
-                      {scannerOpen ? "Close scanner" : "Scan QR"}
-                    </Button>
-                  </div>
-                </div>
-
-                {scannerOpen && (
-                  <SurfaceCard className="space-y-2 p-2.5">
-                    <video
-                      ref={videoRef}
-                      className="w-full rounded-lg bg-black/30"
-                      autoPlay
-                      playsInline
-                      muted
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="soft"
-                        className="w-full text-xs"
-                        onClick={toggleCamera}
-                        disabled={cameraState.deviceIds.length < 2}
-                      >
-                        Switch camera
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="soft"
-                        className="w-full text-xs"
-                        onClick={() => {
-                          void toggleTorch();
-                        }}
-                        disabled={
-                          !cameraState.torchAvailable || cameraState.torchBusy
-                        }
-                      >
-                        {cameraState.torchOn ? "Light off" : "Light on"}
-                      </Button>
-                    </div>
-                    <div className="text-xs text-white/55">
-                      Scan a QR with one or many recipients as plain addresses
-                      or <span className="font-mono">monero:</span> URIs.
-                    </div>
-                    {scannerError && (
-                      <div className="rounded-md bg-red-500/10 p-2 text-xs text-red-300 ring-1 ring-red-500/30">
-                        {scannerError}
-                      </div>
-                    )}
-                  </SurfaceCard>
-                )}
-
-                {recipients.map((recipient, index) => {
-                  const parsedAmount = parseXmrToAtomic(recipient.amount);
-                  const fiatValue =
-                    parsedAmount !== null && parsedAmount > 0n && price
-                      ? toFiat(parsedAmount, price)
-                      : null;
-
-                  return (
-                    <SurfaceCard key={index} className="space-y-3 p-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs text-white/60">
-                          Recipient #{index + 1}
-                        </div>
-                        <Button
-                          type="button"
-                          variant="soft"
-                          className="!flex-none px-2.5 py-1 text-xs"
-                          onClick={() => removeRecipient(index)}
-                          disabled={recipients.length <= 1}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-
-                      <div>
-                        <Label>Recipient address</Label>
-                        <Input
-                          value={recipient.address}
-                          onChange={(e) =>
-                            updateRecipient(index, { address: e.target.value })
-                          }
-                          placeholder="Enter Monero address"
-                          autoComplete="off"
-                          spellCheck={false}
-                          className="font-mono text-sm"
-                        />
-                      </div>
-
-                      <div>
-                        <Label>Amount (XMR)</Label>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          value={recipient.amount}
-                          onChange={(e) =>
-                            updateRecipient(index, { amount: e.target.value })
-                          }
-                          placeholder="0.000000000000"
-                          autoComplete="off"
-                        />
-                        {fiatValue !== null && (
-                          <div className="mt-1 text-xs text-white/50">
-                            ≈ {fiatValue.toFixed(2)} EUR
-                          </div>
-                        )}
-                      </div>
-                    </SurfaceCard>
-                  );
-                })}
-
-                <div>
-                  <Label>Priority</Label>
-                  <Select.Root
-                    value={String(feePriority)}
-                    onValueChange={(next) => {
-                      setFeePriority(Number(next) as FeePriorityValue);
-                    }}
-                  >
-                    <Select.Trigger>
-                      <Select.Value>
-                        {FEE_PRIORITY_LABELS[feePriority]}
-                      </Select.Value>
-                    </Select.Trigger>
-                    <Select.Content>
-                      {FEE_PRIORITY_OPTIONS.map((option) => (
-                        <Select.Option key={option.value} value={option.value}>
-                          {option.label}
-                        </Select.Option>
-                      ))}
-                    </Select.Content>
-                  </Select.Root>
-                </div>
-              </div>
-
-              <Button
-                variant="primary"
-                disabled={!isValid}
-                onClick={handleCreateTx}
-                className="w-full text-sm font-semibold"
-              >
-                Review transaction
-              </Button>
-
+              {renderEnterTxInfoData()}
+              {isViewOnly === true && (
+                <SurfaceCard className="text-sm text-white/75">
+                  Wallet is view-only
+                </SurfaceCard>
+              )}
               <div className="border-t border-white/10 pt-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Button
@@ -1053,7 +1068,7 @@ export function SendTab({
                   >
                     Show coins
                   </Button>
-                  {showMultisigActions && (
+                  {isViewOnly === false && showMultisigActions && (
                     <Button
                       variant="neutral"
                       type="button"

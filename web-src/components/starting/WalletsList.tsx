@@ -48,6 +48,19 @@ const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
 
+function parseSecretKeyHex(value: string, label: string): Uint8Array {
+  const normalized = value.replace(/\s+/g, "");
+  if (!/^[0-9a-fA-F]{64}$/.test(normalized)) {
+    throw new Error(`${label} must be exactly 64 hex characters`);
+  }
+  const bytes = new Uint8Array(32);
+  for (let i = 0; i < 32; ++i) {
+    const offset = i * 2;
+    bytes[i] = Number.parseInt(normalized.slice(offset, offset + 2), 16);
+  }
+  return bytes;
+}
+
 function getDaemonSelectValue(daemonAddress: string): string {
   return DAEMON_PRESET_OPTIONS.includes(
     daemonAddress as (typeof DAEMON_PRESET_OPTIONS)[number],
@@ -442,18 +455,23 @@ function RestoreView({
   );
   const [cakeSeed, setCakeSeed] = React.useState("");
   const [multisigSeedHex, setMultisigSeedHex] = React.useState("");
+  const [restoreAddress, setRestoreAddress] = React.useState("");
+  const [secretViewKey, setSecretViewKey] = React.useState("");
+  const [secretSpendKey, setSecretSpendKey] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
 
   const [startingHeight, setStartingHeight] = React.useState("3603563");
   const [loadingHeight, setLoadingHeight] = React.useState(false);
   const [seedType, setSeedType] = React.useState<
-    "monero-25" | "cake-16" | "multisig"
+    "monero-25" | "cake-16" | "multisig" | "from-keys"
   >("monero-25");
 
   const [restoring, setRestoring] = React.useState(false);
 
-  const doRestore = (seedType: "monero-25" | "cake-16" | "multisig") => {
+  const doRestore = (
+    seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
+  ) => {
     if (!fileName) {
       void alert("Please enter wallet name");
       return;
@@ -467,7 +485,11 @@ function RestoreView({
       return;
     }
 
-    if (seedType === "monero-25" || seedType === "multisig") {
+    if (
+      seedType === "monero-25" ||
+      seedType === "multisig" ||
+      seedType === "from-keys"
+    ) {
       if (loadingHeight) {
         void alert("Please wait until starting height is loaded");
         return;
@@ -479,6 +501,16 @@ function RestoreView({
       if (seedType === "multisig" && !multisigSeedHex.trim()) {
         void alert("Please enter multisig seed hex");
         return;
+      }
+      if (seedType === "from-keys") {
+        if (!restoreAddress.trim()) {
+          void alert("Please enter address");
+          return;
+        }
+        if (!secretViewKey.trim()) {
+          void alert("Please enter secret view key");
+          return;
+        }
       }
     } else {
       if (!cakeSeed) {
@@ -501,7 +533,11 @@ function RestoreView({
       let restoreHeight: bigint;
       let polyseedPrivateKey: Uint8Array | null = null;
 
-      if (seedType === "monero-25" || seedType === "multisig") {
+      if (
+        seedType === "monero-25" ||
+        seedType === "multisig" ||
+        seedType === "from-keys"
+      ) {
         try {
           restoreHeight = BigInt(startingHeight);
         } catch {
@@ -547,6 +583,32 @@ function RestoreView({
             normalizedMultisigSeedHex,
             false,
           );
+        } else if (seedType === "from-keys") {
+          const normalizedAddress = restoreAddress.trim();
+          const viewKey = parseSecretKeyHex(secretViewKey, "Secret view key");
+          const spendKeyRaw = secretSpendKey.replace(/\s+/g, "");
+          if (spendKeyRaw.length > 0) {
+            const spendKey = parseSecretKeyHex(
+              secretSpendKey,
+              "Secret spend key",
+            );
+            await wallet.generate_from_keys(
+              fileName,
+              password,
+              normalizedAddress,
+              viewKey,
+              spendKey,
+              false,
+            );
+          } else {
+            await wallet.generate_view_only_from_keys(
+              fileName,
+              password,
+              normalizedAddress,
+              viewKey,
+              false,
+            );
+          }
         } else {
           const secret32 =
             seedType === "monero-25"
@@ -649,7 +711,12 @@ function RestoreView({
         <NiceTabs
           initialKey="monero-25"
           onTabChange={(key) => {
-            if (key === "monero-25" || key === "cake-16" || key === "multisig") {
+            if (
+              key === "monero-25" ||
+              key === "cake-16" ||
+              key === "multisig" ||
+              key === "from-keys"
+            ) {
               setSeedType(key);
             }
           }}
@@ -706,6 +773,49 @@ function RestoreView({
                       disabled={restoring}
                       onChange={(e) => setMultisigSeedHex(e.target.value)}
                     ></TextArea>
+                  </FormRow>
+
+                  {startingHeightBlock}
+                </div>
+              ),
+            },
+            {
+              key: "from-keys",
+              label: "From keys",
+              content: (
+                <div className="space-y-4">
+                  <FormRow>
+                    <Label>Address</Label>
+                    <Input
+                      value={restoreAddress}
+                      disabled={restoring}
+                      onChange={(e) => setRestoreAddress(e.target.value)}
+                    />
+                  </FormRow>
+                  <FormRow>
+                    <Label>Secret view key (hex)</Label>
+                    <Input
+                      value={secretViewKey}
+                      disabled={restoring}
+                      placeholder="64 hex chars"
+                      onChange={(e) => setSecretViewKey(e.target.value)}
+                    />
+                    <div className="mt-1 text-[11px] text-white/50">
+                      Enter 64 hex characters (32 bytes).
+                    </div>
+                  </FormRow>
+                  <FormRow>
+                    <Label>Secret spend key (hex, optional)</Label>
+                    <Input
+                      value={secretSpendKey}
+                      disabled={restoring}
+                      placeholder="64 hex chars"
+                      onChange={(e) => setSecretSpendKey(e.target.value)}
+                    />
+                    <div className="mt-1 text-[11px] text-white/50">
+                      Leave empty for view-only wallet. If provided, use 64 hex
+                      characters.
+                    </div>
                   </FormRow>
 
                   {startingHeightBlock}

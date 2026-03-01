@@ -1,5 +1,6 @@
 import React from "react";
 import { createPortal } from "react-dom";
+import { useIsMobileView } from "./useIsMobileView";
 
 export const APP_OVERLAY_ROOT_ATTRIBUTE = "data-app-overlay-root";
 export const APP_OVERLAY_ROOT_SELECTOR = `[${APP_OVERLAY_ROOT_ATTRIBUTE}]`;
@@ -15,20 +16,18 @@ function useMounted() {
 }
 
 function useAppOverlayRoot(mounted: boolean) {
-  const [root, setRoot] = React.useState<HTMLElement | null>(null);
+  const [root, setRoot] = React.useState<HTMLElement | null>(() => {
+    if (typeof document === "undefined") {
+      return null;
+    }
+    return document.querySelector<HTMLElement>(APP_OVERLAY_ROOT_SELECTOR);
+  });
 
   React.useEffect(() => {
     if (!mounted) {
       return;
     }
-
-    const resolveRoot = () => {
-      setRoot(document.querySelector<HTMLElement>(APP_OVERLAY_ROOT_SELECTOR));
-    };
-
-    resolveRoot();
-    const id = window.setTimeout(resolveRoot, 0);
-    return () => window.clearTimeout(id);
+    setRoot(document.querySelector<HTMLElement>(APP_OVERLAY_ROOT_SELECTOR));
   }, [mounted]);
 
   return root;
@@ -40,64 +39,46 @@ export function CenteredOverlayBackdrop({
 }: React.PropsWithChildren<{ onBackdropClick?: () => void }>) {
   const mounted = useMounted();
   const appOverlayRoot = useAppOverlayRoot(mounted);
+  const isMobileView = useIsMobileView();
 
   if (!mounted) {
     return null;
   }
 
-  const desktopRoot = appOverlayRoot ?? document.body;
-  const desktopPositionClass = appOverlayRoot ? "absolute" : "fixed";
+  const portalRoot = isMobileView
+    ? document.body
+    : appOverlayRoot ?? document.body;
+  const positionClass = !isMobileView && appOverlayRoot ? "absolute" : "fixed";
 
-  return (
-    <>
-      {createPortal(
-        <div
-          className={`${desktopPositionClass} inset-0 z-[70] hidden items-center justify-center bg-black/60 p-4 backdrop-blur-[1px] sm:flex`}
-          onClick={onBackdropClick}
-        >
-          {children}
-        </div>,
-        desktopRoot,
-      )}
-      {createPortal(
-        <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[1px] sm:hidden"
-          onClick={onBackdropClick}
-        >
-          {children}
-        </div>,
-        document.body,
-      )}
-    </>
+  return createPortal(
+    <div
+      className={`${positionClass} inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[1px]`}
+      onClick={onBackdropClick}
+    >
+      {children}
+    </div>,
+    portalRoot,
   );
 }
 
 export function AppFullscreenOverlay({ children }: React.PropsWithChildren) {
   const mounted = useMounted();
   const appOverlayRoot = useAppOverlayRoot(mounted);
+  const isMobileView = useIsMobileView();
 
   if (!mounted) {
     return null;
   }
 
-  const desktopRoot = appOverlayRoot ?? document.body;
-  const desktopPositionClass = appOverlayRoot ? "absolute" : "fixed";
+  const portalRoot = isMobileView
+    ? document.body
+    : appOverlayRoot ?? document.body;
+  const positionClass = !isMobileView && appOverlayRoot ? "absolute" : "fixed";
+  const zIndexClass = isMobileView ? "z-[70]" : "z-[60]";
 
-  return (
-    <>
-      {createPortal(
-        <div
-          className={`${desktopPositionClass} inset-0 z-[60] hidden sm:block`}
-        >
-          {children}
-        </div>,
-        desktopRoot,
-      )}
-      {createPortal(
-        <div className="fixed inset-0 z-[70] sm:hidden">{children}</div>,
-        document.body,
-      )}
-    </>
+  return createPortal(
+    <div className={`${positionClass} inset-0 ${zIndexClass}`}>{children}</div>,
+    portalRoot,
   );
 }
 
