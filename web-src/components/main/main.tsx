@@ -525,7 +525,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         status.hasMultisigPartialKeyImages
       ? "User action required in multisig tab to import multisig data"
       : status.hasUnknownKeyImages
-        ? "We do not know some of key images in this wallet, check transactions tab for details"
+        ? "We are missing key images for some transactions, import key images on Other tab"
         : "";
 
   return (
@@ -649,8 +649,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   isMultisigWallet={
                     status?.multisigStatus.multisig_is_active ?? false
                   }
-                  isViewOnly={status?.isViewOnly}
-                  onRefresh={stopWaitingOrScheduleNoWait}
                 />
               ),
             },
@@ -687,6 +685,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   lastRefreshTimestamp={status?.obtainedAt ?? null}
                   daemonLastBlockHeight={status?.daemonHeight ?? null}
                   multisigStatus={status?.multisigStatus ?? null}
+                  hasUnknownKeyImages={status?.hasUnknownKeyImages}
+                  isViewOnly={status?.isViewOnly}
                   payments={status?.payments || null}
                   priceEur={priceInfo?.price ?? null}
                   priceSource={priceInfo?.source ?? null}

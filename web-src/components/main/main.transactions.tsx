@@ -3,9 +3,6 @@ import {
   MoneroWasmWallet,
   PaymentDetailsTransformed,
   WalletAddress,
-  readFile,
-  unlinkFile,
-  writeFile,
 } from "../../../monero-wasm-module/walletApi";
 import React from "react";
 import {
@@ -14,9 +11,7 @@ import {
   formatWalletTimestamp,
   splitAddressBy6,
   toFiat,
-  withFsLock,
 } from "../utils";
-import { options } from "../options";
 import {
   Button,
   ButtonsHolder,
@@ -25,8 +20,6 @@ import {
   SurfaceCard,
   TextArea,
   useAlert,
-  useMultisigDataOverlayExport,
-  useMultisigDataOverlayImport,
 } from "../ui";
 
 type PaymentProofState =
@@ -54,8 +47,6 @@ export function TransactionsTab({
   daemonLastBlockHeight,
   hasUnknownKeyImages,
   isMultisigWallet,
-  isViewOnly,
-  onRefresh,
 }: {
   wallet: MoneroWasmWallet;
   mempoolPayments: PaymentDetailsTransformed[] | null;
@@ -65,22 +56,13 @@ export function TransactionsTab({
   daemonLastBlockHeight: bigint | null;
   hasUnknownKeyImages: boolean | undefined;
   isMultisigWallet: boolean;
-  isViewOnly: boolean | undefined;
-  onRefresh: () => void;
 }) {
   const alert = useAlert();
-  const exportOverlay = useMultisigDataOverlayExport();
-  const importOverlay = useMultisigDataOverlayImport();
   const [expandedIndexFromEnd, setExpandedIndexFromEnd] = React.useState<
     number | null
   >(null);
-  const [isExportModeDialogOpen, setIsExportModeDialogOpen] = React.useState(false);
-  const [busyAction, setBusyAction] = React.useState<
-    "idle" | "export" | "import"
-  >("idle");
   const [paymentProofState, setPaymentProofState] =
     React.useState<PaymentProofState | null>(null);
-  const isBusy = busyAction !== "idle";
 
   const allPayments = React.useMemo(
     () => (payments ? [...(mempoolPayments || []), ...payments] : null),
@@ -181,92 +163,9 @@ export function TransactionsTab({
     setPaymentProofState(null);
   }, [paymentProofState]);
 
-  const unlinkIfExists = React.useCallback((fileName: string) => {
-    try {
-      unlinkFile(fileName);
-    } catch {
-      // File may already be removed.
-    }
-  }, []);
-
-  const onExportKeyImages = React.useCallback(async (all: boolean) => {
-    if (isBusy) {
-      return;
-    }
-
-    setBusyAction("export");
-    const tmpFile = `.tmp-key-images-export-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`;
-    try {
-      const [data, walletFile] = await withFsLock(async () => {
-        try {
-          await wallet.export_key_images(tmpFile, all);
-          const readData = readFile(tmpFile);
-          const copied = new Uint8Array(readData.length);
-          copied.set(readData);
-          const walletFileLocal = await wallet.get_wallet_file();
-          return [copied, walletFileLocal] as const;
-        } finally {
-          unlinkIfExists(tmpFile);
-        }
-      });
-
-      const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
-      await exportOverlay({
-        data,
-        header: "Your key images data",
-        fileName: `${walletName}-key-images`,
-      });
-    } catch (e) {
-      await alert((e as Error)?.message || "Failed to export key images");
-    } finally {
-      setBusyAction("idle");
-    }
-  }, [alert, exportOverlay, isBusy, unlinkIfExists, wallet]);
-
-  const onImportKeyImages = React.useCallback(async () => {
-    if (isBusy) {
-      return;
-    }
-
-    const daemonAddress = options.getValue("daemonAddress");
-    await alert(
-      `This operation is recommended to do on trusted daemon. Continue if you trust ${daemonAddress}`,
-    );
-
-    const importedData = await importOverlay({
-      header: "Paste key images data here",
-    });
-    if (importedData === null) {
-      return;
-    }
-
-    setBusyAction("import");
-    const tmpFile = `.tmp-key-images-import-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`;
-    try {
-      const result = await withFsLock(async () => {
-        try {
-          writeFile(tmpFile, importedData);
-          const importResult = await wallet.import_key_images(tmpFile, true);
-          await wallet.store();
-          return importResult;
-        } finally {
-          unlinkIfExists(tmpFile);
-        }
-      });
-      await alert(
-        `Signed key images imported to height ${result.height.toString()}, ${balanceToString(result.spent)} spent, ${balanceToString(result.unspent)} unspent`,
-      );
-      onRefresh();
-    } catch (e) {
-      await alert((e as Error)?.message || "Failed to import key images");
-    } finally {
-      setBusyAction("idle");
-    }
-  }, [alert, importOverlay, isBusy, onRefresh, unlinkIfExists, wallet]);
-
   const unknownKeyImagesMessage = isMultisigWallet
     ? "We are missing key images for some transactions. Outgoing tx-es might be listed here as incoming and balance might be wrong. Import multisig data in the Multisig tab."
-    : "We are missing key images for some transactions. Outgoing tx-es might be listed here as incoming and balance might be wrong. Import data, the button is below transactions.";
+    : "We are missing key images for some transactions. Outgoing tx-es might be listed here as incoming and balance might be wrong. Import data in Other tab.";
 
   return (
     <>
@@ -476,102 +375,7 @@ export function TransactionsTab({
             })}
           </div>
         )}
-
-        <div className="mt-3 border-t border-white/10 pt-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="neutral"
-                type="button"
-                disabled={isBusy || isViewOnly === true}
-                title={
-                  isViewOnly === true
-                    ? "Export key images is unavailable for view-only wallet"
-                    : undefined
-                }
-                onClick={() => {
-                  setIsExportModeDialogOpen(true);
-                }}
-                className="!flex-none !px-4 !py-2 text-sm"
-              >
-                {busyAction === "export" ? "Exporting..." : "Export key images"}
-              </Button>
-            </div>
-            <Button
-              variant="neutral"
-              type="button"
-              disabled={isBusy}
-              onClick={() => {
-                void onImportKeyImages();
-              }}
-              className="!flex-none !px-4 !py-2 text-sm"
-            >
-              {busyAction === "import" ? "Importing..." : "Import key images"}
-            </Button>
-          </div>
-        </div>
       </div>
-      {isExportModeDialogOpen && (
-        <OverlayDialog
-          onClose={() => {
-            if (!isBusy) {
-              setIsExportModeDialogOpen(false);
-            }
-          }}
-        >
-          <div className="space-y-3">
-            <div className="text-base font-semibold text-white">
-              Export key images
-            </div>
-            <div className="text-sm text-white/75">
-              Choose export mode:
-            </div>
-            <div className="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/70 ring-1 ring-white/10">
-              <div>
-                <span className="font-semibold text-white/85">New and missing only (recommended):</span>{" "}
-                smaller file, includes key images most likely needed by other
-                participants now.
-              </div>
-              <div className="mt-1.5">
-                <span className="font-semibold text-white/85">All key images:</span>{" "}
-                full export for this wallet, larger file.
-              </div>
-            </div>
-            <ButtonsHolder>
-              <Button
-                type="button"
-                variant="soft"
-                disabled={isBusy}
-                onClick={() => setIsExportModeDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="neutral"
-                disabled={isBusy}
-                onClick={() => {
-                  setIsExportModeDialogOpen(false);
-                  void onExportKeyImages(false);
-                }}
-              >
-                {busyAction === "export" ? "Exporting..." : "New and missing only"}
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                disabled={isBusy}
-                onClick={() => {
-                  setIsExportModeDialogOpen(false);
-                  void onExportKeyImages(true);
-                }}
-              >
-                {busyAction === "export" ? "Exporting..." : "All key images"}
-              </Button>
-            </ButtonsHolder>
-          </div>
-        </OverlayDialog>
-      )}
       {paymentProofState?.type === "proof" && (
         <OverlayDialog onClose={() => setPaymentProofState(null)}>
           <div className="space-y-3">

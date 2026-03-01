@@ -5,7 +5,11 @@ import {
   MoneroWasmWallet,
   PaymentDetailsTransformed,
   WalletKeys,
+  readFile,
+  unlinkFile,
+  writeFile,
 } from "../../../monero-wasm-module/walletApi";
+import { options } from "../options";
 import {
   Button,
   ButtonsHolder,
@@ -15,8 +19,11 @@ import {
   Toggle,
   useAlert,
   useIsMobileView,
+  useMultisigDataOverlayExport,
+  useMultisigDataOverlayImport,
 } from "../ui";
 import {
+  balanceToString,
   bytesToHex,
   copyToClipboard,
   formatWalletTimestamp,
@@ -42,6 +49,8 @@ export function OtherTab({
   lastRefreshTimestamp,
   daemonLastBlockHeight,
   multisigStatus,
+  hasUnknownKeyImages,
+  isViewOnly,
   payments,
   priceEur,
   priceSource,
@@ -53,6 +62,8 @@ export function OtherTab({
   lastRefreshTimestamp: Date | null;
   daemonLastBlockHeight: bigint | null;
   multisigStatus: MultisigAccountStatus | null;
+  hasUnknownKeyImages: boolean | undefined;
+  isViewOnly: boolean | undefined;
   payments: PaymentDetailsTransformed[] | null;
   priceEur: number | null;
   priceSource: string | null;
@@ -72,6 +83,8 @@ export function OtherTab({
     busy: false,
   });
   const alert = useAlert();
+  const exportOverlay = useMultisigDataOverlayExport();
+  const importOverlay = useMultisigDataOverlayImport();
   const isMobileView = useIsMobileView();
   const seedRows = isMobileView ? 6 : 2;
   const addressRows = isMobileView ? 3 : 1;
@@ -132,6 +145,11 @@ export function OtherTab({
       : "Waiting for daemon height...";
 
   const isSeedButtonDisabled = multisigStatus === null;
+  const [isExportModeDialogOpen, setIsExportModeDialogOpen] = React.useState(false);
+  const [busyAction, setBusyAction] = React.useState<
+    "idle" | "export" | "import"
+  >("idle");
+  const isBusy = busyAction !== "idle";
 
   const onOpenSeedKeys = async () => {
     if (multisigStatus === null) {
@@ -223,6 +241,92 @@ export function OtherTab({
     }
   };
 
+  const unlinkIfExists = React.useCallback((fileName: string) => {
+    try {
+      unlinkFile(fileName);
+    } catch {
+      // File may already be removed.
+    }
+  }, []);
+
+  const onExportKeyImages = React.useCallback(
+    async (all: boolean) => {
+      if (isBusy) {
+        return;
+      }
+
+      setBusyAction("export");
+      const tmpFile = `.tmp-key-images-export-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`;
+      try {
+        const [data, walletFile] = await withFsLock(async () => {
+          try {
+            await wallet.export_key_images(tmpFile, all);
+            const readData = readFile(tmpFile);
+            const copied = new Uint8Array(readData.length);
+            copied.set(readData);
+            const walletFileLocal = await wallet.get_wallet_file();
+            return [copied, walletFileLocal] as const;
+          } finally {
+            unlinkIfExists(tmpFile);
+          }
+        });
+
+        const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
+        await exportOverlay({
+          data,
+          header: "Your key images data",
+          fileName: `${walletName}-key-images`,
+        });
+      } catch (e) {
+        await alert((e as Error)?.message || "Failed to export key images");
+      } finally {
+        setBusyAction("idle");
+      }
+    },
+    [alert, exportOverlay, isBusy, unlinkIfExists, wallet],
+  );
+
+  const onImportKeyImages = React.useCallback(async () => {
+    if (isBusy) {
+      return;
+    }
+
+    const daemonAddress = options.getValue("daemonAddress");
+    await alert(
+      `This operation is recommended to do on trusted daemon. Continue if you trust ${daemonAddress}`,
+    );
+
+    const importedData = await importOverlay({
+      header: "Paste key images data here",
+    });
+    if (importedData === null) {
+      return;
+    }
+
+    setBusyAction("import");
+    const tmpFile = `.tmp-key-images-import-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`;
+    try {
+      const result = await withFsLock(async () => {
+        try {
+          writeFile(tmpFile, importedData);
+          const importResult = await wallet.import_key_images(tmpFile, true);
+          await wallet.store();
+          return importResult;
+        } finally {
+          unlinkIfExists(tmpFile);
+        }
+      });
+      await alert(
+        `Signed key images imported to height ${result.height.toString()}, ${balanceToString(result.spent)} spent, ${balanceToString(result.unspent)} unspent`,
+      );
+      onRefresh();
+    } catch (e) {
+      await alert((e as Error)?.message || "Failed to import key images");
+    } finally {
+      setBusyAction("idle");
+    }
+  }, [alert, importOverlay, isBusy, onRefresh, unlinkIfExists, wallet]);
+
   return (
     <div className="mt-2 space-y-3">
       <Button
@@ -247,6 +351,33 @@ export function OtherTab({
         {lastRefreshTimestamp
           ? `Last refresh: ${formatElapsedSince(lastRefreshTimestamp.getTime(), now)} ago`
           : "Last refresh: waiting for first sync"}
+      </div>
+      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+        <Button
+          className="w-full py-2 text-sm font-semibold"
+          variant="neutral"
+          disabled={isBusy || isViewOnly === true}
+          title={
+            isViewOnly === true
+              ? "Export key images is unavailable for view-only wallet"
+              : undefined
+          }
+          onClick={() => {
+            setIsExportModeDialogOpen(true);
+          }}
+        >
+          {busyAction === "export" ? "Exporting..." : "Export key images"}
+        </Button>
+        <Button
+          className="w-full py-2 text-sm font-semibold"
+          variant="neutral"
+          disabled={isBusy}
+          onClick={() => {
+            void onImportKeyImages();
+          }}
+        >
+          {busyAction === "import" ? "Importing..." : "Import key images"}
+        </Button>
       </div>
       <Button
         className="w-full py-2 text-sm font-semibold"
@@ -279,6 +410,73 @@ export function OtherTab({
       >
         ✖ Exit
       </Button>
+      {isExportModeDialogOpen && (
+        <OverlayDialog
+          onClose={() => {
+            if (!isBusy) {
+              setIsExportModeDialogOpen(false);
+            }
+          }}
+        >
+          <div className="space-y-3">
+            <div className="text-base font-semibold text-white">
+              Export key images
+            </div>
+            <div className="text-sm text-white/75">Choose export mode:</div>
+            <div className="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/70 ring-1 ring-white/10">
+              <div>
+                <span className="font-semibold text-white/85">
+                  Requested range only:
+                </span>{" "}
+                exports from the first output that has key-image-request flag up
+                to the latest one. On regular full wallets this can be empty.
+              </div>
+              <div className="mt-1.5">
+                <span className="font-semibold text-white/85">
+                  All key images (default):
+                </span>{" "}
+                full export for this wallet.
+              </div>
+            </div>
+            <ButtonsHolder>
+              <Button
+                type="button"
+                variant="soft"
+                disabled={isBusy}
+                onClick={() => setIsExportModeDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="neutral"
+                disabled={isBusy}
+                onClick={() => {
+                  setIsExportModeDialogOpen(false);
+                  void onExportKeyImages(false);
+                }}
+              >
+                {busyAction === "export"
+                  ? "Exporting..."
+                  : "Requested range only"}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                disabled={isBusy}
+                onClick={() => {
+                  setIsExportModeDialogOpen(false);
+                  void onExportKeyImages(true);
+                }}
+              >
+                {busyAction === "export"
+                  ? "Exporting..."
+                  : "All key images (default)"}
+              </Button>
+            </ButtonsHolder>
+          </div>
+        </OverlayDialog>
+      )}
 
       {rescanState.open && (
         <OverlayDialog
