@@ -54,6 +54,14 @@ export function splitAddressBy6(address: string): string {
   return compact.replace(/(.{6})/g, "$1 ").trim();
 }
 
+export function bytesToHex(data: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < data.length; i += 1) {
+    out += data[i].toString(16).padStart(2, "0");
+  }
+  return out;
+}
+
 export function formatWalletTimestamp(
   timestamp: bigint,
   options: {

@@ -16,7 +16,12 @@ import {
   useAlert,
   useIsMobileView,
 } from "../ui";
-import { copyToClipboard, formatWalletTimestamp, withFsLock } from "../utils";
+import {
+  bytesToHex,
+  copyToClipboard,
+  formatWalletTimestamp,
+  withFsLock,
+} from "../utils";
 
 type SeedRevealState =
   | { open: false }
@@ -68,7 +73,7 @@ export function OtherTab({
   });
   const alert = useAlert();
   const isMobileView = useIsMobileView();
-  const seedRows = isMobileView ? 6 : 2;
+  const seedRows = isMobileView ? 4 : 2;
   const addressRows = isMobileView ? 3 : 1;
   const keyRows = isMobileView ? 2 : 1;
 
@@ -479,12 +484,4 @@ function formatElapsedSince(fromMs: number, nowMs: number): string {
   }
   const deltaHours = Math.floor(deltaMin / 60);
   return `${deltaHours}h`;
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  let out = "";
-  for (let i = 0; i < bytes.length; i += 1) {
-    out += bytes[i].toString(16).padStart(2, "0");
-  }
-  return out;
 }

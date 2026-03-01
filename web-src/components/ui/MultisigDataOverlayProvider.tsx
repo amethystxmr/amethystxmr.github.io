@@ -1,5 +1,5 @@
 import React from "react";
-import { downloadBlob } from "../utils";
+import { bytesToHex, downloadBlob } from "../utils";
 import { FullscreenOverlayPanel } from "./OverlayPrimitives";
 import { Button } from "./Button";
 import { TextArea } from "./TextArea";
@@ -208,7 +208,7 @@ function MultisigDataOverlayDialog({
     : isTooBigForPreview
       ? `<data is too big, size=${exportData.length}, only download is possible>`
       : mode === "hex"
-        ? encodeHex(exportData)
+        ? bytesToHex(exportData)
         : encodeBase64(exportData);
 
   const rightButtonText = isExport ? "Close" : hasInput ? "Import" : "Close";
@@ -435,14 +435,6 @@ function MultisigDataOverlayDialog({
 
 function decodeByMode(value: string, mode: EncodingMode): Uint8Array {
   return mode === "hex" ? decodeHex(value) : decodeBase64(value);
-}
-
-function encodeHex(data: Uint8Array): string {
-  let out = "";
-  for (let i = 0; i < data.length; i += 1) {
-    out += data[i].toString(16).padStart(2, "0");
-  }
-  return out;
 }
 
 function decodeHex(value: string): Uint8Array {
