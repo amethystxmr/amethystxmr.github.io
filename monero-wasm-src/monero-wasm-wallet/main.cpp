@@ -327,6 +327,12 @@ public:
                        { return m_wallet.watch_only(); });
     }
 
+    auto is_deterministic()
+    {
+        return promise([this]()
+                       { return m_wallet.is_deterministic(); });
+    }
+
     auto get_keys(uint32_t account_idx)
     {
         using KeysPayload = std::tuple<std::string, crypto::secret_key, crypto::public_key, bool, crypto::secret_key, crypto::public_key>;
@@ -1469,6 +1475,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
         .function("watch_only", &MoneroWasmWallet::watch_only)
+        .function("is_deterministic", &MoneroWasmWallet::is_deterministic)
         .function("get_keys", &MoneroWasmWallet::get_keys)
         .function("get_num_subaddresses", &MoneroWasmWallet::get_num_subaddresses)
         .function("get_subaddress_as_str", &MoneroWasmWallet::get_subaddress_as_str)
