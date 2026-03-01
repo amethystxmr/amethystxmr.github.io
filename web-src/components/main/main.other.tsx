@@ -145,6 +145,7 @@ export function OtherTab({
       : "Waiting for daemon height...";
 
   const isSeedButtonDisabled = multisigStatus === null;
+  const isMultisigWallet = multisigStatus?.multisig_is_active ?? false;
   const [isExportModeDialogOpen, setIsExportModeDialogOpen] =
     React.useState(false);
   const [busyAction, setBusyAction] = React.useState<
@@ -353,33 +354,35 @@ export function OtherTab({
           ? `Last refresh: ${formatElapsedSince(lastRefreshTimestamp.getTime(), now)} ago`
           : "Last refresh: waiting for first sync"}
       </div>
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-        <Button
-          className="w-full py-2 text-sm font-semibold"
-          variant="neutral"
-          disabled={isBusy || isViewOnly === true}
-          title={
-            isViewOnly === true
-              ? "Export key images is unavailable for view-only wallet"
-              : undefined
-          }
-          onClick={() => {
-            setIsExportModeDialogOpen(true);
-          }}
-        >
-          {busyAction === "export" ? "Exporting..." : "Export key images"}
-        </Button>
-        <Button
-          className="w-full py-2 text-sm font-semibold"
-          variant="neutral"
-          disabled={isBusy}
-          onClick={() => {
-            void onImportKeyImages();
-          }}
-        >
-          {busyAction === "import" ? "Importing..." : "Import key images"}
-        </Button>
-      </div>
+      {!isMultisigWallet && (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            className="w-full py-2 text-sm font-semibold"
+            variant="neutral"
+            disabled={isBusy || isViewOnly === true}
+            title={
+              isViewOnly === true
+                ? "Export key images is unavailable for view-only wallet"
+                : undefined
+            }
+            onClick={() => {
+              setIsExportModeDialogOpen(true);
+            }}
+          >
+            {busyAction === "export" ? "Exporting..." : "Export key images"}
+          </Button>
+          <Button
+            className="w-full py-2 text-sm font-semibold"
+            variant="neutral"
+            disabled={isBusy}
+            onClick={() => {
+              void onImportKeyImages();
+            }}
+          >
+            {busyAction === "import" ? "Importing..." : "Import key images"}
+          </Button>
+        </div>
+      )}
       <Button
         className="w-full py-2 text-sm font-semibold"
         variant="neutral"
@@ -411,7 +414,7 @@ export function OtherTab({
       >
         ✖ Exit
       </Button>
-      {isExportModeDialogOpen && (
+      {!isMultisigWallet && isExportModeDialogOpen && (
         <OverlayDialog
           onClose={() => {
             if (!isBusy) {
