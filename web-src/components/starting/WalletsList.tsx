@@ -1360,7 +1360,7 @@ function OpenWalletView({
                 variant="primary"
                 disabled={isBusy}
               >
-                {isBusy ? "Opening..." : "Open wallet"}
+                {isBusy ? "→ Opening..." : "→ Open wallet"}
               </Button>
             </ButtonsHolder>
           </form>
@@ -2006,7 +2006,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                 disabled={renameState.type === "renaming"}
                 onClick={() => setRenameState({ type: "idle" })}
               >
-                Cancel
+                ✖ Cancel
               </Button>
               <Button
                 type="submit"
@@ -2018,8 +2018,8 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                 }
               >
                 {renameState.type === "renaming"
-                  ? "Renaming..."
-                  : "Rename wallet"}
+                  ? "✎ Renaming..."
+                  : "✎ Rename wallet"}
               </Button>
             </ButtonsHolder>
           </form>

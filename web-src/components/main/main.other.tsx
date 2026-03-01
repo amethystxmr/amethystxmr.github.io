@@ -339,7 +339,7 @@ export function OtherTab({
           void onOpenSeedKeys();
         }}
       >
-        Show seed/keys
+        → Show seed/keys
       </Button>
 
       <Button
@@ -347,7 +347,7 @@ export function OtherTab({
         variant="neutral"
         onClick={onRefresh}
       >
-        Refresh wallet
+        ↺ Refresh wallet
       </Button>
       <div className="-mt-2 rounded-lg bg-white/5 px-2.5 py-2 text-center text-xs text-white/60">
         {lastRefreshTimestamp
@@ -369,7 +369,7 @@ export function OtherTab({
               setIsExportModeDialogOpen(true);
             }}
           >
-            {busyAction === "export" ? "Exporting..." : "Export key images"}
+            {busyAction === "export" ? "⬇︎ Exporting..." : "⬇︎ Export key images"}
           </Button>
           <Button
             className="w-full py-2 text-sm font-semibold"
@@ -384,7 +384,7 @@ export function OtherTab({
               void onImportKeyImages();
             }}
           >
-            {busyAction === "import" ? "Importing..." : "Import key images"}
+            {busyAction === "import" ? "⬆︎ Importing..." : "⬆︎ Import key images"}
           </Button>
         </div>
       )}
@@ -393,7 +393,7 @@ export function OtherTab({
         variant="neutral"
         onClick={onOpenRescanDialog}
       >
-        Rescan blockchain
+        ↺ Rescan blockchain
       </Button>
 
       <Button
@@ -403,7 +403,7 @@ export function OtherTab({
           refreshXmrPrice();
         }}
       >
-        Refresh XMR Price
+        ↺ Refresh XMR Price
       </Button>
       <div className="-mt-2 rounded-lg bg-white/5 px-2.5 py-2 text-center text-xs text-white/60">
         <div className="font-medium text-white/85">
@@ -454,7 +454,7 @@ export function OtherTab({
                 disabled={isBusy}
                 onClick={() => setIsExportModeDialogOpen(false)}
               >
-                Cancel
+                ✖ Cancel
               </Button>
               <Button
                 type="button"
@@ -466,8 +466,8 @@ export function OtherTab({
                 }}
               >
                 {busyAction === "export"
-                  ? "Exporting..."
-                  : "Requested range only"}
+                  ? "⬇︎ Exporting..."
+                  : "⬇︎ Requested range only"}
               </Button>
               <Button
                 type="button"
@@ -479,8 +479,8 @@ export function OtherTab({
                 }}
               >
                 {busyAction === "export"
-                  ? "Exporting..."
-                  : "All key images (default)"}
+                  ? "⬇︎ Exporting..."
+                  : "⬇︎ All key images (default)"}
               </Button>
             </ButtonsHolder>
           </div>
@@ -539,14 +539,14 @@ export function OtherTab({
                   setRescanState((prev) => ({ ...prev, open: false }))
                 }
               >
-                Cancel
+                ✖ Cancel
               </Button>
               <Button
                 type="submit"
                 variant="primary"
                 disabled={rescanState.busy}
               >
-                {rescanState.busy ? "Scheduling..." : "OK"}
+                {rescanState.busy ? "↺ Scheduling..." : "✓ OK"}
               </Button>
             </ButtonsHolder>
           </form>
@@ -567,7 +567,7 @@ export function OtherTab({
                   setSeedState({ open: false });
                 }}
               >
-                Close
+                ✖ Close
               </Button>
             </div>
 
@@ -608,10 +608,10 @@ export function OtherTab({
                         }}
                       >
                         {seedCopyState === "ok"
-                          ? "Copied"
+                          ? "✓ Copied"
                           : seedCopyState === "fail"
-                            ? "Copy failed"
-                            : "Copy"}
+                            ? "✖ Copy failed"
+                            : "⎘ Copy"}
                       </Button>
                     ) : null}
                   </div>

@@ -421,7 +421,7 @@ export function TransactionsTab({
                 variant="soft"
                 onClick={() => setPaymentProofState(null)}
               >
-                Close
+                ✖ Close
               </Button>
               <Button
                 type="button"
@@ -431,7 +431,7 @@ export function TransactionsTab({
                 }}
                 disabled={paymentProofState.loading || !paymentProofState.proof}
               >
-                Download tx proof
+                ⬇︎ Download tx proof
               </Button>
             </ButtonsHolder>
           </div>
@@ -478,7 +478,7 @@ export function TransactionsTab({
                 variant="soft"
                 onClick={() => setPaymentProofState(null)}
               >
-                close
+                ✖ Close
               </Button>
               <Button
                 type="button"
@@ -488,7 +488,7 @@ export function TransactionsTab({
                   paymentProofState.loading || !paymentProofState.keysString
                 }
               >
-                open in monero.com
+                → Open in monero.com
               </Button>
             </ButtonsHolder>
           </div>

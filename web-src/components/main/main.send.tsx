@@ -868,7 +868,7 @@ export function SendTab({
             className="!flex-none px-4 py-1.5 text-xs"
             onClick={closeCoinsOverlay}
           >
-            Close
+            ✖ Close
           </Button>
         </div>
       </div>
@@ -888,7 +888,7 @@ export function SendTab({
                 onClick={addRecipient}
                 className="!flex-none px-2.5 py-1 text-xs"
               >
-                Add destination
+                ➕︎ Add destination
               </Button>
               <Button
                 variant="soft"
@@ -896,7 +896,7 @@ export function SendTab({
                 onClick={() => setScannerOpen((s) => !s)}
                 className="!flex-none px-2.5 py-1 text-xs"
               >
-                {scannerOpen ? "Close scanner" : "Scan QR"}
+                {scannerOpen ? "✖ Close scanner" : "▣ Scan QR"}
               </Button>
             </div>
           </div>
@@ -918,7 +918,7 @@ export function SendTab({
                   onClick={toggleCamera}
                   disabled={cameraState.deviceIds.length < 2}
                 >
-                  Switch camera
+                  ↺ Switch camera
                 </Button>
                 <Button
                   type="button"
@@ -931,7 +931,7 @@ export function SendTab({
                     !cameraState.torchAvailable || cameraState.torchBusy
                   }
                 >
-                  {cameraState.torchOn ? "Light off" : "Light on"}
+                  {cameraState.torchOn ? "◎ Light off" : "◉ Light on"}
                 </Button>
               </div>
               <div className="text-xs text-white/55">
@@ -966,7 +966,7 @@ export function SendTab({
                     onClick={() => removeRecipient(index)}
                     disabled={recipients.length <= 1}
                   >
-                    Remove
+                    ✖ Remove
                   </Button>
                 </div>
 
@@ -1038,7 +1038,7 @@ export function SendTab({
           onClick={handleCreateTx}
           className="w-full text-sm font-semibold"
         >
-          Review transaction
+          → Review transaction
         </Button>
       </>
     ) : null;
@@ -1066,7 +1066,7 @@ export function SendTab({
                     }}
                     className="!flex-none !px-4 !py-2 text-sm"
                   >
-                    Show coins
+                    ☰ Show coins
                   </Button>
                   {isViewOnly === false && showMultisigActions && (
                     <Button
@@ -1077,7 +1077,7 @@ export function SendTab({
                       }}
                       className="!flex-none !px-4 !py-2 text-sm"
                     >
-                      Sign multisig tx
+                      ✎ Sign multisig tx
                     </Button>
                   )}
                 </div>
@@ -1171,7 +1171,7 @@ export function SendTab({
                   onClick={handleCancelConfirm}
                   className="text-sm font-semibold"
                 >
-                  Cancel
+                  ✖ Cancel
                 </Button>
 
                 <Button
@@ -1180,13 +1180,13 @@ export function SendTab({
                   className="text-sm font-semibold"
                 >
                   {state.kind.type === "non-multisig"
-                    ? "Confirm & Send"
+                    ? "✓ Confirm & Send"
                     : state.kind.type === "continue-multisig"
                       ? !state.kind.iAmTheLastSigner
-                        ? "Confirm"
-                        : "Finalize & Send"
+                        ? "✓ Confirm"
+                        : "✓ Finalize & Send"
                       : state.kind.type === "new-multisig"
-                        ? "Confirm"
+                        ? "✓ Confirm"
                         : (state.kind satisfies never)}
                 </Button>
               </ButtonsHolder>
@@ -1222,7 +1222,7 @@ export function SendTab({
                 variant="primary"
                 className="w-full text-sm font-semibold"
               >
-                Send another
+                → Send another
               </Button>
             </div>
           )}
@@ -1239,7 +1239,7 @@ export function SendTab({
                 variant="soft"
                 className="w-full text-sm font-semibold"
               >
-                Try again
+                ↺ Try again
               </Button>
             </div>
           )}
