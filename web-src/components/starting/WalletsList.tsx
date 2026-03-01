@@ -447,13 +447,8 @@ function RestoreView({
   onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   const alert = useAlert();
-  // TODO: Remove this hardcoded values
-  const [fileName, setFileName] = React.useState("kek");
-  const [moneroSeed, setMoneroSeed] = React.useState(
-    `verification italics saved under upper fetches answers masterful general ` +
-      `sickness ounce narrate joining cuddled faxed pledge touchy zippers turnip ` +
-      `nephew renting dedicated fibula gecko verification`,
-  );
+  const [fileName, setFileName] = React.useState("");
+  const [moneroSeed, setMoneroSeed] = React.useState(``);
   const [cakeSeed, setCakeSeed] = React.useState("");
   const [multisigSeedHex, setMultisigSeedHex] = React.useState("");
   const [restoreAddress, setRestoreAddress] = React.useState("");
@@ -1642,10 +1637,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
             });
           }
 
-          for (const [
-            keyFileName,
-            keysEntry,
-          ] of filesByBaseName.entries()) {
+          for (const [keyFileName, keysEntry] of filesByBaseName.entries()) {
             if (keysEntry.isDirectory || !keyFileName.endsWith(".keys")) {
               continue;
             }
@@ -1806,7 +1798,9 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                   key={walletName}
                   className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="truncate text-sm text-white/85">{walletName}</div>
+                  <div className="truncate text-sm text-white/85">
+                    {walletName}
+                  </div>
                   <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-nowrap sm:gap-2">
                     <Button
                       className="!flex-none whitespace-nowrap sm:shrink-0"
