@@ -1,6 +1,4 @@
 import * as React from "react";
-import { initModule } from "../monero-wasm-module/walletApi";
-import { WalletsList } from "./components/starting";
 import {
   APP_OVERLAY_ROOT_ATTRIBUTE,
   AlertProvider,
@@ -54,6 +52,9 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
     title: "Initializing Monero",
     hint: "Preparing wallet module...",
   });
+  const [WalletsListComponent, setWalletsListComponent] = React.useState<
+    React.ComponentType | null
+  >(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -99,8 +100,22 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
         hint: "Loading wallet module...",
       });
       try {
+        const { initModule } = await import("../monero-wasm-module/walletApi");
         await initModule();
+        if (cancelled) {
+          return;
+        }
+        setBootState({
+          type: "booting",
+          title: "Initializing Monero",
+          hint: "Loading wallet UI...",
+        });
+        const { WalletsList } = await import("./components/starting");
+        if (cancelled) {
+          return;
+        }
         if (!cancelled) {
+          setWalletsListComponent(() => WalletsList);
           setBootState({ type: "ready" });
         }
       } catch (error) {
@@ -119,6 +134,15 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
     };
   }, [crossOriginIsolationBootstrap]);
 
+  const statusViewState: Exclude<BootState, { type: "ready" }> =
+    bootState.type === "ready"
+      ? {
+          type: "booting",
+          title: "Initializing Monero",
+          hint: "Loading wallet UI...",
+        }
+      : bootState;
+
   return (
     <div className="scrollbar-hidden-mobile mx-auto h-dvh w-full max-w-[1200px] overflow-y-auto overflow-x-hidden p-0 sm:h-auto sm:overflow-visible sm:p-6">
       <div
@@ -129,10 +153,10 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
         <div className="relative z-10">
           <AlertProvider>
             <MultisigDataOverlayProvider>
-              {bootState.type === "ready" ? (
-                <WalletsList />
+              {bootState.type === "ready" && WalletsListComponent ? (
+                <WalletsListComponent />
               ) : (
-                <BootStatusView state={bootState} />
+                <BootStatusView state={statusViewState} />
               )}
             </MultisigDataOverlayProvider>
           </AlertProvider>
