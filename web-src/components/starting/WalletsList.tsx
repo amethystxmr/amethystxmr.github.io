@@ -79,7 +79,7 @@ function setWalletHash(walletName: string | null): void {
   }
   const hash =
     walletName === null ? "" : `#/${encodeURIComponent(walletName)}/`;
-  window.history.pushState(
+  window.history.replaceState(
     null,
     "",
     `${window.location.pathname}${window.location.search}${hash}`,
