@@ -95,6 +95,7 @@ export declare class MoneroWasmWallet {
     index_minor: number,
   ): Promise<string>;
   get_wallet_addresses(accountId: number): Promise<EmbindVector<WalletAddress>>;
+  get_keys(accountIdx: number): Promise<WalletKeys>;
   add_subaddress(index_major: number, label: string): Promise<void>;
   transfer_prepare(
     destinations: string[],
@@ -182,6 +183,18 @@ export interface WalletAddress {
   address: string;
   label: string;
   indexMinor: number;
+}
+
+export interface WalletKeys {
+  address: string;
+  viewKey: {
+    private: Uint8Array;
+    public: Uint8Array;
+  };
+  spendKey: {
+    private: Uint8Array | null;
+    public: Uint8Array;
+  };
 }
 
 interface multisig_account_status {

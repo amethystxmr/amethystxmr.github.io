@@ -327,6 +327,57 @@ public:
                        { return m_wallet.watch_only(); });
     }
 
+    auto get_keys(uint32_t account_idx)
+    {
+        using KeysPayload = std::tuple<std::string, crypto::secret_key, crypto::public_key, bool, crypto::secret_key, crypto::public_key>;
+        return promise(
+            [this, account_idx]() -> KeysPayload
+            {
+                if (account_idx >= m_wallet.get_num_subaddress_accounts())
+                {
+                    throw std::runtime_error("Account index out of range");
+                }
+
+                const auto &keys = m_wallet.get_account().get_keys();
+                const bool has_spend_private = !m_wallet.watch_only() && keys.m_spend_secret_key != crypto::null_skey;
+                return KeysPayload{
+                    m_wallet.get_subaddress_as_str({account_idx, 0}),
+                    keys.m_view_secret_key,
+                    keys.m_account_address.m_view_public_key,
+                    has_spend_private,
+                    keys.m_spend_secret_key,
+                    keys.m_account_address.m_spend_public_key};
+            },
+            [](const KeysPayload &payload) -> emscripten::val
+            {
+                auto result = emscripten::val::object();
+                result.set("address", std::get<0>(payload));
+
+                auto view_key = emscripten::val::object();
+                auto *view_private_bytes = reinterpret_cast<const std::uint8_t *>(std::get<1>(payload).data);
+                auto *view_public_bytes = reinterpret_cast<const std::uint8_t *>(std::get<2>(payload).data);
+                view_key.set("private", MoneroWasmWallet::copy_bytes_to_uint8_array(view_private_bytes, 32));
+                view_key.set("public", MoneroWasmWallet::copy_bytes_to_uint8_array(view_public_bytes, 32));
+                result.set("viewKey", view_key);
+
+                auto spend_key = emscripten::val::object();
+                if (std::get<3>(payload))
+                {
+                    auto *spend_private_bytes = reinterpret_cast<const std::uint8_t *>(std::get<4>(payload).data);
+                    spend_key.set("private", MoneroWasmWallet::copy_bytes_to_uint8_array(spend_private_bytes, 32));
+                }
+                else
+                {
+                    spend_key.set("private", emscripten::val::null());
+                }
+                auto *spend_public_bytes = reinterpret_cast<const std::uint8_t *>(std::get<5>(payload).data);
+                spend_key.set("public", MoneroWasmWallet::copy_bytes_to_uint8_array(spend_public_bytes, 32));
+                result.set("spendKey", spend_key);
+
+                return result;
+            });
+    }
+
     auto get_num_subaddresses(uint32_t index_major)
     {
         return promise([this, index_major]()
@@ -1418,6 +1469,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
         .function("watch_only", &MoneroWasmWallet::watch_only)
+        .function("get_keys", &MoneroWasmWallet::get_keys)
         .function("get_num_subaddresses", &MoneroWasmWallet::get_num_subaddresses)
         .function("get_subaddress_as_str", &MoneroWasmWallet::get_subaddress_as_str)
         .function("get_subaddress_label", &MoneroWasmWallet::get_subaddress_label)
