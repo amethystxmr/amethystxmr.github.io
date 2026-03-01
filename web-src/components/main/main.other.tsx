@@ -73,7 +73,7 @@ export function OtherTab({
   });
   const alert = useAlert();
   const isMobileView = useIsMobileView();
-  const seedRows = isMobileView ? 4 : 2;
+  const seedRows = isMobileView ? 6 : 2;
   const addressRows = isMobileView ? 3 : 1;
   const keyRows = isMobileView ? 2 : 1;
 
