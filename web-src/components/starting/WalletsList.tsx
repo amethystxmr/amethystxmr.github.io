@@ -49,6 +49,43 @@ const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
 
+function getWalletNameFromHash(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const withoutHash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  if (!withoutHash) {
+    return null;
+  }
+  const firstSegment = withoutHash
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean)[0];
+  if (!firstSegment) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(firstSegment);
+  } catch {
+    return firstSegment;
+  }
+}
+
+function setWalletHash(walletName: string | null): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const hash =
+    walletName === null ? "" : `#/${encodeURIComponent(walletName)}/`;
+  window.history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}${hash}`,
+  );
+}
+
 function parseSecretKeyHex(value: string, label: string): Uint8Array {
   const normalized = value.replace(/\s+/g, "");
   if (!/^[0-9a-fA-F]{64}$/.test(normalized)) {
@@ -130,6 +167,7 @@ export function WalletsList() {
           try {
             const walletFile = await openedWallet.wallet.get_wallet_file();
             options.setValue("lastWalletName", walletFile);
+            setWalletHash(walletFile);
           } catch (e) {
             console.error("Failed to read opened wallet file name:", e);
           }
@@ -148,6 +186,7 @@ export function WalletsList() {
           try {
             const walletFile = await openedWallet.wallet.get_wallet_file();
             options.setValue("lastWalletName", walletFile);
+            setWalletHash(walletFile);
           } catch (e) {
             console.error("Failed to read opened wallet file name:", e);
           }
@@ -166,6 +205,7 @@ export function WalletsList() {
           try {
             const walletFile = await openedWallet.wallet.get_wallet_file();
             options.setValue("lastWalletName", walletFile);
+            setWalletHash(walletFile);
           } catch (e) {
             console.error("Failed to read opened wallet file name:", e);
           }
@@ -184,6 +224,23 @@ export function WalletsList() {
   }, [cpuThreads]);
 
   React.useEffect(() => {
+    const walletNames = listWalletNames();
+    const walletNameFromHash = getWalletNameFromHash();
+    if (walletNameFromHash) {
+      if (!walletNames.includes(walletNameFromHash)) {
+        console.warn(
+          `Wallet "${walletNameFromHash}" from hash is not found in wallet list`,
+        );
+      } else {
+        setView({
+          type: "opening",
+          fileName: walletNameFromHash,
+          isStartupAutoOpen: true,
+        });
+        return;
+      }
+    }
+
     if (!options.getValue("loadLastWallet")) {
       return;
     }
@@ -191,7 +248,6 @@ export function WalletsList() {
     if (!lastWalletName) {
       return;
     }
-    const walletNames = listWalletNames();
     if (!walletNames.includes(lastWalletName)) {
       console.warn(
         `Option "loadLastWallet" is set but last wallet "${lastWalletName}" not found in wallet list`,
@@ -215,6 +271,7 @@ export function WalletsList() {
           const { wallet, releaseWalletOpenLock } = view.openedWallet;
           backToList();
           options.setValue("lastWalletName", null);
+          setWalletHash(null);
           void closeWallet(wallet).finally(releaseWalletOpenLock);
         }}
       />

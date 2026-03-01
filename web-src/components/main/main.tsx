@@ -519,6 +519,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     isViewOnly: status?.isViewOnly,
   });
 
+  const blinkingMessageText = !status
+    ? null
+    : status.multisigStatus.multisig_is_active &&
+        status.hasMultisigPartialKeyImages
+      ? "User action required in multisig tab to import multisig data"
+      : status.hasUnknownKeyImages
+        ? "We are missing key images for some transactions, import key images on Other tab"
+        : "";
+
   return (
     <div className="space-y-5 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
       <SectionPanel className="relative overflow-hidden p-4 sm:p-5 lg:sticky lg:top-0">
@@ -541,7 +550,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 Amethyst XMR
               </h1>
               <div className="mt-2 inline-flex max-w-full items-center rounded-lg bg-white/8 px-3 py-1 text-sm text-white/75 ring-1 ring-white/10">
-                <span className="truncate">{walletFileName ?? "Loading..."}</span>
+                <span className="truncate">
+                  {walletFileName ?? "Loading..."}
+                </span>
               </div>
             </div>
 
@@ -580,9 +591,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               hideBottom={lockedBalance === 0n}
             />
           </div>
-          {status?.hasMultisigPartialKeyImages && (
+          {blinkingMessageText && (
             <div className="slow-blink text-center text-xs text-amber-200/95">
-              User action required in multisig tab
+              {blinkingMessageText}
             </div>
           )}
         </div>
@@ -590,7 +601,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
       <div className="lg:h-[640px]">
         <NiceTabs
-          key={isMainTabsLockedByMultisig ? "tabs-multisig-locked" : "tabs-normal"}
+          key={
+            isMainTabsLockedByMultisig ? "tabs-multisig-locked" : "tabs-normal"
+          }
           initialKey={isMainTabsLockedByMultisig ? "multisig" : undefined}
           className="mt-0 lg:flex lg:h-full lg:min-h-0 lg:flex-col"
           tabs={[
@@ -632,6 +645,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   mempoolPayments={mempoolPayments}
                   daemonLastBlockHeight={status?.daemonHeight ?? null}
                   price={price}
+                  hasUnknownKeyImages={status?.hasUnknownKeyImages}
+                  isMultisigWallet={
+                    status?.multisigStatus.multisig_is_active ?? false
+                  }
                 />
               ),
             },
@@ -668,6 +685,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   lastRefreshTimestamp={status?.obtainedAt ?? null}
                   daemonLastBlockHeight={status?.daemonHeight ?? null}
                   multisigStatus={status?.multisigStatus ?? null}
+                  hasUnknownKeyImages={status?.hasUnknownKeyImages}
+                  isViewOnly={status?.isViewOnly}
                   payments={status?.payments || null}
                   priceEur={priceInfo?.price ?? null}
                   priceSource={priceInfo?.source ?? null}

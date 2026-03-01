@@ -136,6 +136,11 @@ export declare class MoneroWasmWallet {
   exchange_multisig_keys(password: string, kex_msgs: string[]): Promise<string>;
   export_multisig(): Promise<Uint8Array>;
   import_multisig(infos: Uint8Array[]): Promise<number>;
+  export_key_images(filename: string, all: boolean): Promise<boolean>;
+  import_key_images(
+    filename: string,
+    import_when_untrusted_daemon: boolean,
+  ): Promise<KeyImagesImportResult>;
   verify_password(password: string): Promise<boolean>;
   rescan_blockchain(hard: boolean, keep_key_images: boolean): Promise<boolean>;
 }
@@ -213,6 +218,12 @@ interface multisig_account_status {
 }
 
 export type MultisigAccountStatus = multisig_account_status;
+
+export interface KeyImagesImportResult {
+  height: bigint;
+  spent: bigint;
+  unspent: bigint;
+}
 
 interface ClassHandle {
   delete(): void;
@@ -426,6 +437,27 @@ export function deleteWalletFiles(walletName: string) {
 export function createWallet() {
   const wallet = new module.MoneroWasmWallet();
   return wallet;
+}
+
+export function readFile(path: string): Uint8Array {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.FS.readFile(path);
+}
+
+export function writeFile(path: string, data: Uint8Array): void {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  module.FS.writeFile(path, data);
+}
+
+export function unlinkFile(path: string): void {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  module.FS.unlink(path);
 }
 
 export function isWalletFileExists(walletName: string) {

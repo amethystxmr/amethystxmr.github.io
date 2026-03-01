@@ -508,6 +508,13 @@ public:
         uint32_t total;
     };
 
+    struct KeyImagesImportResult
+    {
+        uint64_t height;
+        uint64_t spent;
+        uint64_t unspent;
+    };
+
     auto refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
     {
         return promise([this, trusted_daemon, start_height, check_pool, try_incremental, max_blocks]()
@@ -1272,6 +1279,46 @@ public:
             });
     }
 
+    auto export_key_images(const std::string &filename, bool all)
+    {
+        return promise([this, filename, all]()
+                       {
+                           if (m_wallet.key_on_device())
+                           {
+                               throw std::runtime_error("command not supported by HW wallet");
+                           }
+                           if (m_wallet.watch_only())
+                           {
+                               throw std::runtime_error("wallet is watch-only and cannot export key images");
+                           }
+
+                           if (!m_wallet.export_key_images(filename, all))
+                           {
+                               throw std::runtime_error("failed to save file " + filename);
+                           }
+                           return true;
+                       });
+    }
+
+    auto import_key_images(const std::string &filename, bool import_when_untrusted_daemon)
+    {
+        return promise([this, filename, import_when_untrusted_daemon]()
+                       {
+                           if (m_wallet.key_on_device())
+                           {
+                               throw std::runtime_error("command not supported by HW wallet");
+                           }
+                           if (!m_wallet.is_trusted_daemon() && !import_when_untrusted_daemon)
+                           {
+                               throw std::runtime_error("this command requires a trusted daemon");
+                           }
+
+                           KeyImagesImportResult result{};
+                           result.height = m_wallet.import_key_images(filename, result.spent, result.unspent);
+                           return result;
+                       });
+    }
+
     auto rescan_blockchain(bool hard, bool keep_key_images)
     {
         return promise([this, hard, keep_key_images]()
@@ -1523,6 +1570,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)
         .function("export_multisig", &MoneroWasmWallet::export_multisig)
         .function("import_multisig", &MoneroWasmWallet::import_multisig)
+        .function("export_key_images", &MoneroWasmWallet::export_key_images)
+        .function("import_key_images", &MoneroWasmWallet::import_key_images)
         .function("verify_password", &MoneroWasmWallet::verify_password)
         .function("rescan_blockchain", &MoneroWasmWallet::rescan_blockchain)
         .constructor();
@@ -1582,6 +1631,11 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
         .field("balance", &MoneroWasmWallet::UnlockedBalanceResult::balance)
         .field("blocks_to_unlock", &MoneroWasmWallet::UnlockedBalanceResult::blocks_to_unlock)
         .field("time_to_unlock", &MoneroWasmWallet::UnlockedBalanceResult::time_to_unlock);
+
+    emscripten::value_object<MoneroWasmWallet::KeyImagesImportResult>("KeyImagesImportResult")
+        .field("height", &MoneroWasmWallet::KeyImagesImportResult::height)
+        .field("spent", &MoneroWasmWallet::KeyImagesImportResult::spent)
+        .field("unspent", &MoneroWasmWallet::KeyImagesImportResult::unspent);
 
     emscripten::function(
         "mlog_set_categories",

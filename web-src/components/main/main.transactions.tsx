@@ -45,6 +45,8 @@ export function TransactionsTab({
   addresses,
   price,
   daemonLastBlockHeight,
+  hasUnknownKeyImages,
+  isMultisigWallet,
 }: {
   wallet: MoneroWasmWallet;
   mempoolPayments: PaymentDetailsTransformed[] | null;
@@ -52,6 +54,8 @@ export function TransactionsTab({
   addresses: WalletAddress[] | null;
   price: number | null;
   daemonLastBlockHeight: bigint | null;
+  hasUnknownKeyImages: boolean | undefined;
+  isMultisigWallet: boolean;
 }) {
   const alert = useAlert();
   const [expandedIndexFromEnd, setExpandedIndexFromEnd] = React.useState<
@@ -159,9 +163,18 @@ export function TransactionsTab({
     setPaymentProofState(null);
   }, [paymentProofState]);
 
+  const unknownKeyImagesMessage = isMultisigWallet
+    ? "We are missing key images for some transactions. Outgoing transactions might be listed here as incoming and your balance might be wrong. Import multisig key images in the Multisig tab."
+    : "We are missing key images for some transactions. Outgoing transactions might be listed here as incoming and your balance might be wrong. Import key images in the Other tab.";
+
   return (
     <>
       <div className="scrollbar-glass h-auto overflow-visible pr-1 lg:h-full lg:min-h-0 lg:overflow-auto">
+        {hasUnknownKeyImages && (
+          <SurfaceCard className="mb-3 bg-amber-500/10 text-sm text-amber-100/95 ring-1 ring-amber-200/20">
+            {unknownKeyImagesMessage}
+          </SurfaceCard>
+        )}
         {allPayments === null ? (
           <SurfaceCard className="text-xs text-white/60">
             Loading transactions...
