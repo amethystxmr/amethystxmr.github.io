@@ -9,7 +9,7 @@
       "type": "cppdbg",
       "request": "launch",
       // TODO Change the path
-      "program": "${workspaceFolder}/monero-wasm-src/monero/build/Linux/_HEAD_detached_at_74dd968cd_/debug/bin/monero-wallet-cli",
+      "program": "${workspaceFolder}/monero-wasm-src/monero/build/debug/bin/monero-wallet-cli",
       "stopAtEntry": false,
       "cwd": ".",
       "environment": [],
