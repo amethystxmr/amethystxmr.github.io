@@ -53,6 +53,7 @@ export function WalletMain({
       }
     >;
     isSynced: boolean;
+    isViewOnly: boolean;
     multisigStatus: MultisigAccountStatus;
     hasMultisigPartialKeyImages: boolean;
     hasUnknownKeyImages: boolean;
@@ -201,6 +202,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       };
 
       const newMultisigStatus = await wallet.get_multisig_status();
+      const isViewOnly = await wallet.watch_only();
       const hasMultisigPartialKeyImages =
         await wallet.has_multisig_partial_key_images();
       const hasUnknownKeyImages = await wallet.has_unknown_key_images();
@@ -225,6 +227,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         walletHeight,
         balance,
         isSynced,
+        isViewOnly,
         obtainedAt: new Date(),
         multisigStatus: newMultisigStatus,
         hasMultisigPartialKeyImages,
@@ -513,6 +516,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     wallet,
     price: price,
     showMultisigActions: isMultisigTabVisible,
+    isViewOnly: status?.isViewOnly ?? false,
   });
 
   return (
@@ -524,7 +528,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             <div className="min-w-0">
               {
                 <div className="text-xs tracking-[0.18em] uppercase text-white/45">
-                  {status?.multisigStatus.multisig_is_active ? "Multisig" : ""}
+                  {status?.multisigStatus.multisig_is_active
+                    ? status.multisigStatus.is_ready
+                      ? "Multisig"
+                      : "Multisig in progress"
+                    : status?.isViewOnly
+                      ? "View-only"
+                      : ""}
                 </div>
               }
               <h1 className="text-glow text-2xl leading-tight font-bold sm:text-3xl">
