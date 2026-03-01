@@ -320,6 +320,13 @@ public:
         return promise([this]()
                        { return m_wallet.get_address_as_str(); });
     }
+
+    auto watch_only()
+    {
+        return promise([this]()
+                       { return m_wallet.watch_only(); });
+    }
+
     auto get_num_subaddresses(uint32_t index_major)
     {
         return promise([this, index_major]()
@@ -1410,6 +1417,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("rewrite", &MoneroWasmWallet::rewrite)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
+        .function("watch_only", &MoneroWasmWallet::watch_only)
         .function("get_num_subaddresses", &MoneroWasmWallet::get_num_subaddresses)
         .function("get_subaddress_as_str", &MoneroWasmWallet::get_subaddress_as_str)
         .function("get_subaddress_label", &MoneroWasmWallet::get_subaddress_label)
