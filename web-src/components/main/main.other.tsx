@@ -154,7 +154,7 @@ export function OtherTab({
         } else {
           const deterministic = await wallet.is_deterministic();
           if (!deterministic) {
-            seedMessage = "Wallet is not determinisic";
+            seedMessage = "Wallet is not deterministic";
           } else {
             seed = await wallet.get_seed("English", "");
           }
