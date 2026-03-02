@@ -1317,7 +1317,7 @@ function OpenWalletView({
         if (!isStartupAutoOpen) {
           await alert(`Wallet "${fileName}" is already opened in another tab.`);
         }
-        if (cancelled || isUnmountedRef.current) {
+        if (cancelled) {
           return;
         }
         onDone(null);
