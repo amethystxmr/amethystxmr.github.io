@@ -50,10 +50,12 @@ jobs:
 
       - name: Configure ccache
         run: |
-          echo "CCACHE_DIR=${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}" >> "$GITHUB_ENV"
+          CCACHE_DIR="${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}"
+          echo "CCACHE_DIR=${CCACHE_DIR}" >> "$GITHUB_ENV"
           echo "EM_COMPILER_WRAPPER=ccache" >> "$GITHUB_ENV"
-          mkdir -p "${GITHUB_WORKSPACE}/monero-wasm-src/built-ccache-${BUILD_TYPE}"
+          mkdir -p "${CCACHE_DIR}"
           mkdir -p "$HOME/.emscripten_cache"
+          ccache --set-config cache_dir="${CCACHE_DIR}" max_size=500M
 
       - name: Restore ccache
         uses: actions/cache/restore@v4
@@ -118,4 +120,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: monero-wasm-src/built-ccache-${{ env.BUILD_TYPE }}
-          key: ${{ runner.os }}-ccache-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-${{ steps.monero_ref.outputs.sha }}-${{ github.run_id }}
+          key: ${{ runner.os }}-ccache-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-${{ steps.monero_ref.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
