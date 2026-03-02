@@ -21,6 +21,7 @@ import {
   Toggle,
   FullscreenOverlayPanel,
   useAlert,
+  useIsUnmountedRef,
   useMultisigDataOverlayExport,
   useMultisigDataOverlayImport,
 } from "../ui";
@@ -178,6 +179,7 @@ export function SendTab({
   const [cameraState, setCameraState] =
     React.useState<CameraState>(INITIAL_CAMERA_STATE);
   const alert = useAlert();
+  const isUnmountedRef = useIsUnmountedRef();
   const multisigExportOverlay = useMultisigDataOverlayExport();
   const multisigImportOverlay = useMultisigDataOverlayImport();
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -234,6 +236,10 @@ export function SendTab({
       );
       const transferInfo = wallet.get_transfers_info(txHandle);
       const multisigStatus = await wallet.get_multisig_status();
+      if (isUnmountedRef.current) {
+        txHandle?.delete();
+        return;
+      }
       if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
         txHandle.delete();
         txHandle = null;
@@ -254,6 +260,9 @@ export function SendTab({
       });
     } catch (e) {
       txHandle?.delete();
+      if (isUnmountedRef.current) {
+        return;
+      }
       setState({
         type: "error",
         message: (e as Error).message ?? "Failed to estimate fee",
@@ -280,9 +289,15 @@ export function SendTab({
           fileName: `partially-signed-multisig-tx-${walletName}`,
         });
         txHandle.delete();
+        if (isUnmountedRef.current) {
+          return;
+        }
         setState({ type: "entering" });
       } catch (e) {
         txHandle.delete();
+        if (isUnmountedRef.current) {
+          return;
+        }
         setState({
           type: "error",
           message: (e as Error).message ?? "Failed to export multisig tx",
@@ -300,10 +315,16 @@ export function SendTab({
           wallet.transfer_commit_tx(txHandle);
           await wallet.store();
         });
+        if (isUnmountedRef.current) {
+          return;
+        }
         setState({ type: "sent", info: state.info });
         scheduleRefresh();
       })()
         .catch((e) => {
+          if (isUnmountedRef.current) {
+            return;
+          }
           setState({
             type: "error",
             message: (e as Error).message ?? "Transaction failed",
@@ -342,9 +363,15 @@ export function SendTab({
               header: `Signed multisig tx (${signersNeeded} more signatures needed)`,
               fileName: "signed-multisig-tx",
             });
+            if (isUnmountedRef.current) {
+              return;
+            }
             setState({ type: "entering" });
           } else {
             const txInfos = wallet.get_multisig_tx_set_info(txHandle);
+            if (isUnmountedRef.current) {
+              return;
+            }
             setState({
               type: "sending",
               info: txInfos,
@@ -358,6 +385,9 @@ export function SendTab({
             });
             txHandle.delete();
             txHandle = null;
+            if (isUnmountedRef.current) {
+              return;
+            }
             setState({
               type: "sent",
               info: txInfos,
@@ -366,6 +396,9 @@ export function SendTab({
         } catch (e) {
           if (txHandle) {
             txHandle.delete();
+          }
+          if (isUnmountedRef.current) {
+            return;
           }
           setState({
             type: "error",
@@ -388,6 +421,9 @@ export function SendTab({
     setCoinsOverlayState(loadingState);
     try {
       const result = await wallet.get_transfers();
+      if (isUnmountedRef.current) {
+        return;
+      }
       setCoinsOverlayState((prev) =>
         prev === loadingState
           ? {
@@ -398,6 +434,9 @@ export function SendTab({
           : prev,
       );
     } catch (e) {
+      if (isUnmountedRef.current) {
+        return;
+      }
       setCoinsOverlayState((prev) =>
         prev === loadingState
           ? {
@@ -422,6 +461,9 @@ export function SendTab({
     const imported = await multisigImportOverlay({
       header: "Paste multisig tx data here",
     });
+    if (isUnmountedRef.current) {
+      return;
+    }
     if (imported === null) {
       return;
     }
@@ -435,6 +477,10 @@ export function SendTab({
       handle = await wallet.load_multisig_tx(importData, false);
       const txInfos = wallet.get_multisig_tx_set_info(handle);
       const multisigStatus = await wallet.get_multisig_status();
+      if (isUnmountedRef.current) {
+        handle.delete();
+        return;
+      }
 
       const signersCountWithoutMe = wallet.get_multisig_tx_signers_count(
         handle,
@@ -468,6 +514,9 @@ export function SendTab({
     } catch (e) {
       if (handle) {
         handle.delete();
+      }
+      if (isUnmountedRef.current) {
+        return;
       }
       setState({
         type: "error",
@@ -641,6 +690,9 @@ export function SendTab({
         }));
       })
       .catch((e) => {
+        if (isClosed) {
+          return;
+        }
         console.error("Failed to start QR scanner:", e);
         setScannerError((e as Error).message || "Cannot access camera.");
       });
@@ -682,14 +734,28 @@ export function SendTab({
     setCameraState((prev) => ({ ...prev, torchBusy: true }));
     try {
       await controls.switchTorch(next);
+      if (isUnmountedRef.current) {
+        return;
+      }
       setCameraState((prev) => ({ ...prev, torchOn: next }));
     } catch (e) {
+      if (isUnmountedRef.current) {
+        return;
+      }
       console.error("Failed to toggle torch:", e);
       setScannerError((e as Error).message || "Cannot toggle camera light.");
     } finally {
+      if (isUnmountedRef.current) {
+        return;
+      }
       setCameraState((prev) => ({ ...prev, torchBusy: false }));
     }
-  }, [cameraState.torchAvailable, cameraState.torchBusy, cameraState.torchOn]);
+  }, [
+    cameraState.torchAvailable,
+    cameraState.torchBusy,
+    cameraState.torchOn,
+    isUnmountedRef,
+  ]);
 
   function updateRecipient(index: number, next: Partial<RecipientInput>) {
     setRecipients((prevRecipients) =>

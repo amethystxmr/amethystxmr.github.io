@@ -20,6 +20,7 @@ import {
   SurfaceCard,
   TextArea,
   useAlert,
+  useIsUnmountedRef,
 } from "../ui";
 
 type PaymentProofState =
@@ -58,6 +59,7 @@ export function TransactionsTab({
   isMultisigWallet: boolean;
 }) {
   const alert = useAlert();
+  const isUnmountedRef = useIsUnmountedRef();
   const [expandedIndexFromEnd, setExpandedIndexFromEnd] = React.useState<
     number | null
   >(null);
@@ -87,6 +89,9 @@ export function TransactionsTab({
       });
       try {
         const proof = await wallet.get_tx_proof(txid, address, "");
+        if (isUnmountedRef.current) {
+          return;
+        }
         setPaymentProofState({
           type: "proof",
           txid,
@@ -95,11 +100,14 @@ export function TransactionsTab({
           loading: false,
         });
       } catch (e) {
+        if (isUnmountedRef.current) {
+          return;
+        }
         setPaymentProofState(null);
         await alert((e as Error).message || "Failed to generate payment proof");
       }
     },
-    [alert, wallet],
+    [alert, isUnmountedRef, wallet],
   );
 
   const onGetTxKey = React.useCallback(
@@ -113,6 +121,9 @@ export function TransactionsTab({
       });
       try {
         const keysString = await wallet.get_tx_key(txid);
+        if (isUnmountedRef.current) {
+          return;
+        }
         setPaymentProofState({
           type: "tx-key",
           txid,
@@ -121,11 +132,14 @@ export function TransactionsTab({
           loading: false,
         });
       } catch (e) {
+        if (isUnmountedRef.current) {
+          return;
+        }
         setPaymentProofState(null);
         await alert((e as Error).message || "Failed to get tx key");
       }
     },
-    [alert, wallet],
+    [alert, isUnmountedRef, wallet],
   );
 
   const onDownloadProof = React.useCallback(async () => {

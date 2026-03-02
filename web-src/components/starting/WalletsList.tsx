@@ -504,6 +504,7 @@ function RestoreView({
 }: {
   onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
+  const isUnmountedRef = useIsUnmountedRef();
   const alert = useAlert();
   const [fileName, setFileName] = React.useState("");
   const [moneroSeed, setMoneroSeed] = React.useState(``);
@@ -620,6 +621,9 @@ function RestoreView({
           month,
           day,
         );
+        if (isUnmountedRef.current) {
+          return;
+        }
         setStartingHeight(restoreHeight.toString());
       }
 
@@ -679,6 +683,11 @@ function RestoreView({
         await wallet.store();
       });
       await persistNavigatorStorage();
+      if (isUnmountedRef.current) {
+        await closeWallet(wallet);
+        releaseWalletOpenLock?.();
+        return;
+      }
       if (!releaseWalletOpenLock) {
         throw new Error("Wallet lock release callback is missing");
       }
@@ -688,9 +697,20 @@ function RestoreView({
       };
       releaseWalletOpenLock = null;
       console.info("Wallet restored and saved");
+      if (isUnmountedRef.current) {
+        await closeWallet(openedWallet.wallet);
+        return;
+      }
       setRestoring(false);
       onDone(openedWallet);
     })().catch((e) => {
+      if (isUnmountedRef.current) {
+        if (wallet) {
+          void closeWallet(wallet);
+        }
+        releaseWalletOpenLock?.();
+        return;
+      }
       console.error("Error restoring wallet:", e);
       void alert(
         `Error restoring wallet: ${(e as Error).message || "Unknown error"}`,
@@ -716,13 +736,22 @@ function RestoreView({
     setLoadingHeight(true);
     getBlockchainHeightByDateUsingTempWallet(year, month, day)
       .then((height) => {
+        if (isUnmountedRef.current) {
+          return;
+        }
         setStartingHeight(height.toString());
       })
       .catch((e) => {
+        if (isUnmountedRef.current) {
+          return;
+        }
         console.error("Error getting blockchain height by date:", e);
         setStartingHeight("error");
       })
       .then(() => {
+        if (isUnmountedRef.current) {
+          return;
+        }
         setLoadingHeight(false);
       });
   };
@@ -1267,7 +1296,7 @@ function OpenWalletView({
         setPhase("idle");
       });
     },
-    [alert, fileName, onDone],
+    [alert, fileName, isUnmountedRef, onDone],
   );
 
   React.useEffect(() => {
@@ -1306,7 +1335,7 @@ function OpenWalletView({
       walletOpenLockReleaseRef.current = null;
       releaseWalletOpenLock?.();
     };
-  }, [alert, doOpen, fileName, isStartupAutoOpen, onDone]);
+  }, [alert, doOpen, fileName, isStartupAutoOpen, isUnmountedRef, onDone]);
 
   const isBusy = phase !== "idle";
 
