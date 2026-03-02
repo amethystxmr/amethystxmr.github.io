@@ -171,7 +171,13 @@ export function MultisigTab({
         setBusy(false);
       }
     }
-  }, [busy, isPrepareBlockedByPayments, isPrepareBlockedBySync, wallet]);
+  }, [
+    busy,
+    isPrepareBlockedByPayments,
+    isPrepareBlockedBySync,
+    isUnmountedRef,
+    wallet,
+  ]);
 
   const handleMakeMultisig = React.useCallback(async () => {
     if (busy) {
@@ -233,6 +239,7 @@ export function MultisigTab({
     othersRound1Messages,
     participants,
     myRound1Message,
+    isUnmountedRef,
     requestValidWalletPassword,
     threshold,
     wallet,
@@ -288,6 +295,7 @@ export function MultisigTab({
   }, [
     alert,
     busy,
+    isUnmountedRef,
     onRefresh,
     othersRoundMessages,
     requestValidWalletPassword,
