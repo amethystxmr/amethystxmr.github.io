@@ -148,6 +148,7 @@ export function OtherTab({
   const isMultisigWallet = multisigStatus?.multisig_is_active ?? false;
   const [isExportModeDialogOpen, setIsExportModeDialogOpen] =
     React.useState(false);
+  const [isImportConfirmOpen, setIsImportConfirmOpen] = React.useState(false);
   const [busyAction, setBusyAction] = React.useState<
     "idle" | "export" | "import"
   >("idle");
@@ -293,19 +294,21 @@ export function OtherTab({
       return;
     }
 
-    const daemonAddress = options.getValue("daemonAddress");
-    await alert(
-      `This operation is recommended to do on trusted daemon. Continue if you trust ${daemonAddress}`,
-    );
-
-    const importedData = await importOverlay({
-      header: "Paste key images data here",
-    });
-    if (importedData === null) {
+    setBusyAction("import");
+    let importedData: Uint8Array | null;
+    try {
+      importedData = await importOverlay({
+        header: "Paste key images data here",
+      });
+    } catch (e) {
+      setBusyAction("idle");
+      await alert(String(e));
       return;
     }
-
-    setBusyAction("import");
+    if (importedData === null) {
+      setBusyAction("idle");
+      return;
+    }
     const tmpFile = `.tmp-key-images-import-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`;
     try {
       const result = await withFsLock(async () => {
@@ -359,13 +362,14 @@ export function OtherTab({
           <Button
             className="w-full py-2 text-sm font-semibold"
             variant="neutral"
-            disabled={isBusy || isViewOnly === true}
-            title={
-              isViewOnly === true
-                ? "Export key images is unavailable for view-only wallet"
-                : "Exported key images can be imported into another view-only wallet so it can show accurate outgoing history and balance"
-            }
+            disabled={isBusy}
             onClick={() => {
+              if (isViewOnly === true) {
+                void alert(
+                  "Exporting key images is unavailable for a view-only wallet.",
+                );
+                return;
+              }
               setIsExportModeDialogOpen(true);
             }}
           >
@@ -374,14 +378,9 @@ export function OtherTab({
           <Button
             className="w-full py-2 text-sm font-semibold"
             variant="neutral"
-            disabled={isBusy || hasUnknownKeyImages !== true}
-            title={
-              hasUnknownKeyImages === true
-                ? "Import key images data"
-                : "Import is not needed now because this wallet has no missing key images"
-            }
+            disabled={isBusy}
             onClick={() => {
-              void onImportKeyImages();
+              setIsImportConfirmOpen(true);
             }}
           >
             {busyAction === "import" ? "⬆︎ Importing..." : "⬆︎ Import key images"}
@@ -431,9 +430,13 @@ export function OtherTab({
             <div className="text-base font-semibold text-white">
               Export key images
             </div>
-            <div className="text-sm text-white/75">Choose export mode:</div>
+            <div className="text-sm text-white/75">
+              This export data can be valuable for view-only wallets from the
+              same keys — it allows them to show accurate outgoing history and
+              balance.
+            </div>
             <div className="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/70 ring-1 ring-white/10">
-              <div>
+              <div className="mt-1.5">
                 <span className="font-semibold text-white/85">
                   Requested range only:
                 </span>{" "}
@@ -481,6 +484,63 @@ export function OtherTab({
                 {busyAction === "export"
                   ? "⬇︎ Exporting..."
                   : "⬇︎ All key images (default)"}
+              </Button>
+            </ButtonsHolder>
+          </div>
+        </OverlayDialog>
+      )}
+
+      {!isMultisigWallet && isImportConfirmOpen && (
+        <OverlayDialog onClose={() => setIsImportConfirmOpen(false)}>
+          <div className="space-y-3">
+            <div className="text-base font-semibold text-white">
+              ⬆︎ Import key images
+            </div>
+            <div className="text-sm text-white/75">
+              {hasUnknownKeyImages !== true && (
+                <div className="mb-2">
+                  ⚠{" "}
+                  {isViewOnly ? (
+                    <span>
+                      This wallet has no missing key images, so this action is
+                      pretty useless right now.
+                    </span>
+                  ) : (
+                    <span>
+                      This wallet has no missing key images, so this action is
+                      pretty useless for a regular wallet. It may make sense if
+                      you have a watch-only wallet and want to sync key image
+                      data.
+                    </span>
+                  )}
+                </div>
+              )}
+              <div>
+                This operation is recommended to be done on a trusted daemon.
+                Continue if you trust{" "}
+                <span className="font-mono text-white/90">
+                  {options.getValue("daemonAddress")}
+                </span>
+                .
+              </div>
+            </div>
+            <ButtonsHolder>
+              <Button
+                type="button"
+                variant="soft"
+                onClick={() => setIsImportConfirmOpen(false)}
+              >
+                ✖ Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => {
+                  setIsImportConfirmOpen(false);
+                  void onImportKeyImages();
+                }}
+              >
+                ✓ Proceed
               </Button>
             </ButtonsHolder>
           </div>
