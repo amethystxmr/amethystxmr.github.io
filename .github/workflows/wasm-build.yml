@@ -91,7 +91,9 @@ jobs:
           key: ${{ steps.monero_cache_restore.outputs.cache-primary-key }}
 
       - name: ccache stats (before build)
-        run: ccache --show-stats --verbose
+        run: |
+          ccache --show-stats --verbose
+          ccache -z
 
       - name: Build
         working-directory: monero-wasm-src
