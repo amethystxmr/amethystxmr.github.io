@@ -423,13 +423,12 @@ export function OtherTab({
             <div className="text-base font-semibold text-white">
               Export key images
             </div>
-            <div className="text-sm text-white/75">Choose export mode:</div>
+            <div className="text-sm text-white/75">
+              This export data can be valuable for view-only wallets from the
+              same keys — it allows them to show accurate outgoing history and
+              balance.
+            </div>
             <div className="rounded-lg bg-white/5 px-3 py-2 text-xs text-white/70 ring-1 ring-white/10">
-              <div>
-                This export data can be valuable for view-only wallets from the
-                same keys — it allows them to show accurate outgoing history and
-                balance.
-              </div>
               <div className="mt-1.5">
                 <span className="font-semibold text-white/85">
                   Requested range only:
@@ -493,9 +492,20 @@ export function OtherTab({
             <div className="text-sm text-white/75">
               {hasUnknownKeyImages !== true && (
                 <div className="mb-2">
-                  ⚠ This wallet has no missing key images, so this action is
-                  pretty useless for a regular wallet. It may make sense if you
-                  have a watch-only wallet and want to sync key image data.
+                  ⚠{" "}
+                  {isViewOnly ? (
+                    <span>
+                      This wallet has no missing key images, so this action is
+                      pretty useless right now.
+                    </span>
+                  ) : (
+                    <span>
+                      This wallet has no missing key images, so this action is
+                      pretty useless for a regular wallet. It may make sense if
+                      you have a watch-only wallet and want to sync key image
+                      data.
+                    </span>
+                  )}
                 </div>
               )}
               <div>
