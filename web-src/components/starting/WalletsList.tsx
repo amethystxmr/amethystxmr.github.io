@@ -17,6 +17,7 @@ import {
   SurfaceCard,
   TextArea,
   useAlert,
+  useIsUnmountedRef,
 } from "../ui";
 import {
   createWallet,
@@ -1212,6 +1213,7 @@ function OpenWalletView({
   const [password, setPassword] = React.useState("");
   const [phase, setPhase] = React.useState<OpenPhase>("acquiring-lock");
   const walletOpenLockReleaseRef = React.useRef<(() => void) | null>(null);
+  const isUnmountedRef = useIsUnmountedRef();
 
   const doOpen = React.useCallback(
     (isInitial: boolean, passwordToTry: string) => {
@@ -1224,9 +1226,20 @@ function OpenWalletView({
         }
 
         await persistNavigatorStorage();
+        if (isUnmountedRef.current) {
+          return;
+        }
         wallet = createWallet();
         await wallet.init();
+        if (isUnmountedRef.current) {
+          await closeWallet(wallet);
+          return;
+        }
         await wallet.load(fileName, passwordToTry);
+        if (isUnmountedRef.current) {
+          await closeWallet(wallet);
+          return;
+        }
         if (!releaseWalletOpenLock) {
           throw new Error("Wallet lock release callback is missing");
         }
@@ -1239,6 +1252,9 @@ function OpenWalletView({
       })().catch((e) => {
         if (wallet) {
           void closeWallet(wallet);
+        }
+        if (isUnmountedRef.current) {
+          return;
         }
 
         if (!isInitial) {
@@ -1271,6 +1287,9 @@ function OpenWalletView({
       if (!releaseWalletOpenLock) {
         if (!isStartupAutoOpen) {
           await alert(`Wallet "${fileName}" is already opened in another tab.`);
+        }
+        if (cancelled || isUnmountedRef.current) {
+          return;
         }
         onDone(null);
         setPhase("idle");

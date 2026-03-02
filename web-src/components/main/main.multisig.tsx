@@ -16,6 +16,7 @@ import {
   useMultisigDataOverlayExport,
   useMultisigDataOverlayImport,
   useAlert,
+  useIsUnmountedRef,
   usePasswordPrompt,
 } from "../ui";
 import { withFsLock } from "../utils";
@@ -63,14 +64,7 @@ export function MultisigTab({
 
   const [busy, setBusy] = React.useState(false);
 
-  const isUnmountedRef = React.useRef(false);
-
-  React.useEffect(() => {
-    isUnmountedRef.current = false;
-    return () => {
-      isUnmountedRef.current = true;
-    };
-  }, []);
+  const isUnmountedRef = useIsUnmountedRef();
 
   // No-multisig flow state
   const [allowPrepareWhileSyncing, setAllowPrepareWhileSyncing] =

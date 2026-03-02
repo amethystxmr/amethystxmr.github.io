@@ -515,6 +515,9 @@ export function SendTab({
           video: { facingMode: { ideal: "environment" } },
           audio: false,
         });
+        if (cancelled) {
+          return;
+        }
         const devices = await navigator.mediaDevices.enumerateDevices();
         if (cancelled) {
           return;
