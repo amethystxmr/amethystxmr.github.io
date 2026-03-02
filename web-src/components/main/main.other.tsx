@@ -294,14 +294,21 @@ export function OtherTab({
       return;
     }
 
-    const importedData = await importOverlay({
-      header: "Paste key images data here",
-    });
-    if (importedData === null) {
+    setBusyAction("import");
+    let importedData: Uint8Array | null;
+    try {
+      importedData = await importOverlay({
+        header: "Paste key images data here",
+      });
+    } catch (e) {
+      setBusyAction("idle");
+      await alert(String(e));
       return;
     }
-
-    setBusyAction("import");
+    if (importedData === null) {
+      setBusyAction("idle");
+      return;
+    }
     const tmpFile = `.tmp-key-images-import-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`;
     try {
       const result = await withFsLock(async () => {
@@ -359,7 +366,7 @@ export function OtherTab({
             onClick={() => {
               if (isViewOnly === true) {
                 void alert(
-                  "Export key images is unavailable for view-only wallet",
+                  "Exporting key images is unavailable for a view-only wallet.",
                 );
                 return;
               }
