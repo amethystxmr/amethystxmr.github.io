@@ -67,6 +67,11 @@ jobs:
             ${{ runner.os }}-ccache-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-${{ steps.monero_ref.outputs.sha }}-
             ${{ runner.os }}-ccache-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-
 
+      - name: Enforce ccache config after restore
+        run: |
+          ccache --set-config cache_dir="${CCACHE_DIR}"
+          ccache --set-config max_size=2G
+
       - name: Restore monero source cache
         id: monero_cache_restore
         uses: actions/cache/restore@v4
