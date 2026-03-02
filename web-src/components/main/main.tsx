@@ -177,11 +177,14 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
   React.useEffect(() => {
     let cancelled = false;
-    wallet.set_on_new_block_callback((height) =>
+    wallet.set_on_new_block_callback((height) => {
+      if (cancelled) {
+        return;
+      }
       setStatus((prev) =>
         prev === null ? null : { ...prev, walletHeight: height },
-      ),
-    );
+      );
+    });
 
     const getStatus = async () => {
       const walletHeight = await wallet.get_blockchain_current_height();
@@ -238,6 +241,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       return newStatus;
     };
     const doRefresh = async () => {
+      if (cancelled) {
+        return;
+      }
       setRefreshing(true);
       setRefreshError(null);
 
@@ -268,6 +274,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
         return refreshStatus;
       } catch (e) {
+        if (cancelled) {
+          return;
+        }
         console.error("Error during refresh:", e);
         setRefreshError((e as Error).message || "Unknown error");
         setRefreshing(false);
@@ -275,6 +284,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     };
 
     const interruptableDelay = async (ms: number) => {
+      if (cancelled) {
+        return;
+      }
       if (stopWaitingRef.current === "no-wait") {
         console.info(
           `Waiting for ${ms / 1000} seconds... {no wait mode, skipping wait}`,
@@ -339,6 +351,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             continue;
           }
         } catch (e) {
+          if (cancelled) {
+            return;
+          }
           console.error("Error while updating wallet/daemon status:", e);
           setRefreshError((e as Error).message || "Unknown error");
           await interruptableDelay(30_000);
@@ -352,6 +367,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         // The point of having delay here is to allow to get fresh statuses right after refresh
         // If we have refresh in the end of the loop then we will just wait
         const isSynced = await wallet.is_synced().catch(() => null);
+        if (cancelled) {
+          return;
+        }
         if (isSynced) {
           lastTimeRefreshStartedAt = null;
           lastTimeRefreshedBlocks = null;
@@ -362,6 +380,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             const mempoolPayments = await wallet
               .get_payments_mempool()
               .catch(() => null);
+            if (cancelled) {
+              return;
+            }
             if (mempoolPayments) {
               const transformedMempoolPayments =
                 transformPayments(mempoolPayments);
@@ -411,6 +432,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     });
     return () => {
       cancelled = true;
+      if (stopWaitingRef.current && stopWaitingRef.current !== "no-wait") {
+        stopWaitingRef.current();
+      }
+      stopWaitingRef.current = null;
       wallet.set_on_new_block_callback(null);
     };
   }, [wallet, setRefreshing, setStatus, updateWalletAddresses]);
@@ -609,7 +634,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           tabs={[
             {
               key: "receive",
-              label: <><span aria-hidden="true">↓</span>{" "}Receive</>,
+              label: (
+                <>
+                  <span aria-hidden="true">↓</span> Receive
+                </>
+              ),
               disabled: isMainTabsLockedByMultisig,
               content: (
                 <ReceiveAddresses
@@ -629,13 +658,21 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
             },
             {
               key: "send",
-              label: <><span aria-hidden="true">↑</span>{" "}Send</>,
+              label: (
+                <>
+                  <span aria-hidden="true">↑</span> Send
+                </>
+              ),
               disabled: isMainTabsLockedByMultisig,
               content: sendTabContent,
             },
             {
               key: "transactions",
-              label: <><span aria-hidden="true">☰</span>{" "}Transactions</>,
+              label: (
+                <>
+                  <span aria-hidden="true">☰</span> Transactions
+                </>
+              ),
               disabled: isMainTabsLockedByMultisig,
               content: (
                 <TransactionsTab
@@ -656,7 +693,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               ? [
                   {
                     key: "multisig",
-                    label: <><span aria-hidden="true">✎</span>{" "}Multisig</>,
+                    label: (
+                      <>
+                        <span aria-hidden="true">✎</span> Multisig
+                      </>
+                    ),
                     content: (
                       <MultisigTab
                         wallet={wallet}
@@ -676,7 +717,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               : []),
             {
               key: "other",
-              label: <><span aria-hidden="true">⚙</span>{" "}Other</>,
+              label: (
+                <>
+                  <span aria-hidden="true">⚙</span> Other
+                </>
+              ),
               content: (
                 <OtherTab
                   onExit={onExit}
