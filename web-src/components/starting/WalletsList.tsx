@@ -700,7 +700,9 @@ function RestoreView({
       releaseWalletOpenLock = null;
       console.info("Wallet restored and saved");
       if (isUnmountedRef.current) {
-        await closeWallet(openedWallet.wallet);
+        await closeWallet(openedWallet.wallet).finally(
+          openedWallet.releaseWalletOpenLock,
+        );
         return;
       }
       setRestoring(false);
