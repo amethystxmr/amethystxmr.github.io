@@ -28,6 +28,7 @@ export { AlertDialog } from "./AlertDialog";
 export { AlertProvider } from "./AlertProvider";
 export { useAlert } from "./useAlert";
 export { useIsMobileView } from "./useIsMobileView";
+export { useIsUnmountedRef } from "./useIsUnmountedRef";
 export { ConfirmByTextDialog } from "./ConfirmByTextDialog";
 export { ConfirmDialog } from "./ConfirmDialog";
 export { PasswordPromptDialog } from "./PasswordPromptDialog";

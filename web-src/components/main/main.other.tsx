@@ -19,6 +19,7 @@ import {
   Toggle,
   useAlert,
   useIsMobileView,
+  useIsUnmountedRef,
   useMultisigDataOverlayExport,
   useMultisigDataOverlayImport,
 } from "../ui";
@@ -86,6 +87,7 @@ export function OtherTab({
   const exportOverlay = useMultisigDataOverlayExport();
   const importOverlay = useMultisigDataOverlayImport();
   const isMobileView = useIsMobileView();
+  const isUnmountedRef = useIsUnmountedRef();
   const seedRows = isMobileView ? 6 : 2;
   const addressRows = isMobileView ? 3 : 1;
   const keyRows = isMobileView ? 2 : 1;
@@ -189,8 +191,14 @@ export function OtherTab({
         seedMessage = (e as Error).message || "Failed to load wallet seed";
       }
 
+      if (isUnmountedRef.current) {
+        return;
+      }
       setSeedState({ open: true, type: "loaded", seed, seedMessage, keys });
     } catch (e) {
+      if (isUnmountedRef.current) {
+        return;
+      }
       console.error("Failed to load wallet seed/keys:", e);
       setSeedState({
         open: true,
@@ -207,8 +215,16 @@ export function OtherTab({
 
     setSeedCopyState("idle");
     const ok = await copyToClipboard(seedState.seed);
+    if (isUnmountedRef.current) {
+      return;
+    }
     setSeedCopyState(ok ? "ok" : "fail");
-    window.setTimeout(() => setSeedCopyState("idle"), 1500);
+    window.setTimeout(() => {
+      if (isUnmountedRef.current) {
+        return;
+      }
+      setSeedCopyState("idle");
+    }, 1500);
   };
 
   const onOpenRescanDialog = () => {
@@ -234,12 +250,21 @@ export function OtherTab({
         );
         await wallet.store();
       });
+      if (isUnmountedRef.current) {
+        return;
+      }
       onRefresh();
     } catch (e) {
+      if (isUnmountedRef.current) {
+        return;
+      }
       void alert(
         (e as Error).message || "Unknown error while rescanning blockchain",
       );
     } finally {
+      if (isUnmountedRef.current) {
+        return;
+      }
       setRescanState((prev) => ({ ...prev, busy: false, open: false }));
     }
   };
@@ -275,18 +300,27 @@ export function OtherTab({
         });
 
         const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
+        if (isUnmountedRef.current) {
+          return;
+        }
         await exportOverlay({
           data,
           header: "Your key images data",
           fileName: `${walletName}-key-images`,
         });
       } catch (e) {
+        if (isUnmountedRef.current) {
+          return;
+        }
         await alert((e as Error)?.message || "Failed to export key images");
       } finally {
+        if (isUnmountedRef.current) {
+          return;
+        }
         setBusyAction("idle");
       }
     },
-    [alert, exportOverlay, isBusy, unlinkIfExists, wallet],
+    [alert, exportOverlay, isBusy, isUnmountedRef, unlinkIfExists, wallet],
   );
 
   const onImportKeyImages = React.useCallback(async () => {
@@ -301,11 +335,17 @@ export function OtherTab({
         header: "Paste key images data here",
       });
     } catch (e) {
+      if (isUnmountedRef.current) {
+        return;
+      }
       setBusyAction("idle");
       await alert(String(e));
       return;
     }
     if (importedData === null) {
+      if (isUnmountedRef.current) {
+        return;
+      }
       setBusyAction("idle");
       return;
     }
@@ -321,16 +361,36 @@ export function OtherTab({
           unlinkIfExists(tmpFile);
         }
       });
+      if (isUnmountedRef.current) {
+        return;
+      }
       await alert(
         `Signed key images imported to height ${result.height.toString()}, ${balanceToString(result.spent)} spent, ${balanceToString(result.unspent)} unspent`,
       );
+      if (isUnmountedRef.current) {
+        return;
+      }
       onRefresh();
     } catch (e) {
+      if (isUnmountedRef.current) {
+        return;
+      }
       await alert((e as Error)?.message || "Failed to import key images");
     } finally {
+      if (isUnmountedRef.current) {
+        return;
+      }
       setBusyAction("idle");
     }
-  }, [alert, importOverlay, isBusy, onRefresh, unlinkIfExists, wallet]);
+  }, [
+    alert,
+    importOverlay,
+    isBusy,
+    isUnmountedRef,
+    onRefresh,
+    unlinkIfExists,
+    wallet,
+  ]);
 
   return (
     <div className="mt-2 space-y-3">

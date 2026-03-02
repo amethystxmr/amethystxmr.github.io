@@ -16,6 +16,7 @@ import {
   useMultisigDataOverlayExport,
   useMultisigDataOverlayImport,
   useAlert,
+  useIsUnmountedRef,
   usePasswordPrompt,
 } from "../ui";
 import { withFsLock } from "../utils";
@@ -63,14 +64,7 @@ export function MultisigTab({
 
   const [busy, setBusy] = React.useState(false);
 
-  const isUnmountedRef = React.useRef(false);
-
-  React.useEffect(() => {
-    isUnmountedRef.current = false;
-    return () => {
-      isUnmountedRef.current = true;
-    };
-  }, []);
+  const isUnmountedRef = useIsUnmountedRef();
 
   // No-multisig flow state
   const [allowPrepareWhileSyncing, setAllowPrepareWhileSyncing] =
@@ -177,7 +171,13 @@ export function MultisigTab({
         setBusy(false);
       }
     }
-  }, [busy, isPrepareBlockedByPayments, isPrepareBlockedBySync, wallet]);
+  }, [
+    busy,
+    isPrepareBlockedByPayments,
+    isPrepareBlockedBySync,
+    isUnmountedRef,
+    wallet,
+  ]);
 
   const handleMakeMultisig = React.useCallback(async () => {
     if (busy) {
@@ -239,6 +239,7 @@ export function MultisigTab({
     othersRound1Messages,
     participants,
     myRound1Message,
+    isUnmountedRef,
     requestValidWalletPassword,
     threshold,
     wallet,
@@ -294,6 +295,7 @@ export function MultisigTab({
   }, [
     alert,
     busy,
+    isUnmountedRef,
     onRefresh,
     othersRoundMessages,
     requestValidWalletPassword,
