@@ -493,7 +493,7 @@ export function OtherTab({
             <div className="text-sm text-white/75">
               {hasUnknownKeyImages !== true && (
                 <div className="mb-2">
-                  ⚠️ This wallet has no missing key images, so this action is
+                  ⚠ This wallet has no missing key images, so this action is
                   pretty useless for a regular wallet. It may make sense if you
                   have a watch-only wallet and want to sync key image data.
                 </div>
