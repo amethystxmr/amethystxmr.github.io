@@ -622,6 +622,8 @@ function RestoreView({
           day,
         );
         if (isUnmountedRef.current) {
+          releaseWalletOpenLock?.();
+          releaseWalletOpenLock = null;
           return;
         }
         setStartingHeight(restoreHeight.toString());
