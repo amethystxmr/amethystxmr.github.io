@@ -56,7 +56,7 @@ jobs:
           mkdir -p "${CCACHE_DIR}"
           mkdir -p "$HOME/.emscripten_cache"
           ccache --set-config cache_dir="${CCACHE_DIR}"
-          ccache --set-config max_size=500M
+          ccache --set-config max_size=2G
 
       - name: Restore ccache
         uses: actions/cache/restore@v4
