@@ -103,7 +103,7 @@ export declare class MoneroWasmWallet {
     destinations: string[],
     amounts: bigint[],
     priority: FeePriority,
-    allowAll: boolean,
+    subtractFeeFromIndex: number | null,
   ): Promise<PendingTxHandle>;
   get_transfers(): Promise<TransferItem[]>;
   get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
@@ -534,7 +534,6 @@ export function saveWalletFilesData(
 }
 
 export const max64 = (1n << 64n) - 1n;
-export const TRANSFER_AMOUNT_ALL = max64;
 
 export interface PaymentDetailsTransformed extends PaymentDetails {
   destinations: { address: string; amount: bigint }[];

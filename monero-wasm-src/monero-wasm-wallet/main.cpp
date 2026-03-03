@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <utility>
+#include <cmath>
 #include "wallet/wallet2.h"
 #include "wallet/api/wallet2_api.h"
 #include "version.h"
@@ -19,7 +20,6 @@
 #include <emscripten/val.h>
 #include <optional>
 #include <cstdint>
-#include <limits>
 
 #include "multisig/multisig.h"
 #include "multisig/multisig_account.h"
@@ -781,7 +781,11 @@ public:
         return result;
     }
 
-    auto transfer_prepare(emscripten::val dst_addresses_js, emscripten::val amounts_js, uint32_t priority, bool allow_all_amount)
+    auto transfer_prepare(
+        emscripten::val dst_addresses_js,
+        emscripten::val amounts_js,
+        uint32_t priority,
+        emscripten::val subtract_fee_from_index_js)
     {
         auto dst_addresses = parse_js_array<std::string>(
             dst_addresses_js,
@@ -814,8 +818,27 @@ public:
             throw std::runtime_error("Destination addresses and amounts must have the same length");
         }
 
-        return promise([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority, allow_all_amount]()
-                       { return transfer_impl(dst_addresses, amounts, priority, allow_all_amount); });
+        std::optional<size_t> subtract_fee_from_index = std::nullopt;
+        if (!subtract_fee_from_index_js.isNull() && !subtract_fee_from_index_js.isUndefined())
+        {
+            const auto type = subtract_fee_from_index_js.typeOf().as<std::string>();
+            if (type == "number")
+            {
+                const double number_value = subtract_fee_from_index_js.as<double>();
+                if (number_value < 0 || number_value != std::floor(number_value))
+                {
+                    throw std::runtime_error("subtractFeeFromIndex must be a non-negative integer or null");
+                }
+                subtract_fee_from_index = static_cast<size_t>(number_value);
+            }
+            else
+            {
+                throw std::runtime_error("subtractFeeFromIndex must be a number (array index) or null");
+            }
+        }
+
+        return promise([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority, subtract_fee_from_index]()
+                       { return transfer_impl(dst_addresses, amounts, priority, subtract_fee_from_index); });
     }
 
     emscripten::val get_transfers_info(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
@@ -986,7 +1009,7 @@ public:
         const std::vector<std::string> &dst_addresses,
         const std::vector<uint64_t> &amounts,
         uint32_t priority,
-        bool allow_all_amount)
+        std::optional<size_t> subtract_fee_from_index)
     {
         if (dst_addresses.empty())
         {
@@ -999,10 +1022,6 @@ public:
 
         std::vector<cryptonote::tx_destination_entry> dsts;
         dsts.reserve(dst_addresses.size());
-        tools::wallet2::unique_index_container subtract_fee_from_outputs;
-        std::optional<size_t> all_destination_index;
-        constexpr uint64_t amount_all = std::numeric_limits<uint64_t>::max();
-        uint64_t fixed_amount_sum = 0;
 
         for (size_t i = 0; i < dst_addresses.size(); ++i)
         {
@@ -1017,54 +1036,19 @@ public:
             de.addr = info.address;
             de.is_subaddress = info.is_subaddress;
             de.is_integrated = info.has_payment_id;
-            if (amounts[i] == amount_all)
-            {
-                if (!allow_all_amount)
-                {
-                    throw std::runtime_error("Amount ALL is not allowed unless transfer_prepare is called with allowAll=true.");
-                }
-                if (all_destination_index)
-                {
-                    throw std::runtime_error("Only one destination can have amount ALL");
-                }
-                all_destination_index = i;
-                de.amount = 1;
-            }
-            else
-            {
-                de.amount = amounts[i];
-                if (fixed_amount_sum > std::numeric_limits<uint64_t>::max() - de.amount)
-                {
-                    throw std::runtime_error("Sum of fixed destination amounts overflows uint64");
-                }
-                fixed_amount_sum += de.amount;
-            }
+            de.amount = amounts[i];
 
             dsts.push_back(de);
         }
 
-        if (!allow_all_amount)
+        tools::wallet2::unique_index_container subtract_fee_from_outputs;
+        if (subtract_fee_from_index.has_value())
         {
-            for (size_t i = 0; i < amounts.size(); ++i)
+            if (*subtract_fee_from_index >= dsts.size())
             {
-                if (amounts[i] == amount_all)
-                {
-                    throw std::runtime_error("Amount ALL is not allowed unless transfer_prepare is called with allowAll=true.");
-                }
+                throw std::runtime_error("subtractFeeFromIndex is out of bounds");
             }
-        }
-
-        if (all_destination_index)
-        {
-            uint64_t blocks_to_unlock = 0;
-            uint64_t time_to_unlock = 0;
-            const uint64_t unlocked_balance = m_wallet.unlocked_balance(0, false, &blocks_to_unlock, &time_to_unlock);
-            if (unlocked_balance <= fixed_amount_sum)
-            {
-                throw std::runtime_error("Not enough unlocked balance for amount ALL");
-            }
-            dsts[*all_destination_index].amount = unlocked_balance - fixed_amount_sum;
-            subtract_fee_from_outputs.insert(*all_destination_index);
+            subtract_fee_from_outputs.insert(*subtract_fee_from_index);
         }
 
         const size_t min_ring_size = m_wallet.get_min_ring_size();
