@@ -148,6 +148,9 @@ export function OtherTab({
 
   const isSeedButtonDisabled = multisigStatus === null;
   const isMultisigWallet = multisigStatus?.multisig_is_active ?? false;
+  const isReadyMultisigWallet =
+    (multisigStatus?.multisig_is_active ?? false) &&
+    (multisigStatus?.is_ready ?? false);
   const [isExportModeDialogOpen, setIsExportModeDialogOpen] =
     React.useState(false);
   const [isImportConfirmOpen, setIsImportConfirmOpen] = React.useState(false);
@@ -162,11 +165,7 @@ export function OtherTab({
     }
 
     if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
-      setSeedState({
-        open: true,
-        type: "error",
-        error: "Unable to get seed while multisig setup is in progress",
-      });
+      await alert("Unable to show seed/keys while multisig setup is in progress.");
       return;
     }
 
@@ -747,7 +746,9 @@ export function OtherTab({
                     }
                   />
 
-                  <div className="text-xs text-white/55">Address</div>
+                  <div className="text-xs text-white/55">
+                    {isReadyMultisigWallet ? "Multisig address" : "Address"}
+                  </div>
                   <TextArea
                     readOnly
                     rows={addressRows}
@@ -755,7 +756,11 @@ export function OtherTab({
                     value={seedState.keys.address}
                   />
 
-                  <div className="text-xs text-white/55">Private view key</div>
+                  <div className="text-xs text-white/55">
+                    {isReadyMultisigWallet
+                      ? "Multisig private view key"
+                      : "Private view key"}
+                  </div>
                   <TextArea
                     readOnly
                     rows={keyRows}
@@ -763,7 +768,11 @@ export function OtherTab({
                     value={bytesToHex(seedState.keys.viewKey.private)}
                   />
 
-                  <div className="text-xs text-white/55">Public view key</div>
+                  <div className="text-xs text-white/55">
+                    {isReadyMultisigWallet
+                      ? "Multisig public view key"
+                      : "Public view key"}
+                  </div>
                   <TextArea
                     readOnly
                     rows={keyRows}
@@ -777,13 +786,19 @@ export function OtherTab({
                     rows={keyRows}
                     className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
                     value={
-                      seedState.keys.spendKey.private
+                      isReadyMultisigWallet
+                        ? "(This key is distributed between multisig participants)"
+                        : seedState.keys.spendKey.private
                         ? bytesToHex(seedState.keys.spendKey.private)
                         : "(Not available)"
                     }
                   />
 
-                  <div className="text-xs text-white/55">Public spend key</div>
+                  <div className="text-xs text-white/55">
+                    {isReadyMultisigWallet
+                      ? "Multisig public spend key"
+                      : "Public spend key"}
+                  </div>
                   <TextArea
                     readOnly
                     rows={keyRows}
