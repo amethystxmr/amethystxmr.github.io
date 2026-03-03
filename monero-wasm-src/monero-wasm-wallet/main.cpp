@@ -62,7 +62,12 @@ public:
     virtual ~my_callbacks() {}
     */
 
-    MoneroWasmWallet()
+    MoneroWasmWallet(cryptonote::network_type network_type)
+        : m_wallet(
+              network_type,                                                   // nettype
+              1,                                                              // kdf_rounds
+              true,                                                           // unattended
+              std::make_unique<js_client_factory>())                          // http_client_factory
     {
         // TODO: Start the worker thread
 
@@ -1493,12 +1498,7 @@ private:
             });
     }
 
-    // TODO: Add a callback for onFetching for better UI
-    tools::wallet2 m_wallet = tools::wallet2(
-        cryptonote::network_type::MAINNET,
-        1,
-        true,
-        std::unique_ptr<epee::net_utils::http::http_client_factory>(new js_client_factory()));
+    tools::wallet2 m_wallet;
 
     pthread_t walletThread;
     emscripten::ProxyingQueue walletQueue;
@@ -1512,6 +1512,11 @@ private:
 
 EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
 {
+    emscripten::enum_<cryptonote::network_type>("NetworkType")
+        .value("MAINNET", cryptonote::network_type::MAINNET)
+        .value("TESTNET", cryptonote::network_type::TESTNET)
+        .value("STAGENET", cryptonote::network_type::STAGENET);
+
     emscripten::class_<MoneroWasmWallet>("MoneroWasmWallet")
         .function("init", &MoneroWasmWallet::init)
         .function("get_daemon_blockchain_height", &MoneroWasmWallet::get_daemon_blockchain_height)
@@ -1574,7 +1579,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("import_key_images", &MoneroWasmWallet::import_key_images)
         .function("verify_password", &MoneroWasmWallet::verify_password)
         .function("rescan_blockchain", &MoneroWasmWallet::rescan_blockchain)
-        .constructor();
+        .constructor<cryptonote::network_type>();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
         .smart_ptr<std::shared_ptr<std::vector<tools::wallet2::pending_tx>>>("VectorOfPendingTx");
