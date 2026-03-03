@@ -32,7 +32,6 @@ import {
   PendingTxHandle,
   TransferItem,
   TransferInfoItem,
-  TRANSFER_AMOUNT_ALL,
   type FeePriority as FeePriorityValue,
   MultisigTxSetHandle,
 } from "../../../monero-wasm-module/walletApi";
@@ -133,7 +132,6 @@ type RecipientInput = {
 };
 
 type ParsedRecipient = {
-  index: number;
   normalizedAddress: string;
   parsedAmount: bigint | null;
   isAllAmount: boolean;
@@ -226,12 +224,11 @@ export function SendTab({
 
   const parsedRecipients = React.useMemo<ParsedRecipient[]>(
     () =>
-      recipients.map((recipient, index) => {
+      recipients.map((recipient) => {
         const normalizedAddress = recipient.address.replace(/\s+/g, "").trim();
         const isAllAmount = isAllAmountInput(recipient.amount);
         const parsedAmount = parseXmrToAtomic(recipient.amount);
         return {
-          index,
           normalizedAddress,
           parsedAmount,
           isAllAmount,
@@ -267,6 +264,39 @@ export function SendTab({
       });
       return;
     }
+    const allRecipientIndex =
+      allAmountCount === 1
+        ? parsedRecipients.findIndex((recipient) => recipient.isAllAmount)
+        : -1;
+    const subtractFeeFromIndex =
+      allRecipientIndex >= 0 ? allRecipientIndex : null;
+    let allAmountValue: bigint | null = null;
+    if (allRecipientIndex >= 0) {
+      if (currentUnlockedNonStrictBalance === null) {
+        setState({
+          type: "error",
+          message: "Unlocked balance is loading, try again in a moment",
+        });
+        return;
+      }
+      const nonAllSum = parsedRecipients.reduce(
+        (sum, recipient) =>
+          !recipient.isAllAmount &&
+          recipient.parsedAmount !== null &&
+          recipient.parsedAmount > 0n
+            ? sum + recipient.parsedAmount
+            : sum,
+        0n,
+      );
+      allAmountValue = currentUnlockedNonStrictBalance - nonAllSum;
+      if (allAmountValue <= 0n) {
+        setState({
+          type: "error",
+          message: "Not enough unlocked balance for amount ALL",
+        });
+        return;
+      }
+    }
 
     const destinations = parsedRecipients.map(
       (recipient) => recipient.normalizedAddress,
@@ -274,7 +304,14 @@ export function SendTab({
     const amounts: bigint[] = [];
     for (const recipient of parsedRecipients) {
       if (recipient.isAllAmount) {
-        amounts.push(TRANSFER_AMOUNT_ALL);
+        if (allAmountValue === null) {
+          setState({
+            type: "error",
+            message: "Failed to calculate amount ALL",
+          });
+          return;
+        }
+        amounts.push(allAmountValue);
         continue;
       }
       if (recipient.parsedAmount === null) {
@@ -282,7 +319,6 @@ export function SendTab({
       }
       amounts.push(recipient.parsedAmount);
     }
-    const allowAll = allAmountCount === 1;
 
     setState({ type: "building-transaction" });
     let txHandle: PendingTxHandle | null = null;
@@ -291,7 +327,7 @@ export function SendTab({
         destinations,
         amounts,
         feePriority,
-        allowAll,
+        subtractFeeFromIndex,
       );
       const transferInfo = wallet.get_transfers_info(txHandle);
       const multisigStatus = await wallet.get_multisig_status();
@@ -1078,10 +1114,35 @@ export function SendTab({
           {recipients.map((recipient, index) => {
             const isAllAmount = isAllAmountInput(recipient.amount);
             const parsedAmount = parseXmrToAtomic(recipient.amount);
-            const fiatValue =
-              !isAllAmount && parsedAmount !== null && parsedAmount > 0n && price
-                ? toFiat(parsedAmount, price)
+            const allAmountEstimate =
+              isAllAmount && currentUnlockedNonStrictBalance !== null
+                ? currentUnlockedNonStrictBalance -
+                  parsedRecipients.reduce(
+                    (sum, item, itemIndex) =>
+                      itemIndex !== index &&
+                      !item.isAllAmount &&
+                      item.parsedAmount !== null &&
+                      item.parsedAmount > 0n
+                        ? sum + item.parsedAmount
+                        : sum,
+                    0n,
+                  )
                 : null;
+            const fiatValue = (() => {
+              if (!price) {
+                return null;
+              }
+              if (isAllAmount) {
+                if (allAmountEstimate === null || allAmountEstimate <= 0n) {
+                  return null;
+                }
+                return toFiat(allAmountEstimate, price);
+              }
+              if (parsedAmount === null || parsedAmount <= 0n) {
+                return null;
+              }
+              return toFiat(parsedAmount, price);
+            })();
 
             return (
               <SurfaceCard key={index} className="space-y-3 p-3">
