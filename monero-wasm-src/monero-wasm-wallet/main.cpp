@@ -4,6 +4,7 @@
 #include <type_traits>
 #include <utility>
 #include <cmath>
+#include <limits>
 #include "wallet/wallet2.h"
 #include "wallet/api/wallet2_api.h"
 #include "version.h"
@@ -825,7 +826,11 @@ public:
             if (type == "number")
             {
                 const double number_value = subtract_fee_from_index_js.as<double>();
-                if (number_value < 0 || number_value != std::floor(number_value))
+                const double max_size_t_as_double = static_cast<double>(std::numeric_limits<size_t>::max());
+                if (!std::isfinite(number_value) ||
+                    number_value < 0 ||
+                    number_value != std::floor(number_value) ||
+                    number_value > max_size_t_as_double)
                 {
                     throw std::runtime_error("subtractFeeFromIndex must be a non-negative integer or null");
                 }
