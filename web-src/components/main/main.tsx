@@ -450,6 +450,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     status &&
     status.multisigStatus.multisig_is_active &&
     !status.multisigStatus.is_ready;
+  const downloadingProgressValue =
+    downloadInfo && downloadInfo.progressTotal > 0
+      ? (downloadInfo.progressLoaded / downloadInfo.progressTotal) * 100
+      : undefined;
 
   const progressBarCompact = !status ? (
     <ProgressBar
@@ -467,11 +471,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     <ProgressBar
       size="sm"
       state={downloadInfo ? "progress" : "loading"}
-      value={
-        downloadInfo
-          ? (downloadInfo.progressLoaded / downloadInfo.progressTotal) * 100
-          : 0
-      }
+      value={downloadingProgressValue}
       text={
         !status.isSynced && status.daemonHeight > status.walletHeight
           ? `${status.daemonHeight - status.walletHeight} blocks left` +
@@ -485,7 +485,11 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       }
     />
   ) : status.isSynced ? (
-    <SynchronizedWithTimer size="sm" lastSyncTimestamp={status.obtainedAt} />
+    <SynchronizedWithTimer
+      size="sm"
+      lastSyncTimestamp={status.obtainedAt}
+      value={downloadingProgressValue}
+    />
   ) : refreshError ? (
     <ProgressBar size="sm" state="error" text={refreshError} />
   ) : (
@@ -797,9 +801,11 @@ function WalletSplitMetricCard({
 
 function SynchronizedWithTimer({
   lastSyncTimestamp,
+  value,
   size = "md",
 }: {
   lastSyncTimestamp: Date | null;
+  value?: number;
   size?: "md" | "sm";
 }) {
   const [isOutdated, setIsOutdated] = React.useState(false);
@@ -821,11 +827,17 @@ function SynchronizedWithTimer({
     };
   }, [lastSyncTimestamp]);
 
-  if (!isOutdated) {
-    return <ProgressBar size={size} state="ready" text="Synchronized" />;
-  } else {
+  if (isOutdated) {
     return <ProgressBar size={size} state="error" text="Refresh needed" />;
   }
+  return (
+    <ProgressBar
+      size={size}
+      state={value !== undefined ? "progress" : "ready"}
+      value={value}
+      text="Synchronized"
+    />
+  );
 }
 
 function showEstimatedTime(
