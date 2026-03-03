@@ -19,6 +19,7 @@
 #include <emscripten/val.h>
 #include <optional>
 #include <cstdint>
+#include <limits>
 
 #include "multisig/multisig.h"
 #include "multisig/multisig_account.h"
@@ -780,7 +781,7 @@ public:
         return result;
     }
 
-    auto transfer_prepare(emscripten::val dst_addresses_js, emscripten::val amounts_js, uint32_t priority)
+    auto transfer_prepare(emscripten::val dst_addresses_js, emscripten::val amounts_js, uint32_t priority, bool allow_all_amount)
     {
         auto dst_addresses = parse_js_array<std::string>(
             dst_addresses_js,
@@ -813,8 +814,8 @@ public:
             throw std::runtime_error("Destination addresses and amounts must have the same length");
         }
 
-        return promise([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority]()
-                       { return transfer_impl(dst_addresses, amounts, priority); });
+        return promise([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority, allow_all_amount]()
+                       { return transfer_impl(dst_addresses, amounts, priority, allow_all_amount); });
     }
 
     emscripten::val get_transfers_info(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
@@ -981,7 +982,11 @@ public:
             });
     }
 
-    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(const std::vector<std::string> &dst_addresses, const std::vector<uint64_t> &amounts, uint32_t priority)
+    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(
+        const std::vector<std::string> &dst_addresses,
+        const std::vector<uint64_t> &amounts,
+        uint32_t priority,
+        bool allow_all_amount)
     {
         if (dst_addresses.empty())
         {
@@ -994,6 +999,11 @@ public:
 
         std::vector<cryptonote::tx_destination_entry> dsts;
         dsts.reserve(dst_addresses.size());
+        tools::wallet2::unique_index_container subtract_fee_from_outputs;
+        std::optional<size_t> all_destination_index;
+        constexpr uint64_t amount_all = std::numeric_limits<uint64_t>::max();
+        uint64_t fixed_amount_sum = 0;
+
         for (size_t i = 0; i < dst_addresses.size(); ++i)
         {
             cryptonote::address_parse_info info;
@@ -1007,9 +1017,54 @@ public:
             de.addr = info.address;
             de.is_subaddress = info.is_subaddress;
             de.is_integrated = info.has_payment_id;
-            de.amount = amounts[i];
+            if (amounts[i] == amount_all)
+            {
+                if (!allow_all_amount)
+                {
+                    throw std::runtime_error("Amount ALL is not allowed unless transfer_prepare is called with allowAll=true.");
+                }
+                if (all_destination_index)
+                {
+                    throw std::runtime_error("Only one destination can have amount ALL");
+                }
+                all_destination_index = i;
+                de.amount = 1;
+            }
+            else
+            {
+                de.amount = amounts[i];
+                if (fixed_amount_sum > std::numeric_limits<uint64_t>::max() - de.amount)
+                {
+                    throw std::runtime_error("Sum of fixed destination amounts overflows uint64");
+                }
+                fixed_amount_sum += de.amount;
+            }
 
             dsts.push_back(de);
+        }
+
+        if (!allow_all_amount)
+        {
+            for (size_t i = 0; i < amounts.size(); ++i)
+            {
+                if (amounts[i] == amount_all)
+                {
+                    throw std::runtime_error("Amount ALL is not allowed unless transfer_prepare is called with allowAll=true.");
+                }
+            }
+        }
+
+        if (all_destination_index)
+        {
+            uint64_t blocks_to_unlock = 0;
+            uint64_t time_to_unlock = 0;
+            const uint64_t unlocked_balance = m_wallet.unlocked_balance(0, false, &blocks_to_unlock, &time_to_unlock);
+            if (unlocked_balance <= fixed_amount_sum)
+            {
+                throw std::runtime_error("Not enough unlocked balance for amount ALL");
+            }
+            dsts[*all_destination_index].amount = unlocked_balance - fixed_amount_sum;
+            subtract_fee_from_outputs.insert(*all_destination_index);
         }
 
         const size_t min_ring_size = m_wallet.get_min_ring_size();
@@ -1021,7 +1076,7 @@ public:
         auto ptx_vector = m_wallet.create_transactions_2(dsts, fake_outs_count,
                                                          priority,
                                                          extra,
-                                                         0, subaddr_indices);
+                                                         0, subaddr_indices, subtract_fee_from_outputs);
         if (ptx_vector.empty())
         {
             throw std::runtime_error("No outputs found, or daemon is not ready");

@@ -265,6 +265,7 @@ export function SendTab({
         destinations,
         amounts,
         feePriority,
+        false,
       );
       const transferInfo = wallet.get_transfers_info(txHandle);
       const multisigStatus = await wallet.get_multisig_status();
