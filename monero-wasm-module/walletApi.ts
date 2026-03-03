@@ -61,6 +61,7 @@ export declare class MoneroWasmWallet {
   get_wallet_file(): Promise<string>;
   get_tx_proof(txid: string, dstaddress: string, note: string): Promise<string>;
   get_tx_key(txid: string): Promise<string>;
+  get_tx_key_for_address(txid: string, dstaddress: string): Promise<string>;
   balance(index_major: number, strict: boolean): Promise<bigint>;
   unlocked_balance(
     index_major: number,

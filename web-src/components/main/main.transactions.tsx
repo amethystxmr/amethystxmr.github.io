@@ -120,7 +120,7 @@ export function TransactionsTab({
         loading: true,
       });
       try {
-        const keysString = await wallet.get_tx_key(txid);
+        const keysString = await wallet.get_tx_key_for_address(txid, address);
         if (isUnmountedRef.current) {
           return;
         }
