@@ -933,6 +933,7 @@ public:
             const auto &ptx = ptx_vector[tx_index];
             auto tx_item = emscripten::val::object();
             tx_item.set("fee", ptx.fee);
+            tx_item.set("changeAmount", ptx.change_dts.amount);
 
             auto destinations = emscripten::val::array();
             for (size_t dst_index = 0; dst_index < ptx.dests.size(); ++dst_index)

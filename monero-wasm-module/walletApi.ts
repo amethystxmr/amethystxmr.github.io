@@ -252,6 +252,7 @@ export interface MultisigTxSetHandle extends ClassHandle {
 
 export interface TransferInfoItem {
   fee: bigint;
+  changeAmount: bigint;
   destinations: TransferDestinationInfo[];
 }
 
