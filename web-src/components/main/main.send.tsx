@@ -149,19 +149,51 @@ function summarizeTransfers(transfers: TransferInfoItem[]) {
     0n,
   );
   const totalFee = transfers.reduce((sum, tx) => sum + tx.fee, 0n);
-  return { destinations, totalOutgoing, totalFee };
+  const totalChange = transfers.reduce((sum, tx) => sum + tx.changeAmount, 0n);
+  return { destinations, totalOutgoing, totalFee, totalChange };
+}
+
+function getPostSendBalances(
+  currentTotalNonStrictBalance: bigint | null,
+  currentUnlockedNonStrictBalance: bigint | null,
+  totalOutgoing: bigint,
+  totalFee: bigint,
+  totalChange: bigint,
+) {
+  const totalSpent = totalOutgoing + totalFee;
+  const balanceAfterSendingRaw =
+    currentTotalNonStrictBalance !== null
+      ? currentTotalNonStrictBalance - totalSpent
+      : null;
+  const balanceAfterSending =
+    balanceAfterSendingRaw !== null && balanceAfterSendingRaw < 0n
+      ? 0n
+      : balanceAfterSendingRaw;
+  const immediatelyUnlockedRaw =
+    currentUnlockedNonStrictBalance !== null
+      ? currentUnlockedNonStrictBalance - totalSpent - totalChange
+      : null;
+  const immediatelyUnlocked =
+    immediatelyUnlockedRaw !== null && immediatelyUnlockedRaw < 0n
+      ? 0n
+      : immediatelyUnlockedRaw;
+  return { balanceAfterSending, immediatelyUnlocked };
 }
 
 export function SendTab({
   wallet,
   scheduleRefresh,
   price,
+  currentTotalNonStrictBalance,
+  currentUnlockedNonStrictBalance,
   showMultisigActions,
   isViewOnly,
 }: {
   wallet: MoneroWasmWallet;
   scheduleRefresh: () => void;
   price: number | null;
+  currentTotalNonStrictBalance: bigint | null;
+  currentUnlockedNonStrictBalance: bigint | null;
   showMultisigActions: boolean;
   isViewOnly: boolean | undefined;
 }) {
@@ -1168,6 +1200,14 @@ export function SendTab({
               <SurfaceCard className="space-y-3">
                 {(() => {
                   const summary = summarizeTransfers(state.info);
+                  const { balanceAfterSending, immediatelyUnlocked } =
+                    getPostSendBalances(
+                      currentTotalNonStrictBalance,
+                      currentUnlockedNonStrictBalance,
+                      summary.totalOutgoing,
+                      summary.totalFee,
+                      summary.totalChange,
+                    );
                   return (
                     <>
                       <div>
@@ -1193,6 +1233,52 @@ export function SendTab({
                         {price && (
                           <div className="text-xs text-white/50">
                             ≈ {toFiat(summary.totalFee, price).toFixed(2)} EUR
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-white/60">
+                          Balance after sending
+                        </div>
+                        {balanceAfterSending !== null ? (
+                          <>
+                            <div className="text-sm text-white">
+                              {formatAtomicToXmr(balanceAfterSending)} XMR
+                            </div>
+                            {price && (
+                              <div className="text-xs text-white/50">
+                                ≈ {toFiat(balanceAfterSending, price).toFixed(2)}{" "}
+                                EUR
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-sm text-white/60">
+                            Balance is loading...
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-white/60">
+                          Unlocked balance after sending
+                        </div>
+                        {immediatelyUnlocked !== null ? (
+                          <>
+                            <div className="text-sm text-white">
+                              {formatAtomicToXmr(immediatelyUnlocked)} XMR
+                            </div>
+                            {price && (
+                              <div className="text-xs text-white/50">
+                                ≈ {toFiat(immediatelyUnlocked, price).toFixed(2)}{" "}
+                                EUR
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-sm text-white/60">
+                            Balance is loading...
                           </div>
                         )}
                       </div>
@@ -1277,23 +1363,39 @@ export function SendTab({
 
           {/* SENT */}
           {state.type === "sent" && (
-            <div className="space-y-4 text-center">
-              <div className="text-green-400 text-lg font-semibold">
-                ✓ Transaction sent
-              </div>
+            (() => {
+              const summary = summarizeTransfers(state.info);
+              return (
+                <div className="space-y-4 text-center">
+                  <div className="text-green-400 text-lg font-semibold">
+                    ✓ Transaction sent
+                  </div>
 
-              <div className="text-sm text-white/60">
-                Fee paid: {summarizeTransfers(state.info).totalFee} XMR
-              </div>
+                  <div className="space-y-1">
+                    <div className="text-sm text-white">
+                      Total sent: {formatAtomicToXmr(summary.totalOutgoing)} XMR
+                    </div>
+                    {price && (
+                      <div className="text-xs text-white/50">
+                        ≈ {toFiat(summary.totalOutgoing, price).toFixed(2)} EUR
+                      </div>
+                    )}
+                  </div>
 
-              <Button
-                onClick={reset}
-                variant="primary"
-                className="w-full text-sm font-semibold"
-              >
-                → Send another
-              </Button>
-            </div>
+                  <div className="text-xs text-white/50">
+                    Fee paid: {formatAtomicToXmr(summary.totalFee)} XMR
+                  </div>
+
+                  <Button
+                    onClick={reset}
+                    variant="primary"
+                    className="w-full text-sm font-semibold"
+                  >
+                    → Send another
+                  </Button>
+                </div>
+              );
+            })()
           )}
 
           {/* ERROR */}
