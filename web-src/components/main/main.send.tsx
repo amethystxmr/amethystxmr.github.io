@@ -424,6 +424,7 @@ export function SendTab({
               type: "sent",
               info: txInfos,
             });
+            scheduleRefresh();
           }
         } catch (e) {
           if (txHandle) {
