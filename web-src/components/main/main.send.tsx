@@ -14,6 +14,7 @@ import {
   Button,
   ButtonsHolder,
   Input,
+  InputWithAction,
   Label,
   Select,
   ShimmerStatus,
@@ -31,6 +32,7 @@ import {
   PendingTxHandle,
   TransferItem,
   TransferInfoItem,
+  TRANSFER_AMOUNT_ALL,
   type FeePriority as FeePriorityValue,
   MultisigTxSetHandle,
 } from "../../../monero-wasm-module/walletApi";
@@ -134,6 +136,7 @@ type ParsedRecipient = {
   index: number;
   normalizedAddress: string;
   parsedAmount: bigint | null;
+  isAllAmount: boolean;
   isValid: boolean;
 };
 
@@ -180,6 +183,10 @@ function getPostSendBalances(
   return { balanceAfterSending, immediatelyUnlocked };
 }
 
+function isAllAmountInput(value: string) {
+  return value.trim().toUpperCase() === "ALL";
+}
+
 export function SendTab({
   wallet,
   scheduleRefresh,
@@ -221,23 +228,24 @@ export function SendTab({
     () =>
       recipients.map((recipient, index) => {
         const normalizedAddress = recipient.address.replace(/\s+/g, "").trim();
+        const isAllAmount = isAllAmountInput(recipient.amount);
         const parsedAmount = parseXmrToAtomic(recipient.amount);
         return {
           index,
           normalizedAddress,
           parsedAmount,
+          isAllAmount,
           isValid:
             normalizedAddress.length > 20 &&
-            parsedAmount !== null &&
-            parsedAmount > 0n,
+            ((parsedAmount !== null && parsedAmount > 0n) || isAllAmount),
         };
       }),
     [recipients],
   );
-
   const isValid =
     recipients.length > 0 &&
     parsedRecipients.every((recipient) => recipient.isValid) &&
+    parsedRecipients.filter((r) => r.isAllAmount).length <= 1 &&
     state.type === "entering";
 
   async function handleCreateTx() {
@@ -246,17 +254,35 @@ export function SendTab({
     }
     if (
       parsedRecipients.length === 0 ||
-      parsedRecipients.some((r) => !r.isValid)
+      parsedRecipients.some((recipient) => !recipient.isValid)
     ) {
+      return;
+    }
+
+    const allAmountCount = parsedRecipients.filter((r) => r.isAllAmount).length;
+    if (allAmountCount > 1) {
+      setState({
+        type: "error",
+        message: "Only one destination can have amount ALL",
+      });
       return;
     }
 
     const destinations = parsedRecipients.map(
       (recipient) => recipient.normalizedAddress,
     );
-    const amounts = parsedRecipients.map(
-      (recipient) => recipient.parsedAmount as bigint,
-    );
+    const amounts: bigint[] = [];
+    for (const recipient of parsedRecipients) {
+      if (recipient.isAllAmount) {
+        amounts.push(TRANSFER_AMOUNT_ALL);
+        continue;
+      }
+      if (recipient.parsedAmount === null) {
+        return;
+      }
+      amounts.push(recipient.parsedAmount);
+    }
+    const allowAll = allAmountCount === 1;
 
     setState({ type: "building-transaction" });
     let txHandle: PendingTxHandle | null = null;
@@ -265,7 +291,7 @@ export function SendTab({
         destinations,
         amounts,
         feePriority,
-        false,
+        allowAll,
       );
       const transferInfo = wallet.get_transfers_info(txHandle);
       const multisigStatus = await wallet.get_multisig_status();
@@ -1050,9 +1076,10 @@ export function SendTab({
           )}
 
           {recipients.map((recipient, index) => {
+            const isAllAmount = isAllAmountInput(recipient.amount);
             const parsedAmount = parseXmrToAtomic(recipient.amount);
             const fiatValue =
-              parsedAmount !== null && parsedAmount > 0n && price
+              !isAllAmount && parsedAmount !== null && parsedAmount > 0n && price
                 ? toFiat(parsedAmount, price)
                 : null;
 
@@ -1091,7 +1118,7 @@ export function SendTab({
 
                 <div>
                   <Label>Amount (XMR)</Label>
-                  <Input
+                  <InputWithAction
                     type="text"
                     inputMode="decimal"
                     value={recipient.amount}
@@ -1102,6 +1129,15 @@ export function SendTab({
                     }
                     placeholder="0.000000000000"
                     autoComplete="off"
+                    actionLabel="All"
+                    actionDisabled={
+                      parsedRecipients.filter((r) => r.isAllAmount).length > 0
+                    }
+                    onAction={() =>
+                      updateRecipient(index, {
+                        amount: "ALL",
+                      })
+                    }
                   />
                   {fiatValue !== null && (
                     <div className="mt-1 text-xs text-white/50">
