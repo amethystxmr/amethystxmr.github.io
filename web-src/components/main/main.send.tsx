@@ -315,7 +315,9 @@ export function SendTab({
         continue;
       }
       if (recipient.parsedAmount === null) {
-        return;
+        throw new Error(
+          "Unreachable: parsedAmount is null after recipient validation",
+        );
       }
       amounts.push(recipient.parsedAmount);
     }
