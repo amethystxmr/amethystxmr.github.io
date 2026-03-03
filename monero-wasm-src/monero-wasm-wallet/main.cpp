@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <type_traits>
 #include <utility>
+#include <cmath>
+#include <limits>
 #include "wallet/wallet2.h"
 #include "wallet/api/wallet2_api.h"
 #include "version.h"
@@ -62,7 +64,12 @@ public:
     virtual ~my_callbacks() {}
     */
 
-    MoneroWasmWallet()
+    MoneroWasmWallet(cryptonote::network_type network_type)
+        : m_wallet(
+              network_type,                                                   // nettype
+              1,                                                              // kdf_rounds
+              true,                                                           // unattended
+              std::make_unique<js_client_factory>())                          // http_client_factory
     {
         // TODO: Start the worker thread
 
@@ -775,7 +782,11 @@ public:
         return result;
     }
 
-    auto transfer_prepare(emscripten::val dst_addresses_js, emscripten::val amounts_js, uint32_t priority)
+    auto transfer_prepare(
+        emscripten::val dst_addresses_js,
+        emscripten::val amounts_js,
+        uint32_t priority,
+        emscripten::val subtract_fee_from_index_js)
     {
         auto dst_addresses = parse_js_array<std::string>(
             dst_addresses_js,
@@ -808,8 +819,31 @@ public:
             throw std::runtime_error("Destination addresses and amounts must have the same length");
         }
 
-        return promise([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority]()
-                       { return transfer_impl(dst_addresses, amounts, priority); });
+        std::optional<size_t> subtract_fee_from_index = std::nullopt;
+        if (!subtract_fee_from_index_js.isNull() && !subtract_fee_from_index_js.isUndefined())
+        {
+            const auto type = subtract_fee_from_index_js.typeOf().as<std::string>();
+            if (type == "number")
+            {
+                const double number_value = subtract_fee_from_index_js.as<double>();
+                const double max_size_t_as_double = static_cast<double>(std::numeric_limits<size_t>::max());
+                if (!std::isfinite(number_value) ||
+                    number_value < 0 ||
+                    number_value != std::floor(number_value) ||
+                    number_value > max_size_t_as_double)
+                {
+                    throw std::runtime_error("subtractFeeFromIndex must be a non-negative integer or null");
+                }
+                subtract_fee_from_index = static_cast<size_t>(number_value);
+            }
+            else
+            {
+                throw std::runtime_error("subtractFeeFromIndex must be a number (array index) or null");
+            }
+        }
+
+        return promise([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority, subtract_fee_from_index]()
+                       { return transfer_impl(dst_addresses, amounts, priority, subtract_fee_from_index); });
     }
 
     emscripten::val get_transfers_info(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
@@ -928,6 +962,7 @@ public:
             const auto &ptx = ptx_vector[tx_index];
             auto tx_item = emscripten::val::object();
             tx_item.set("fee", ptx.fee);
+            tx_item.set("changeAmount", ptx.change_dts.amount);
 
             auto destinations = emscripten::val::array();
             for (size_t dst_index = 0; dst_index < ptx.dests.size(); ++dst_index)
@@ -975,7 +1010,11 @@ public:
             });
     }
 
-    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(const std::vector<std::string> &dst_addresses, const std::vector<uint64_t> &amounts, uint32_t priority)
+    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(
+        const std::vector<std::string> &dst_addresses,
+        const std::vector<uint64_t> &amounts,
+        uint32_t priority,
+        std::optional<size_t> subtract_fee_from_index)
     {
         if (dst_addresses.empty())
         {
@@ -988,6 +1027,7 @@ public:
 
         std::vector<cryptonote::tx_destination_entry> dsts;
         dsts.reserve(dst_addresses.size());
+
         for (size_t i = 0; i < dst_addresses.size(); ++i)
         {
             cryptonote::address_parse_info info;
@@ -1006,6 +1046,16 @@ public:
             dsts.push_back(de);
         }
 
+        tools::wallet2::unique_index_container subtract_fee_from_outputs;
+        if (subtract_fee_from_index.has_value())
+        {
+            if (*subtract_fee_from_index >= dsts.size())
+            {
+                throw std::runtime_error("subtractFeeFromIndex is out of bounds");
+            }
+            subtract_fee_from_outputs.insert(*subtract_fee_from_index);
+        }
+
         const size_t min_ring_size = m_wallet.get_min_ring_size();
         size_t fake_outs_count = min_ring_size - 1;
 
@@ -1015,7 +1065,7 @@ public:
         auto ptx_vector = m_wallet.create_transactions_2(dsts, fake_outs_count,
                                                          priority,
                                                          extra,
-                                                         0, subaddr_indices);
+                                                         0, subaddr_indices, subtract_fee_from_outputs);
         if (ptx_vector.empty())
         {
             throw std::runtime_error("No outputs found, or daemon is not ready");
@@ -1072,6 +1122,68 @@ public:
                                keys += epee::string_tools::pod_to_hex(unwrap(unwrap(key)));
                            }
                            return keys; });
+    }
+
+    auto get_tx_keys_for_address(const std::string &txid_str, const std::string &dstaddress)
+    {
+        return promise(
+            [this, txid_str, dstaddress]()
+            {
+                crypto::hash txid;
+                if (!epee::string_tools::hex_to_pod(txid_str, txid))
+                {
+                    throw std::runtime_error("TX ID has invalid format");
+                }
+
+                cryptonote::address_parse_info info;
+                if (!cryptonote::get_account_address_from_str(info, m_wallet.nettype(), dstaddress))
+                {
+                    throw std::runtime_error("Invalid destination address");
+                }
+
+                crypto::secret_key tx_key = crypto::null_skey;
+                std::vector<crypto::secret_key> additional_tx_keys;
+                if (!m_wallet.get_tx_key(txid, tx_key, additional_tx_keys))
+                {
+                    throw std::runtime_error("Tx secret key wasn't found in the wallet file.");
+                }
+
+                std::vector<crypto::secret_key> candidate_keys;
+                candidate_keys.reserve(1 + additional_tx_keys.size());
+                candidate_keys.push_back(tx_key);
+                for (const auto &key : additional_tx_keys)
+                {
+                    candidate_keys.push_back(key);
+                }
+
+                std::vector<std::string> matching_keys;
+                for (const auto &candidate : candidate_keys)
+                {
+                    uint64_t received = 0;
+                    bool in_pool = false;
+                    uint64_t confirmations = 0;
+                    m_wallet.check_tx_key(txid, candidate, {}, info.address, received, in_pool, confirmations);
+                    if (received > 0)
+                    {
+                        matching_keys.push_back(epee::string_tools::pod_to_hex(unwrap(unwrap(candidate))));
+                    }
+                }
+
+                if (matching_keys.empty())
+                {
+                    throw std::runtime_error("No tx key was found for this destination address");
+                }
+                return matching_keys;
+            },
+            [](const std::vector<std::string> &keys) -> emscripten::val
+            {
+                auto result = emscripten::val::array();
+                for (size_t i = 0; i < keys.size(); ++i)
+                {
+                    result.set(static_cast<uint32_t>(i), keys[i]);
+                }
+                return result;
+            });
     }
 
     auto balance(uint32_t index_major, bool strict)
@@ -1493,12 +1605,7 @@ private:
             });
     }
 
-    // TODO: Add a callback for onFetching for better UI
-    tools::wallet2 m_wallet = tools::wallet2(
-        cryptonote::network_type::MAINNET,
-        1,
-        true,
-        std::unique_ptr<epee::net_utils::http::http_client_factory>(new js_client_factory()));
+    tools::wallet2 m_wallet;
 
     pthread_t walletThread;
     emscripten::ProxyingQueue walletQueue;
@@ -1512,6 +1619,11 @@ private:
 
 EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
 {
+    emscripten::enum_<cryptonote::network_type>("NetworkType")
+        .value("MAINNET", cryptonote::network_type::MAINNET)
+        .value("TESTNET", cryptonote::network_type::TESTNET)
+        .value("STAGENET", cryptonote::network_type::STAGENET);
+
     emscripten::class_<MoneroWasmWallet>("MoneroWasmWallet")
         .function("init", &MoneroWasmWallet::init)
         .function("get_daemon_blockchain_height", &MoneroWasmWallet::get_daemon_blockchain_height)
@@ -1545,6 +1657,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_wallet_file", &MoneroWasmWallet::get_wallet_file)
         .function("get_tx_proof", &MoneroWasmWallet::get_tx_proof)
         .function("get_tx_key", &MoneroWasmWallet::get_tx_key)
+        .function("get_tx_keys_for_address", &MoneroWasmWallet::get_tx_keys_for_address)
         .function("balance", &MoneroWasmWallet::balance)
         .function("unlocked_balance", &MoneroWasmWallet::unlocked_balance)
         .function("set_refresh_from_block_height", &MoneroWasmWallet::set_refresh_from_block_height)
@@ -1574,7 +1687,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("import_key_images", &MoneroWasmWallet::import_key_images)
         .function("verify_password", &MoneroWasmWallet::verify_password)
         .function("rescan_blockchain", &MoneroWasmWallet::rescan_blockchain)
-        .constructor();
+        .constructor<cryptonote::network_type>();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
         .smart_ptr<std::shared_ptr<std::vector<tools::wallet2::pending_tx>>>("VectorOfPendingTx");

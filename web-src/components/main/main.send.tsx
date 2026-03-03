@@ -14,6 +14,7 @@ import {
   Button,
   ButtonsHolder,
   Input,
+  InputWithAction,
   Label,
   Select,
   ShimmerStatus,
@@ -131,9 +132,9 @@ type RecipientInput = {
 };
 
 type ParsedRecipient = {
-  index: number;
   normalizedAddress: string;
   parsedAmount: bigint | null;
+  isAllAmount: boolean;
   isValid: boolean;
 };
 
@@ -149,19 +150,55 @@ function summarizeTransfers(transfers: TransferInfoItem[]) {
     0n,
   );
   const totalFee = transfers.reduce((sum, tx) => sum + tx.fee, 0n);
-  return { destinations, totalOutgoing, totalFee };
+  const totalChange = transfers.reduce((sum, tx) => sum + tx.changeAmount, 0n);
+  return { destinations, totalOutgoing, totalFee, totalChange };
+}
+
+function getPostSendBalances(
+  currentTotalNonStrictBalance: bigint | null,
+  currentUnlockedNonStrictBalance: bigint | null,
+  totalOutgoing: bigint,
+  totalFee: bigint,
+  totalChange: bigint,
+) {
+  const totalSpent = totalOutgoing + totalFee;
+  const balanceAfterSendingRaw =
+    currentTotalNonStrictBalance !== null
+      ? currentTotalNonStrictBalance - totalSpent
+      : null;
+  const balanceAfterSending =
+    balanceAfterSendingRaw !== null && balanceAfterSendingRaw < 0n
+      ? 0n
+      : balanceAfterSendingRaw;
+  const immediatelyUnlockedRaw =
+    currentUnlockedNonStrictBalance !== null
+      ? currentUnlockedNonStrictBalance - totalSpent - totalChange
+      : null;
+  const immediatelyUnlocked =
+    immediatelyUnlockedRaw !== null && immediatelyUnlockedRaw < 0n
+      ? 0n
+      : immediatelyUnlockedRaw;
+  return { balanceAfterSending, immediatelyUnlocked };
+}
+
+function isAllAmountInput(value: string) {
+  return value.trim().toUpperCase() === "ALL";
 }
 
 export function SendTab({
   wallet,
   scheduleRefresh,
   price,
+  currentTotalNonStrictBalance,
+  currentUnlockedNonStrictBalance,
   showMultisigActions,
   isViewOnly,
 }: {
   wallet: MoneroWasmWallet;
   scheduleRefresh: () => void;
   price: number | null;
+  currentTotalNonStrictBalance: bigint | null;
+  currentUnlockedNonStrictBalance: bigint | null;
   showMultisigActions: boolean;
   isViewOnly: boolean | undefined;
 }) {
@@ -187,25 +224,25 @@ export function SendTab({
 
   const parsedRecipients = React.useMemo<ParsedRecipient[]>(
     () =>
-      recipients.map((recipient, index) => {
+      recipients.map((recipient) => {
         const normalizedAddress = recipient.address.replace(/\s+/g, "").trim();
+        const isAllAmount = isAllAmountInput(recipient.amount);
         const parsedAmount = parseXmrToAtomic(recipient.amount);
         return {
-          index,
           normalizedAddress,
           parsedAmount,
+          isAllAmount,
           isValid:
             normalizedAddress.length > 20 &&
-            parsedAmount !== null &&
-            parsedAmount > 0n,
+            ((parsedAmount !== null && parsedAmount > 0n) || isAllAmount),
         };
       }),
     [recipients],
   );
-
   const isValid =
     recipients.length > 0 &&
     parsedRecipients.every((recipient) => recipient.isValid) &&
+    parsedRecipients.filter((r) => r.isAllAmount).length <= 1 &&
     state.type === "entering";
 
   async function handleCreateTx() {
@@ -214,17 +251,76 @@ export function SendTab({
     }
     if (
       parsedRecipients.length === 0 ||
-      parsedRecipients.some((r) => !r.isValid)
+      parsedRecipients.some((recipient) => !recipient.isValid)
     ) {
       return;
+    }
+
+    const allAmountCount = parsedRecipients.filter((r) => r.isAllAmount).length;
+    if (allAmountCount > 1) {
+      setState({
+        type: "error",
+        message: "Only one destination can have amount ALL",
+      });
+      return;
+    }
+    const allRecipientIndex =
+      allAmountCount === 1
+        ? parsedRecipients.findIndex((recipient) => recipient.isAllAmount)
+        : -1;
+    const subtractFeeFromIndex =
+      allRecipientIndex >= 0 ? allRecipientIndex : null;
+    let allAmountValue: bigint | null = null;
+    if (allRecipientIndex >= 0) {
+      if (currentUnlockedNonStrictBalance === null) {
+        setState({
+          type: "error",
+          message: "Unlocked balance is loading, try again in a moment",
+        });
+        return;
+      }
+      const nonAllSum = parsedRecipients.reduce(
+        (sum, recipient) =>
+          !recipient.isAllAmount &&
+          recipient.parsedAmount !== null &&
+          recipient.parsedAmount > 0n
+            ? sum + recipient.parsedAmount
+            : sum,
+        0n,
+      );
+      allAmountValue = currentUnlockedNonStrictBalance - nonAllSum;
+      if (allAmountValue <= 0n) {
+        setState({
+          type: "error",
+          message: "Not enough unlocked balance for amount ALL",
+        });
+        return;
+      }
     }
 
     const destinations = parsedRecipients.map(
       (recipient) => recipient.normalizedAddress,
     );
-    const amounts = parsedRecipients.map(
-      (recipient) => recipient.parsedAmount as bigint,
-    );
+    const amounts: bigint[] = [];
+    for (const recipient of parsedRecipients) {
+      if (recipient.isAllAmount) {
+        if (allAmountValue === null) {
+          setState({
+            type: "error",
+            message: "Failed to calculate amount ALL",
+          });
+          return;
+        }
+        amounts.push(allAmountValue);
+        continue;
+      }
+      if (recipient.parsedAmount === null) {
+        throw new Error(
+          "Unreachable: parsedAmount is null after recipient validation",
+        );
+      }
+      amounts.push(recipient.parsedAmount);
+    }
 
     setState({ type: "building-transaction" });
     let txHandle: PendingTxHandle | null = null;
@@ -233,6 +329,7 @@ export function SendTab({
         destinations,
         amounts,
         feePriority,
+        subtractFeeFromIndex,
       );
       const transferInfo = wallet.get_transfers_info(txHandle);
       const multisigStatus = await wallet.get_multisig_status();
@@ -392,6 +489,7 @@ export function SendTab({
               type: "sent",
               info: txInfos,
             });
+            scheduleRefresh();
           }
         } catch (e) {
           if (txHandle) {
@@ -1016,11 +1114,37 @@ export function SendTab({
           )}
 
           {recipients.map((recipient, index) => {
+            const isAllAmount = isAllAmountInput(recipient.amount);
             const parsedAmount = parseXmrToAtomic(recipient.amount);
-            const fiatValue =
-              parsedAmount !== null && parsedAmount > 0n && price
-                ? toFiat(parsedAmount, price)
+            const allAmountEstimate =
+              isAllAmount && currentUnlockedNonStrictBalance !== null
+                ? currentUnlockedNonStrictBalance -
+                  parsedRecipients.reduce(
+                    (sum, item, itemIndex) =>
+                      itemIndex !== index &&
+                      !item.isAllAmount &&
+                      item.parsedAmount !== null &&
+                      item.parsedAmount > 0n
+                        ? sum + item.parsedAmount
+                        : sum,
+                    0n,
+                  )
                 : null;
+            const fiatValue = (() => {
+              if (!price) {
+                return null;
+              }
+              if (isAllAmount) {
+                if (allAmountEstimate === null || allAmountEstimate <= 0n) {
+                  return null;
+                }
+                return toFiat(allAmountEstimate, price);
+              }
+              if (parsedAmount === null || parsedAmount <= 0n) {
+                return null;
+              }
+              return toFiat(parsedAmount, price);
+            })();
 
             return (
               <SurfaceCard key={index} className="space-y-3 p-3">
@@ -1057,7 +1181,7 @@ export function SendTab({
 
                 <div>
                   <Label>Amount (XMR)</Label>
-                  <Input
+                  <InputWithAction
                     type="text"
                     inputMode="decimal"
                     value={recipient.amount}
@@ -1068,6 +1192,15 @@ export function SendTab({
                     }
                     placeholder="0.000000000000"
                     autoComplete="off"
+                    actionLabel="All"
+                    actionDisabled={
+                      parsedRecipients.filter((r) => r.isAllAmount).length > 0
+                    }
+                    onAction={() =>
+                      updateRecipient(index, {
+                        amount: "ALL",
+                      })
+                    }
                   />
                   {fiatValue !== null && (
                     <div className="mt-1 text-xs text-white/50">
@@ -1168,6 +1301,14 @@ export function SendTab({
               <SurfaceCard className="space-y-3">
                 {(() => {
                   const summary = summarizeTransfers(state.info);
+                  const { balanceAfterSending, immediatelyUnlocked } =
+                    getPostSendBalances(
+                      currentTotalNonStrictBalance,
+                      currentUnlockedNonStrictBalance,
+                      summary.totalOutgoing,
+                      summary.totalFee,
+                      summary.totalChange,
+                    );
                   return (
                     <>
                       <div>
@@ -1193,6 +1334,52 @@ export function SendTab({
                         {price && (
                           <div className="text-xs text-white/50">
                             ≈ {toFiat(summary.totalFee, price).toFixed(2)} EUR
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-white/60">
+                          Balance after sending
+                        </div>
+                        {balanceAfterSending !== null ? (
+                          <>
+                            <div className="text-sm text-white">
+                              {formatAtomicToXmr(balanceAfterSending)} XMR
+                            </div>
+                            {price && (
+                              <div className="text-xs text-white/50">
+                                ≈ {toFiat(balanceAfterSending, price).toFixed(2)}{" "}
+                                EUR
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-sm text-white/60">
+                            Balance is loading...
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-xs text-white/60">
+                          Unlocked balance after sending
+                        </div>
+                        {immediatelyUnlocked !== null ? (
+                          <>
+                            <div className="text-sm text-white">
+                              {formatAtomicToXmr(immediatelyUnlocked)} XMR
+                            </div>
+                            {price && (
+                              <div className="text-xs text-white/50">
+                                ≈ {toFiat(immediatelyUnlocked, price).toFixed(2)}{" "}
+                                EUR
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-sm text-white/60">
+                            Balance is loading...
                           </div>
                         )}
                       </div>
@@ -1277,23 +1464,39 @@ export function SendTab({
 
           {/* SENT */}
           {state.type === "sent" && (
-            <div className="space-y-4 text-center">
-              <div className="text-green-400 text-lg font-semibold">
-                ✓ Transaction sent
-              </div>
+            (() => {
+              const summary = summarizeTransfers(state.info);
+              return (
+                <div className="space-y-4 text-center">
+                  <div className="text-green-400 text-lg font-semibold">
+                    ✓ Transaction sent
+                  </div>
 
-              <div className="text-sm text-white/60">
-                Fee paid: {summarizeTransfers(state.info).totalFee} XMR
-              </div>
+                  <div className="space-y-1">
+                    <div className="text-sm text-white">
+                      Total sent: {formatAtomicToXmr(summary.totalOutgoing)} XMR
+                    </div>
+                    {price && (
+                      <div className="text-xs text-white/50">
+                        ≈ {toFiat(summary.totalOutgoing, price).toFixed(2)} EUR
+                      </div>
+                    )}
+                  </div>
 
-              <Button
-                onClick={reset}
-                variant="primary"
-                className="w-full text-sm font-semibold"
-              >
-                → Send another
-              </Button>
-            </div>
+                  <div className="text-xs text-white/50">
+                    Fee paid: {formatAtomicToXmr(summary.totalFee)} XMR
+                  </div>
+
+                  <Button
+                    onClick={reset}
+                    variant="primary"
+                    className="w-full text-sm font-semibold"
+                  >
+                    → Send another
+                  </Button>
+                </div>
+              );
+            })()
           )}
 
           {/* ERROR */}

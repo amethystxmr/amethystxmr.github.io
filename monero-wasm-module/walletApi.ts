@@ -4,6 +4,7 @@ import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
 type IDBFS = unknown & { readonly __nominal: unique symbol };
 
 export declare class MoneroWasmWallet {
+  constructor(networkType: NetworkType);
   init(): Promise<boolean>;
   close_wallet(): Promise<void>;
   delete(): void;
@@ -60,6 +61,7 @@ export declare class MoneroWasmWallet {
   get_wallet_file(): Promise<string>;
   get_tx_proof(txid: string, dstaddress: string, note: string): Promise<string>;
   get_tx_key(txid: string): Promise<string>;
+  get_tx_keys_for_address(txid: string, dstaddress: string): Promise<string[]>;
   balance(index_major: number, strict: boolean): Promise<bigint>;
   unlocked_balance(
     index_major: number,
@@ -102,6 +104,7 @@ export declare class MoneroWasmWallet {
     destinations: string[],
     amounts: bigint[],
     priority: FeePriority,
+    subtractFeeFromIndex: number | null,
   ): Promise<PendingTxHandle>;
   get_transfers(): Promise<TransferItem[]>;
   get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
@@ -154,6 +157,14 @@ export const FeePriority = {
 } as const;
 
 export type FeePriority = (typeof FeePriority)[keyof typeof FeePriority];
+
+export const NetworkType = {
+  MAINNET: 0,
+  TESTNET: 1,
+  STAGENET: 2,
+} as const;
+
+export type NetworkType = (typeof NetworkType)[keyof typeof NetworkType];
 
 export const CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 10n;
 
@@ -243,6 +254,7 @@ export interface MultisigTxSetHandle extends ClassHandle {
 
 export interface TransferInfoItem {
   fee: bigint;
+  changeAmount: bigint;
   destinations: TransferDestinationInfo[];
 }
 
@@ -285,6 +297,7 @@ interface Module {
   };
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
+  NetworkType: typeof NetworkType;
   set_max_concurrency(threads: number): void;
   get_monero_version_full(): string;
   decodePolyseed(moneroPolyseed: string): {
@@ -434,8 +447,10 @@ export function deleteWalletFiles(walletName: string) {
   }
 }
 
-export function createWallet() {
-  const wallet = new module.MoneroWasmWallet();
+export function createWallet(
+  networkType: NetworkType = module.NetworkType.MAINNET,
+) {
+  const wallet = new module.MoneroWasmWallet(networkType);
   return wallet;
 }
 

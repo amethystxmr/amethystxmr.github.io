@@ -6,6 +6,7 @@ import type { BaseProps } from "./types";
 export function InputWithAction({
   actionLabel,
   onAction,
+  actionDisabled = false,
   actionButtonClassName,
   inputClassName,
   wrapperClassName,
@@ -14,6 +15,7 @@ export function InputWithAction({
   BaseProps & {
     actionLabel: React.ReactNode;
     onAction: () => void | Promise<void>;
+    actionDisabled?: boolean;
     actionButtonClassName?: string;
     inputClassName?: string;
     wrapperClassName?: string;
@@ -28,7 +30,7 @@ export function InputWithAction({
           actionButtonClassName,
         )}
         onClick={onAction}
-        disabled={inputProps.disabled}
+        disabled={inputProps.disabled || actionDisabled}
       >
         {actionLabel}
       </button>
