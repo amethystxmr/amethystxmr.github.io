@@ -35,7 +35,7 @@ type PaymentProofState =
       type: "tx-key";
       txid: string;
       address: string;
-      keysString: string;
+      keysStrings: string[];
       loading: boolean;
     };
 
@@ -116,11 +116,11 @@ export function TransactionsTab({
         type: "tx-key",
         txid,
         address,
-        keysString: "",
+        keysStrings: [],
         loading: true,
       });
       try {
-        const keysString = await wallet.get_tx_key_for_address(txid, address);
+        const keysStrings = await wallet.get_tx_keys_for_address(txid, address);
         if (isUnmountedRef.current) {
           return;
         }
@@ -128,7 +128,7 @@ export function TransactionsTab({
           type: "tx-key",
           txid,
           address,
-          keysString,
+          keysStrings,
           loading: false,
         });
       } catch (e) {
@@ -158,24 +158,30 @@ export function TransactionsTab({
     await alert("Payment proof download started");
   }, [alert, paymentProofState]);
 
-  const onOpenInMoneroCom = React.useCallback(() => {
+  const onOpenInMoneroCom = React.useCallback(async () => {
     if (
       !paymentProofState ||
       paymentProofState.type !== "tx-key" ||
       paymentProofState.loading ||
-      !paymentProofState.keysString
+      paymentProofState.keysStrings.length === 0
     ) {
+      return;
+    }
+    if (paymentProofState.keysStrings.length > 1) {
+      await alert(
+        "This transaction has multiple matching tx keys for this address. Open in monero.com supports a single key only.",
+      );
       return;
     }
 
     const url = `https://monero.com/payment/${encodeURIComponent(
       paymentProofState.txid,
     )}/${encodeURIComponent(paymentProofState.address)}/${encodeURIComponent(
-      paymentProofState.keysString,
+      paymentProofState.keysStrings[0],
     )}/`;
     window.open(url, "_blank", "noopener,noreferrer");
     setPaymentProofState(null);
-  }, [paymentProofState]);
+  }, [alert, paymentProofState]);
 
   const unknownKeyImagesMessage = isMultisigWallet
     ? "We are missing key images for some transactions. Outgoing transactions might be listed here as incoming and your balance might be wrong. Import multisig key images in the Multisig tab."
@@ -476,10 +482,10 @@ export function TransactionsTab({
                   />
                 </div>
                 <div className="space-y-1 text-xs text-white/70">
-                  <div className="text-white/45">keysstring</div>
+                  <div className="text-white/45">tx keys</div>
                   <TextArea
                     readOnly
-                    value={paymentProofState.keysString}
+                    value={paymentProofState.keysStrings.join("\n")}
                     className="scrollbar-glass h-28 resize-none overflow-y-auto bg-white/[0.04] py-2 font-mono text-xs text-white/90"
                     spellCheck={false}
                   />
@@ -497,9 +503,12 @@ export function TransactionsTab({
               <Button
                 type="button"
                 variant="primary"
-                onClick={onOpenInMoneroCom}
+                onClick={() => {
+                  void onOpenInMoneroCom();
+                }}
                 disabled={
-                  paymentProofState.loading || !paymentProofState.keysString
+                  paymentProofState.loading ||
+                  paymentProofState.keysStrings.length === 0
                 }
               >
                 → Open in monero.com

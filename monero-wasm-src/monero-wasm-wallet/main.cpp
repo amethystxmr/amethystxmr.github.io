@@ -1124,51 +1124,66 @@ public:
                            return keys; });
     }
 
-    auto get_tx_key_for_address(const std::string &txid_str, const std::string &dstaddress)
+    auto get_tx_keys_for_address(const std::string &txid_str, const std::string &dstaddress)
     {
-        return promise([this, txid_str, dstaddress]()
-                       {
-                           crypto::hash txid;
-                           if (!epee::string_tools::hex_to_pod(txid_str, txid))
-                           {
-                               throw std::runtime_error("TX ID has invalid format");
-                           }
+        return promise(
+            [this, txid_str, dstaddress]()
+            {
+                crypto::hash txid;
+                if (!epee::string_tools::hex_to_pod(txid_str, txid))
+                {
+                    throw std::runtime_error("TX ID has invalid format");
+                }
 
-                           cryptonote::address_parse_info info;
-                           if (!cryptonote::get_account_address_from_str(info, m_wallet.nettype(), dstaddress))
-                           {
-                               throw std::runtime_error("Invalid destination address");
-                           }
+                cryptonote::address_parse_info info;
+                if (!cryptonote::get_account_address_from_str(info, m_wallet.nettype(), dstaddress))
+                {
+                    throw std::runtime_error("Invalid destination address");
+                }
 
-                           crypto::secret_key tx_key = crypto::null_skey;
-                           std::vector<crypto::secret_key> additional_tx_keys;
-                           if (!m_wallet.get_tx_key(txid, tx_key, additional_tx_keys))
-                           {
-                               throw std::runtime_error("Tx secret key wasn't found in the wallet file.");
-                           }
+                crypto::secret_key tx_key = crypto::null_skey;
+                std::vector<crypto::secret_key> additional_tx_keys;
+                if (!m_wallet.get_tx_key(txid, tx_key, additional_tx_keys))
+                {
+                    throw std::runtime_error("Tx secret key wasn't found in the wallet file.");
+                }
 
-                           std::vector<crypto::secret_key> candidate_keys;
-                           candidate_keys.reserve(1 + additional_tx_keys.size());
-                           candidate_keys.push_back(tx_key);
-                           for (const auto &key : additional_tx_keys)
-                           {
-                               candidate_keys.push_back(key);
-                           }
+                std::vector<crypto::secret_key> candidate_keys;
+                candidate_keys.reserve(1 + additional_tx_keys.size());
+                candidate_keys.push_back(tx_key);
+                for (const auto &key : additional_tx_keys)
+                {
+                    candidate_keys.push_back(key);
+                }
 
-                           for (const auto &candidate : candidate_keys)
-                           {
-                               uint64_t received = 0;
-                               bool in_pool = false;
-                               uint64_t confirmations = 0;
-                               m_wallet.check_tx_key(txid, candidate, {}, info.address, received, in_pool, confirmations);
-                               if (received > 0)
-                               {
-                                   return epee::string_tools::pod_to_hex(unwrap(unwrap(candidate)));
-                               }
-                           }
+                std::vector<std::string> matching_keys;
+                for (const auto &candidate : candidate_keys)
+                {
+                    uint64_t received = 0;
+                    bool in_pool = false;
+                    uint64_t confirmations = 0;
+                    m_wallet.check_tx_key(txid, candidate, {}, info.address, received, in_pool, confirmations);
+                    if (received > 0)
+                    {
+                        matching_keys.push_back(epee::string_tools::pod_to_hex(unwrap(unwrap(candidate))));
+                    }
+                }
 
-                           throw std::runtime_error("No single tx key was found for this destination address");
-                       });
+                if (matching_keys.empty())
+                {
+                    throw std::runtime_error("No tx key was found for this destination address");
+                }
+                return matching_keys;
+            },
+            [](const std::vector<std::string> &keys) -> emscripten::val
+            {
+                auto result = emscripten::val::array();
+                for (size_t i = 0; i < keys.size(); ++i)
+                {
+                    result.set(static_cast<uint32_t>(i), keys[i]);
+                }
+                return result;
+            });
     }
 
     auto balance(uint32_t index_major, bool strict)
@@ -1642,7 +1657,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_wallet_file", &MoneroWasmWallet::get_wallet_file)
         .function("get_tx_proof", &MoneroWasmWallet::get_tx_proof)
         .function("get_tx_key", &MoneroWasmWallet::get_tx_key)
-        .function("get_tx_key_for_address", &MoneroWasmWallet::get_tx_key_for_address)
+        .function("get_tx_keys_for_address", &MoneroWasmWallet::get_tx_keys_for_address)
         .function("balance", &MoneroWasmWallet::balance)
         .function("unlocked_balance", &MoneroWasmWallet::unlocked_balance)
         .function("set_refresh_from_block_height", &MoneroWasmWallet::set_refresh_from_block_height)
