@@ -7,20 +7,21 @@ type OptionSchema = {
   daemonAddress: string;
 };
 
-export const DAEMON_LOCAL_ADDRESS = "http://localhost:18081";
-export const DAEMON_REMOTE_ADDRESS_1 = "https://xmr-node.cakewallet.com:18081";
+const DAEMON_LOCAL_ADDRESS = "http://localhost:18081";
+const DAEMON_REMOTE_ADDRESS_DEFAULT = "https://xmr-node.cakewallet.com:18081";
 export const DAEMON_PRESET_OPTIONS = [
   DAEMON_LOCAL_ADDRESS,
-  DAEMON_REMOTE_ADDRESS_1,
+  DAEMON_REMOTE_ADDRESS_DEFAULT,
+  "https://node.sethforprivacy.com",
 ] as const;
 
-export function getDefaultDaemonAddress(): string {
+function getDefaultDaemonAddress(): string {
   return location.hostname === "localhost"
     ? DAEMON_LOCAL_ADDRESS
-    : DAEMON_REMOTE_ADDRESS_1;
+    : DAEMON_REMOTE_ADDRESS_DEFAULT;
 }
 
-export function getDefaultOptions(): OptionSchema {
+function getDefaultOptions(): OptionSchema {
   return {
     loadLastWallet: true,
     cpuThreads: getRecommendedMaxConcurrency(),
@@ -29,7 +30,7 @@ export function getDefaultOptions(): OptionSchema {
   };
 }
 
-export class GlobalOptions<T extends Record<string, unknown>> {
+class GlobalOptions<T extends Record<string, unknown>> {
   private cache: Partial<T> = {};
 
   constructor(
