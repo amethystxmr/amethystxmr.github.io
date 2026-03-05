@@ -162,6 +162,7 @@ export const NetworkType = {
   MAINNET: 0,
   TESTNET: 1,
   STAGENET: 2,
+  FAKECHAIN: 3,
 } as const;
 
 export type NetworkType = (typeof NetworkType)[keyof typeof NetworkType];
@@ -308,6 +309,14 @@ interface Module {
 }
 
 let module: Module;
+type HttpFetchState =
+  | "start"
+  | "progress"
+  | "end"
+  | "error"
+  | "timeout"
+  | "abort";
+
 declare global {
   interface Window {
     module: Module;
@@ -317,7 +326,7 @@ declare global {
       onFetch: (
         url: string,
         reqId: string,
-        state: "start" | "end" | "progress" | "error",
+        state: HttpFetchState,
         progressLoaded: number,
         progressTotal: number,
       ) => void;
