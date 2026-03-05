@@ -1622,7 +1622,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
     emscripten::enum_<cryptonote::network_type>("NetworkType")
         .value("MAINNET", cryptonote::network_type::MAINNET)
         .value("TESTNET", cryptonote::network_type::TESTNET)
-        .value("STAGENET", cryptonote::network_type::STAGENET);
+        .value("STAGENET", cryptonote::network_type::STAGENET)
+        .value("FAKECHAIN", cryptonote::network_type::FAKECHAIN);
 
     emscripten::class_<MoneroWasmWallet>("MoneroWasmWallet")
         .function("init", &MoneroWasmWallet::init)
