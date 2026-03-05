@@ -1,6 +1,7 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include "emscripten/proxying.h"
+#include <limits>
 
 class js_http_client : public epee::net_utils::http::abstract_http_client
 {
@@ -82,9 +83,15 @@ public:
         }
 
         int invoke_result = 0;
+        const auto timeout_count = timeout.count();
+        const auto timeout_max = static_cast<decltype(timeout_count)>(std::numeric_limits<int>::max());
+        const int timeout_ms_for_js =
+            timeout_count <= 0 ? 0
+                               : (timeout_count > timeout_max ? std::numeric_limits<int>::max()
+                                                              : static_cast<int>(timeout_count));
         m_fetchProxyQueue.proxySyncWithCtx(
             m_fetchingThreadId,
-            [this, &uri, &method, &body, &timeout, &additional_params, &invoke_result](
+            [this, &uri, &method, &body, &additional_params, &invoke_result, timeout_ms_for_js](
                 emscripten::ProxyingQueue::ProxyingCtx ctx)
             {
                 EM_ASM({
@@ -192,7 +199,7 @@ public:
                 }, // 0-5
                        uri.data(), uri.size(), method.data(), method.size(), body.data(), body.size(),
                        // 6
-                       static_cast<int>(timeout.count()),
+                       timeout_ms_for_js,
                        // 7
                        ctx.ctx,
                        // 8
