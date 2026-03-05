@@ -156,8 +156,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         state === "abort"
       ) {
         setDownloadInfo(null);
-      } else {
+      } else if (state === "start" || state === "progress") {
         setDownloadInfo({ url, progressLoaded, progressTotal });
+      } else {
+        state satisfies never;
       }
     };
 
