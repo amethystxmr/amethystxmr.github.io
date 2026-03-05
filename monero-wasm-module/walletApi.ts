@@ -310,6 +310,14 @@ interface Module {
 
 let module: Module;
 declare global {
+  type HttpFetchState =
+    | "start"
+    | "progress"
+    | "end"
+    | "error"
+    | "timeout"
+    | "abort";
+
   interface Window {
     module: Module;
     clearFilesystem: typeof clearFilesystem;
@@ -318,7 +326,7 @@ declare global {
       onFetch: (
         url: string,
         reqId: string,
-        state: "start" | "end" | "progress" | "error",
+        state: HttpFetchState,
         progressLoaded: number,
         progressTotal: number,
       ) => void;

@@ -149,9 +149,12 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       console.info(
         `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
       );
-      if (state === "end") {
-        setDownloadInfo(null);
-      } else if (state === "error") {
+      if (
+        state === "end" ||
+        state === "error" ||
+        state === "timeout" ||
+        state === "abort"
+      ) {
         setDownloadInfo(null);
       } else {
         setDownloadInfo({ url, progressLoaded, progressTotal });

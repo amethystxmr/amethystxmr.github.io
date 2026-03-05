@@ -76,10 +76,15 @@ public:
         printf("js_http_client(%i)::invoke called with uri=%s\n", m_my_id,
                uri_str.c_str());
 
-        *ppresponse_info = std::addressof(m_response_info);
+        if (ppresponse_info)
+        {
+            *ppresponse_info = std::addressof(m_response_info);
+        }
+
+        int invoke_result = 0;
         m_fetchProxyQueue.proxySyncWithCtx(
             m_fetchingThreadId,
-            [this, &uri, &method, &body, &timeout, &additional_params](
+            [this, &uri, &method, &body, &timeout, &additional_params, &invoke_result](
                 emscripten::ProxyingQueue::ProxyingCtx ctx)
             {
                 EM_ASM({
@@ -87,12 +92,14 @@ public:
                     const method = UTF8ToString($2, $3);
                     const bodyPtr = $4;
                     const bodySize = $5;
+                    const timeoutMs = $6;
 
-                    const ctxPtr = $6;
+                    const ctxPtr = $7;
 
-                    const response_code_i32_ptr = $7;
-                    const response_mime_type_std_string_ptr = $8;
-                    const response_body_std_string_ptr = $9;
+                    const response_code_i32_ptr = $8;
+                    const response_mime_type_std_string_ptr = $9;
+                    const response_body_std_string_ptr = $10;
+                    const invoke_result_i32_ptr = $11;
 
                     /** @type {(p: number, newSize: number) => number} */
                     const resizeStdString = Module._resize_std_string;
@@ -115,6 +122,28 @@ public:
                     const xhr = new XMLHttpRequest();
                     xhr.open(method, finalUrl, true);
                     xhr.responseType = 'arraybuffer';
+                    xhr.timeout = timeoutMs > 0 ? timeoutMs : 0;
+                    HEAP32[invoke_result_i32_ptr >> 2] = 0;
+
+                    let isFinished = false;
+                    const finishOnce = function(fetchState)
+                    {
+                        if (isFinished)
+                        {
+                            return;
+                        }
+                        isFinished = true;
+                        window.globalHttpConfig.onFetch(uri, reqId, fetchState, 0, 0);
+                        Module._emscripten_ctx_proxy_finish(ctxPtr);
+                    };
+
+                    const failRequest = function(fetchState)
+                    {
+                        HEAP32[response_code_i32_ptr >> 2] = 0;
+                        resizeStdString(response_mime_type_std_string_ptr, 0);
+                        resizeStdString(response_body_std_string_ptr, 0);
+                        finishOnce(fetchState);
+                    };
 
                     xhr.onprogress = function(event)
                     {
@@ -123,6 +152,7 @@ public:
                     };
                     xhr.onload = function()
                     {
+                        HEAP32[invoke_result_i32_ptr >> 2] = 1;
                         HEAP32[response_code_i32_ptr >> 2] = xhr.status;
 
                         const mimeType = xhr.getResponseHeader('Content-Type') || "";
@@ -132,30 +162,26 @@ public:
                             HEAPU8.set(mimeTypeBytes, mimeTypePtr);
                         }
 
-                        if (xhr.status >= 200 && xhr.status < 300)
-                        {
-                            const bodyBytes = new Uint8Array(xhr.response);
-                            const bodyPtr = resizeStdString(response_body_std_string_ptr, bodyBytes.length);
-                            HEAPU8.set(bodyBytes, bodyPtr);
-                        }
-                        else
-                        {
-                            HEAP32[response_code_i32_ptr >> 2] = 500;
-                            resizeStdString(response_mime_type_std_string_ptr, 0);
-                            resizeStdString(response_body_std_string_ptr, 0);
-                        }
+                        const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
+                        const bodyPtr = resizeStdString(response_body_std_string_ptr, rawBody.length);
+                        HEAPU8.set(rawBody, bodyPtr);
 
-                        window.globalHttpConfig.onFetch(uri, reqId, 'end', 0, 0);
-                        Module._emscripten_ctx_proxy_finish(ctxPtr);
+                        finishOnce('end');
                     };
 
                     xhr.onerror = function()
                     {
-                        window.globalHttpConfig.onFetch(uri, reqId, 'error', 0, 0);
-                        HEAP32[response_code_i32_ptr >> 2] = 500;
-                        resizeStdString(response_mime_type_std_string_ptr, 0);
-                        resizeStdString(response_body_std_string_ptr, 0);
-                        Module._emscripten_ctx_proxy_finish(ctxPtr);
+                        failRequest('error');
+                    };
+
+                    xhr.ontimeout = function()
+                    {
+                        failRequest('timeout');
+                    };
+
+                    xhr.onabort = function()
+                    {
+                        failRequest('abort');
                     };
 
                     window.globalHttpConfig.onFetch(uri, reqId, 'start', 0, 0);
@@ -166,17 +192,21 @@ public:
                 }, // 0-5
                        uri.data(), uri.size(), method.data(), method.size(), body.data(), body.size(),
                        // 6
-                       ctx.ctx,
+                       static_cast<int>(timeout.count()),
                        // 7
-                       std::addressof(m_response_info.m_response_code),
+                       ctx.ctx,
                        // 8
-                       std::addressof(m_response_info.m_mime_tipe),
+                       std::addressof(m_response_info.m_response_code),
                        // 9
-                       std::addressof(m_response_info.m_body));
+                       std::addressof(m_response_info.m_mime_tipe),
+                       // 10
+                       std::addressof(m_response_info.m_body),
+                       // 11
+                       std::addressof(invoke_result));
             });
 
         m_is_busy = false;
-        return true;
+        return invoke_result != 0;
     }
     bool invoke_get(
         const boost::string_ref uri,
