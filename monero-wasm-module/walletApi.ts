@@ -309,15 +309,15 @@ interface Module {
 }
 
 let module: Module;
-declare global {
-  type HttpFetchState =
-    | "start"
-    | "progress"
-    | "end"
-    | "error"
-    | "timeout"
-    | "abort";
+type HttpFetchState =
+  | "start"
+  | "progress"
+  | "end"
+  | "error"
+  | "timeout"
+  | "abort";
 
+declare global {
   interface Window {
     module: Module;
     clearFilesystem: typeof clearFilesystem;
