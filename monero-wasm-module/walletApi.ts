@@ -56,6 +56,7 @@ export declare class MoneroWasmWallet {
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
+  get_network_type(): NetworkType;
   watch_only(): Promise<boolean>;
   is_deterministic(): Promise<boolean>;
   get_wallet_file(): Promise<string>;

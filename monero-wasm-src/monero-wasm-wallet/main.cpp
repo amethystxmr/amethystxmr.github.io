@@ -329,6 +329,11 @@ public:
                        { return m_wallet.get_address_as_str(); });
     }
 
+    auto get_network_type() const
+    {
+        return m_wallet.nettype();
+    }
+
     auto watch_only()
     {
         return promise([this]()
@@ -1635,6 +1640,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("rewrite", &MoneroWasmWallet::rewrite)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
+        .function("get_network_type", &MoneroWasmWallet::get_network_type)
         .function("watch_only", &MoneroWasmWallet::watch_only)
         .function("is_deterministic", &MoneroWasmWallet::is_deterministic)
         .function("get_keys", &MoneroWasmWallet::get_keys)
