@@ -28,6 +28,14 @@
 #include "multisig/multisig_tx_builder_ringct.h"
 #include "jsPromise.hpp"
 
+using WalletNetworkTypeBacking = std::underlying_type_t<cryptonote::network_type>;
+using WalletPriorityBacking = std::underlying_type_t<Monero::PendingTransaction::Priority>;
+
+static_assert(std::is_same_v<WalletNetworkTypeBacking, std::uint8_t>,
+              "cryptonote::network_type backing type must be uint8_t");
+static_assert(std::is_same_v<WalletPriorityBacking, unsigned int>,
+              "Monero::PendingTransaction::Priority backing type must be unsigned int");
+
 class MoneroWasmWallet : public tools::i_wallet2_callback
 {
 public:
@@ -64,9 +72,9 @@ public:
     virtual ~my_callbacks() {}
     */
 
-    MoneroWasmWallet(cryptonote::network_type network_type)
+    MoneroWasmWallet(WalletNetworkTypeBacking network_type_value)
         : m_wallet(
-              network_type,                                                   // nettype
+              static_cast<cryptonote::network_type>(network_type_value),      // nettype
               1,                                                              // kdf_rounds
               true,                                                           // unattended
               std::make_unique<js_client_factory>())                          // http_client_factory
@@ -331,7 +339,7 @@ public:
 
     auto get_network_type() const
     {
-        return m_wallet.nettype();
+        return static_cast<WalletNetworkTypeBacking>(m_wallet.nettype());
     }
 
     auto watch_only()
@@ -790,7 +798,7 @@ public:
     auto transfer_prepare(
         emscripten::val dst_addresses_js,
         emscripten::val amounts_js,
-        uint32_t priority,
+        WalletPriorityBacking priority,
         emscripten::val subtract_fee_from_index_js)
     {
         auto dst_addresses = parse_js_array<std::string>(
@@ -1018,7 +1026,7 @@ public:
     std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(
         const std::vector<std::string> &dst_addresses,
         const std::vector<uint64_t> &amounts,
-        uint32_t priority,
+        WalletPriorityBacking priority,
         std::optional<size_t> subtract_fee_from_index)
     {
         if (dst_addresses.empty())
@@ -1068,7 +1076,7 @@ public:
         std::set<uint32_t> subaddr_indices;
 
         auto ptx_vector = m_wallet.create_transactions_2(dsts, fake_outs_count,
-                                                         priority,
+                                                         static_cast<uint32_t>(priority),
                                                          extra,
                                                          0, subaddr_indices, subtract_fee_from_outputs);
         if (ptx_vector.empty())
@@ -1624,11 +1632,8 @@ private:
 
 EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
 {
-    emscripten::enum_<cryptonote::network_type>("NetworkType")
-        .value("MAINNET", cryptonote::network_type::MAINNET)
-        .value("TESTNET", cryptonote::network_type::TESTNET)
-        .value("STAGENET", cryptonote::network_type::STAGENET)
-        .value("FAKECHAIN", cryptonote::network_type::FAKECHAIN);
+    // emscripten::enum_ for network_type is intentionally disabled.
+    // We expose the raw backing type (uint8_t) over the JS boundary instead.
 
     emscripten::class_<MoneroWasmWallet>("MoneroWasmWallet")
         .function("init", &MoneroWasmWallet::init)
@@ -1694,7 +1699,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("import_key_images", &MoneroWasmWallet::import_key_images)
         .function("verify_password", &MoneroWasmWallet::verify_password)
         .function("rescan_blockchain", &MoneroWasmWallet::rescan_blockchain)
-        .constructor<cryptonote::network_type>();
+        .constructor<WalletNetworkTypeBacking>();
 
     emscripten::class_<std::vector<tools::wallet2::pending_tx>>("VectorOfPendingTx")
         .smart_ptr<std::shared_ptr<std::vector<tools::wallet2::pending_tx>>>("VectorOfPendingTx");

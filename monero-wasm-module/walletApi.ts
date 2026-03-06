@@ -299,7 +299,6 @@ interface Module {
   };
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
-  NetworkType: typeof NetworkType;
   set_max_concurrency(threads: number): void;
   get_monero_version_full(): string;
   decodePolyseed(moneroPolyseed: string): {
@@ -458,10 +457,11 @@ export function deleteWalletFiles(walletName: string) {
 }
 
 export function createWallet(
-  networkType: NetworkType = module.NetworkType.MAINNET,
+  networkType: NetworkType = NetworkType.MAINNET,
 ) {
   const wallet = new module.MoneroWasmWallet(networkType);
-  if (wallet.get_network_type() !== networkType) {
+  const actualNetworkType = wallet.get_network_type();
+  if (actualNetworkType !== networkType) {
     throw new Error("Internal error: Wallet network type mismatch");
   }
   return wallet;
