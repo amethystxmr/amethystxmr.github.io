@@ -456,12 +456,11 @@ export function deleteWalletFiles(walletName: string) {
   }
 }
 
-export function createWallet(
-  networkType: NetworkType = NetworkType.MAINNET,
-) {
+export function createWallet(networkType: NetworkType = NetworkType.MAINNET) {
   const wallet = new module.MoneroWasmWallet(networkType);
   const actualNetworkType = wallet.get_network_type();
   if (actualNetworkType !== networkType) {
+    // This is to verify that enums are used correctly
     throw new Error("Internal error: Wallet network type mismatch");
   }
   return wallet;
