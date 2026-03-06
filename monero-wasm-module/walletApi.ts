@@ -461,6 +461,9 @@ export function createWallet(
   networkType: NetworkType = module.NetworkType.MAINNET,
 ) {
   const wallet = new module.MoneroWasmWallet(networkType);
+  if (wallet.get_network_type() !== networkType) {
+    throw new Error("Internal error: Wallet network type mismatch");
+  }
   return wallet;
 }
 
