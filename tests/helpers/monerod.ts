@@ -125,8 +125,8 @@ export async function startMonerod(): Promise<void> {
     path.join(os.tmpdir(), MONEROD_TMP_DIR_PREFIX),
   );
 
-  const stdoutFd = fs.openSync(MONEROD_STDOUT_PATH, "a");
-  const stderrFd = fs.openSync(MONEROD_STDERR_PATH, "a");
+  const stdoutFd = fs.openSync(MONEROD_STDOUT_PATH, "w");
+  const stderrFd = fs.openSync(MONEROD_STDERR_PATH, "w");
 
   const child = spawn(
     monerodPath,

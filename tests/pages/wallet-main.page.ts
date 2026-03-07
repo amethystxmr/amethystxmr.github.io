@@ -85,11 +85,15 @@ export class WalletMainPage {
     let lastCount = 0;
 
     while (Date.now() - startedAt < timeoutMs) {
-      await this.clickRefreshInOtherTab();
-      const counts = await this.getPaymentTypeCounts();
-      lastCount = counts[paymentType] ?? 0;
-      if (lastCount >= minCount) {
-        return lastCount;
+      try {
+        await this.clickRefreshInOtherTab();
+        const counts = await this.getPaymentTypeCounts();
+        lastCount = counts[paymentType] ?? 0;
+        if (lastCount >= minCount) {
+          return lastCount;
+        }
+      } catch {
+        // Tolerate transient wallet/RPC errors and keep polling.
       }
       await this.page.waitForTimeout(1_000);
     }
