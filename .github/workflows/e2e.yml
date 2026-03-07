@@ -39,12 +39,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          mkdir -p "$RUNNER_TEMP/monero-release"
-          archive_path="$RUNNER_TEMP/monero-release/monero.tar.bz2"
-          curl -fL "https://downloads.getmonero.org/cli/linux64" -o "$archive_path"
-          tar -xjf "$archive_path" -C "$RUNNER_TEMP/monero-release"
+          release_dir="$RUNNER_TEMP/monero-release"
+          mkdir -p "$release_dir"
+          archive_path="$release_dir/monero.tar.bz2"
+          archive_url="$(curl -fLsS -w '%{url_effective}' -o "$archive_path" "https://downloads.getmonero.org/cli/linux64")"
 
-          monerod_path="$(find "$RUNNER_TEMP/monero-release" -type f -name monerod | head -n1)"
+          hashes_path="$release_dir/hashes.txt"
+          curl -fL "https://www.getmonero.org/downloads/hashes.txt" -o "$hashes_path"
+
+          archive_name="$(basename "${archive_url%%\?*}")"
+          expected_hash="$(grep -F "  $archive_name" "$hashes_path" | awk '{print $1}' | head -n1)"
+          if [ -z "$expected_hash" ]; then
+            echo "failed to resolve expected hash for $archive_name from hashes.txt" >&2
+            exit 1
+          fi
+
+          actual_hash="$(sha256sum "$archive_path" | awk '{print $1}')"
+          if [ "$actual_hash" != "$expected_hash" ]; then
+            echo "monero archive SHA256 mismatch" >&2
+            echo "expected: $expected_hash" >&2
+            echo "actual:   $actual_hash" >&2
+            exit 1
+          fi
+
+          tar -xjf "$archive_path" -C "$release_dir"
+
+          monerod_path="$(find "$release_dir" -type f -name monerod | head -n1)"
           if [ -z "$monerod_path" ]; then
             echo "monerod binary not found in downloaded release" >&2
             exit 1

@@ -7,16 +7,19 @@ import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 
-const MIN_EXPECTED_UNLOCKED_BALANCE = 1_000_000_000n; // 0.001 XMR
+const TRANSFER_AMOUNT_XMR = "3";
+const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
+const MIN_EXPECTED_UNLOCKED_BALANCE =
+  BigInt(TRANSFER_AMOUNT_XMR) * XMR_ATOMIC_UNITS_PER_XMR;
 const INITIAL_MINED_BLOCKS = 140;
 const POST_SEND_MINED_BLOCKS = 70;
-const TRANSFER_AMOUNT_XMR = "3";
 
 test.beforeEach(async ({ page }) => {
   await initializeAppTestSettings(page);
 });
 
 test("basic flow", async ({ page, context }) => {
+  test.setTimeout(600_000);
   const wallet1Initial = new InitialWalletListPage(page);
   const wallet1Name = `wallet1-restore-${Date.now()}`;
 
