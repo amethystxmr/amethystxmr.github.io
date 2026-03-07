@@ -810,11 +810,14 @@ function RestoreView({
     </FormRow>
   );
 
+  const restoreTabContentClass =
+    "space-y-4 h-auto overflow-visible lg:flex lg:h-full lg:min-h-0 lg:flex-col";
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>Restore wallet</Header>
-      <SectionPanel className="space-y-4">
-        <FormRow>
+      <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+        <FormRow className="lg:shrink-0">
           <Label>Wallet name</Label>
           <Input
             value={fileName}
@@ -823,149 +826,159 @@ function RestoreView({
           />
         </FormRow>
 
-        <NiceTabs
-          initialKey="monero-25"
-          onTabChange={(key) => {
-            if (
-              key === "monero-25" ||
-              key === "cake-16" ||
-              key === "multisig" ||
-              key === "from-keys"
-            ) {
-              setSeedType(key);
-            }
-          }}
-          tabs={[
-            {
-              key: "monero-25",
-              label: "Monero 25 words",
-              content: (
-                <div className="space-y-4">
-                  <FormRow>
-                    <Label>Seed phrase</Label>
-                    <TextArea
-                      rows={4}
-                      value={moneroSeed}
-                      disabled={restoring}
-                      onChange={(e) => setMoneroSeed(e.target.value)}
-                    ></TextArea>
-                  </FormRow>
+        <div className="lg:min-h-0 lg:flex-1">
+          <NiceTabs
+            initialKey="monero-25"
+            className="lg:flex lg:h-full lg:min-h-0 lg:flex-col"
+            onTabChange={(key) => {
+              if (
+                key === "monero-25" ||
+                key === "cake-16" ||
+                key === "multisig" ||
+                key === "from-keys"
+              ) {
+                setSeedType(key);
+              }
+            }}
+            tabs={[
+              {
+                key: "monero-25",
+                label: "Monero 25 words",
+                content: (
+                  <div className={restoreTabContentClass}>
+                    <FormRow className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                      <Label>Seed phrase</Label>
+                      <TextArea
+                        rows={3}
+                        className="lg:min-h-0 lg:flex-1"
+                        value={moneroSeed}
+                        disabled={restoring}
+                        onChange={(e) => setMoneroSeed(e.target.value)}
+                      ></TextArea>
+                    </FormRow>
 
-                  {startingHeightBlock}
-                </div>
-              ),
-            },
-            {
-              key: "cake-16",
-              label: "Cake 16 words",
-              content: (
-                <div className="space-y-4">
-                  <FormRow className="!mb-0">
-                    <Label>Seed phrase</Label>
-                    <TextArea
-                      rows={4}
-                      value={cakeSeed}
-                      disabled={restoring}
-                      onChange={(e) => setCakeSeed(e.target.value)}
-                    ></TextArea>
-                    <div className="mt-1 text-[11px] text-white/50">
-                      Starting height is derived automatically from the seed
-                    </div>
-                  </FormRow>
-                </div>
-              ),
-            },
-            {
-              key: "multisig",
-              label: "Mulsitig",
-              content: (
-                <div className="space-y-4">
-                  <FormRow>
-                    <Label>Multisig seed (hex)</Label>
-                    <TextArea
-                      rows={4}
-                      value={multisigSeedHex}
-                      disabled={restoring}
-                      onChange={(e) => setMultisigSeedHex(e.target.value)}
-                    ></TextArea>
-                  </FormRow>
+                    {startingHeightBlock}
+                  </div>
+                ),
+              },
+              {
+                key: "cake-16",
+                label: "Cake 16 words",
+                content: (
+                  <div className={restoreTabContentClass}>
+                    <FormRow className="!mb-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                      <Label>Seed phrase</Label>
+                      <TextArea
+                        rows={3}
+                        className="lg:min-h-0 lg:flex-1"
+                        value={cakeSeed}
+                        disabled={restoring}
+                        onChange={(e) => setCakeSeed(e.target.value)}
+                      ></TextArea>
+                      <div className="mt-1 text-[11px] text-white/50">
+                        Starting height is derived automatically from the seed
+                      </div>
+                    </FormRow>
+                  </div>
+                ),
+              },
+              {
+                key: "multisig",
+                label: "Mulsitig",
+                content: (
+                  <div className={restoreTabContentClass}>
+                    <FormRow className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                      <Label>Multisig seed (hex)</Label>
+                      <TextArea
+                        rows={3}
+                        className="lg:min-h-0 lg:flex-1"
+                        value={multisigSeedHex}
+                        disabled={restoring}
+                        onChange={(e) => setMultisigSeedHex(e.target.value)}
+                      ></TextArea>
+                    </FormRow>
 
-                  {startingHeightBlock}
-                </div>
-              ),
-            },
-            {
-              key: "from-keys",
-              label: "From keys",
-              content: (
-                <div className="space-y-4">
-                  <FormRow>
-                    <Label>Address</Label>
-                    <Input
-                      value={restoreAddress}
-                      disabled={restoring}
-                      onChange={(e) => setRestoreAddress(e.target.value)}
-                    />
-                  </FormRow>
-                  <FormRow>
-                    <Label>Secret view key (hex)</Label>
-                    <Input
-                      value={secretViewKey}
-                      disabled={restoring}
-                      placeholder="64 hex chars"
-                      onChange={(e) => setSecretViewKey(e.target.value)}
-                    />
-                    <div className="mt-1 text-[11px] text-white/50">
-                      Enter 64 hex characters (32 bytes).
-                    </div>
-                  </FormRow>
-                  <FormRow>
-                    <Label>Secret spend key (hex, optional)</Label>
-                    <Input
-                      value={secretSpendKey}
-                      disabled={restoring}
-                      placeholder="64 hex chars"
-                      onChange={(e) => setSecretSpendKey(e.target.value)}
-                    />
-                    <div className="mt-1 text-[11px] text-white/50">
-                      Leave empty for view-only wallet. If provided, use 64 hex
-                      characters.
-                    </div>
-                  </FormRow>
+                    {startingHeightBlock}
+                  </div>
+                ),
+              },
+              {
+                key: "from-keys",
+                label: "From keys",
+                content: (
+                  <div className="space-y-4 scrollbar-glass h-auto overflow-visible lg:h-full lg:min-h-0 lg:overflow-auto lg:pr-1">
+                    <FormRow>
+                      <Label>Address</Label>
+                      <Input
+                        value={restoreAddress}
+                        disabled={restoring}
+                        onChange={(e) => setRestoreAddress(e.target.value)}
+                      />
+                    </FormRow>
+                    <FormRow>
+                      <Label>Secret view key (hex)</Label>
+                      <Input
+                        value={secretViewKey}
+                        disabled={restoring}
+                        placeholder="64 hex chars"
+                        onChange={(e) => setSecretViewKey(e.target.value)}
+                      />
+                      <div className="mt-1 text-[11px] text-white/50">
+                        Enter 64 hex characters (32 bytes).
+                      </div>
+                    </FormRow>
+                    <FormRow>
+                      <Label>Secret spend key (hex, optional)</Label>
+                      <Input
+                        value={secretSpendKey}
+                        disabled={restoring}
+                        placeholder="64 hex chars"
+                        onChange={(e) => setSecretSpendKey(e.target.value)}
+                      />
+                      <div className="mt-1 text-[11px] text-white/50">
+                        Leave empty for view-only wallet. If provided, use 64
+                        hex characters.
+                      </div>
+                    </FormRow>
 
-                  {startingHeightBlock}
-                </div>
-              ),
-            },
-          ]}
-        />
+                    {startingHeightBlock}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </div>
 
-        <DoublePasswordInput
-          password={password}
-          passwordConfirm={passwordConfirm}
-          disabled={restoring}
-          onPasswordChange={setPassword}
-          onPasswordConfirmChange={setPasswordConfirm}
-        />
-
-        <ButtonsHolder>
-          <Button
-            className="w-full"
-            variant="soft"
-            onClick={() => onDone(null)}
+        <div className="lg:shrink-0">
+          <DoublePasswordInput
+            password={password}
+            passwordConfirm={passwordConfirm}
             disabled={restoring}
-          >
-            ✖ Cancel
-          </Button>
-          <Button
-            className="w-full"
-            variant="primary"
-            onClick={() => doRestore(seedType)}
-            disabled={restoring}
-          >
-            {restoring ? "Restoring..." : "↺ Restore wallet"}
-          </Button>
-        </ButtonsHolder>
+            onPasswordChange={setPassword}
+            onPasswordConfirmChange={setPasswordConfirm}
+          />
+        </div>
+
+        <div className="lg:shrink-0">
+          <ButtonsHolder>
+            <Button
+              className="w-full"
+              variant="soft"
+              onClick={() => onDone(null)}
+              disabled={restoring}
+            >
+              ✖ Cancel
+            </Button>
+            <Button
+              className="w-full"
+              variant="primary"
+              onClick={() => doRestore(seedType)}
+              disabled={restoring}
+            >
+              {restoring ? "Restoring..." : "↺ Restore wallet"}
+            </Button>
+          </ButtonsHolder>
+        </div>
       </SectionPanel>
     </div>
   );
