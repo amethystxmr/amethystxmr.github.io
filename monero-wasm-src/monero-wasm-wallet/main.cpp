@@ -342,6 +342,11 @@ public:
         return static_cast<WalletNetworkTypeBacking>(m_wallet.nettype());
     }
 
+    void allow_mismatched_daemon_version(bool allow_mismatch)
+    {
+        m_wallet.allow_mismatched_daemon_version(allow_mismatch);
+    }
+
     auto watch_only()
     {
         return promise([this]()
@@ -1655,6 +1660,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("close_wallet", &MoneroWasmWallet::close_wallet)
         .function("get_address", &MoneroWasmWallet::get_address)
         .function("get_network_type", &MoneroWasmWallet::get_network_type)
+        .function("allow_mismatched_daemon_version", &MoneroWasmWallet::allow_mismatched_daemon_version)
         .function("watch_only", &MoneroWasmWallet::watch_only)
         .function("is_deterministic", &MoneroWasmWallet::is_deterministic)
         .function("get_keys", &MoneroWasmWallet::get_keys)

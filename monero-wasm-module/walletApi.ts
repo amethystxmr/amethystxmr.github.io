@@ -57,6 +57,7 @@ export declare class MoneroWasmWallet {
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
   get_network_type(): NetworkType;
+  allow_mismatched_daemon_version(allowMismatch: boolean): void;
   watch_only(): Promise<boolean>;
   is_deterministic(): Promise<boolean>;
   get_wallet_file(): Promise<string>;
@@ -464,6 +465,9 @@ export function createWallet(networkType: NetworkType = NetworkType.MAINNET) {
     wallet.delete();
     // This is to verify that enums are used correctly
     throw new Error("Internal error: Wallet network type mismatch");
+  }
+  if (networkType === NetworkType.FAKECHAIN) {
+    wallet.allow_mismatched_daemon_version(true);
   }
   return wallet;
 }
