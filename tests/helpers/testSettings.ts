@@ -7,8 +7,6 @@ const MAINNET_NETWORK_TYPE = NetworkType.MAINNET;
 export async function initializeAppTestSettings(page: Page): Promise<void> {
   await page.addInitScript(
     ({ daemonAddress, networkType }) => {
-      (window as Window & { __amethystAllowMismatchedDaemonVersion?: boolean }).__amethystAllowMismatchedDaemonVersion =
-        true;
       localStorage.setItem(
         "options",
         JSON.stringify({

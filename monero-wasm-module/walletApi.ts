@@ -319,7 +319,6 @@ declare global {
   interface Window {
     module: Module;
     clearFilesystem: typeof clearFilesystem;
-    __amethystAllowMismatchedDaemonVersion?: boolean;
     globalHttpConfig: {
       mapUrl: (url: string) => string;
       onFetch: (
@@ -463,10 +462,10 @@ export function createWallet(networkType: NetworkType = NetworkType.MAINNET) {
     // This is to verify that enums are used correctly
     throw new Error("Internal error: Wallet network type mismatch");
   }
-  if (
+  const allowMismatchedDaemonVersion =
     networkType === NetworkType.FAKECHAIN ||
-    window.__amethystAllowMismatchedDaemonVersion === true
-  ) {
+    import.meta.env.VITE_ALLOW_MISMATCHED_DAEMON_VERSION === "1";
+  if (allowMismatchedDaemonVersion) {
     wallet.allow_mismatched_daemon_version(true);
   }
   return wallet;
