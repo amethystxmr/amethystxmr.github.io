@@ -857,7 +857,7 @@ function RestoreView({
                       ></TextArea>
                     </FormRow>
 
-                    {startingHeightBlock}
+                    <div className="lg:shrink-0">{startingHeightBlock}</div>
                   </div>
                 ),
               },
