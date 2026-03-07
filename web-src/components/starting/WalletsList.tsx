@@ -1396,7 +1396,7 @@ function OpenWalletView({
 
       <SectionPanel className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <div className="text-xs tracking-[0.14em] uppercase text-white/45">
-          Opening Wallet
+          Opening wallet
         </div>
 
         {phase === "acquiring-lock" || phase === "opening-initial" ? (
