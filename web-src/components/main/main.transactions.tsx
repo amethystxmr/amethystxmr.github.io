@@ -251,6 +251,7 @@ export function TransactionsTab({
                     <div className="min-w-0 space-y-1 text-xs text-white/70">
                       <div className="flex flex-wrap items-center gap-1.5 text-white/65">
                         <span
+                          aria-label={`Transaction type: ${getTypeLabel(p.type)}`}
                           className={`rounded-md px-2 py-1 text-xs font-semibold ring-1 ring-inset ${typeTone}`}
                         >
                           {getTypeLabel(p.type)}

@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("basic flow", async ({ page, context }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(300_000);
   const wallet1Initial = new InitialWalletListPage(page);
   const wallet1Name = `wallet1-restore-${Date.now()}`;
 
