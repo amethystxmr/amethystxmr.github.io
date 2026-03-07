@@ -1,8 +1,8 @@
 import type { Page } from "@playwright/test";
 import { MONEROD_RPC_URL } from "../constants";
-import { NetworkType } from "../../monero-wasm-module/networkType";
+import { NetworkType } from "../../monero-wasm-module/walletApi";
 
-const MAINNET_NETWORK_TYPE = NetworkType.MAINNET;
+const FAKECHAIN_NETWORK_TYPE = NetworkType.FAKECHAIN;
 
 export async function initializeAppTestSettings(page: Page): Promise<void> {
   await page.addInitScript(
@@ -18,7 +18,7 @@ export async function initializeAppTestSettings(page: Page): Promise<void> {
     },
     {
       daemonAddress: MONEROD_RPC_URL,
-      networkType: MAINNET_NETWORK_TYPE,
+      networkType: FAKECHAIN_NETWORK_TYPE,
     },
   );
 }

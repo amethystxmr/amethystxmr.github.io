@@ -43,10 +43,6 @@ export default defineConfig({
     url: APP_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
-    env: {
-      ...process.env,
-      VITE_ALLOW_MISMATCHED_DAEMON_VERSION: "1",
-    },
   },
   metadata: {
     monerodRpcPort: MONEROD_RPC_PORT,

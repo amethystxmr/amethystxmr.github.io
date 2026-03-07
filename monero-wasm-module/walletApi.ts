@@ -1,8 +1,14 @@
 // @ts-expect-error Generated wasm JS module has no TypeScript declarations.
 import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
-import { NetworkType } from "./networkType";
-import type { NetworkType as NetworkTypeT } from "./networkType";
-export { NetworkType };
+
+export const NetworkType = {
+  MAINNET: 0,
+  TESTNET: 1,
+  STAGENET: 2,
+  FAKECHAIN: 3,
+} as const;
+
+type NetworkTypeT = (typeof NetworkType)[keyof typeof NetworkType];
 
 type IDBFS = unknown & { readonly __nominal: unique symbol };
 
@@ -433,7 +439,9 @@ export async function clearFilesystem() {
   await saveFilesystem();
 }
 
-window.clearFilesystem = clearFilesystem;
+if (typeof window !== "undefined") {
+  window.clearFilesystem = clearFilesystem;
+}
 
 export function listWalletNames() {
   return module.FS.readdir(".")
@@ -462,10 +470,7 @@ export function createWallet(networkType: NetworkType = NetworkType.MAINNET) {
     // This is to verify that enums are used correctly
     throw new Error("Internal error: Wallet network type mismatch");
   }
-  const allowMismatchedDaemonVersion =
-    networkType === NetworkType.FAKECHAIN ||
-    import.meta.env.VITE_ALLOW_MISMATCHED_DAEMON_VERSION === "1";
-  if (allowMismatchedDaemonVersion) {
+  if (networkType === NetworkType.FAKECHAIN) {
     wallet.allow_mismatched_daemon_version(true);
   }
   return wallet;
