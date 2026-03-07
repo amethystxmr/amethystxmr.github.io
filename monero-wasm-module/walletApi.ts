@@ -171,6 +171,9 @@ export const FeePriority = {
 export type FeePriority = (typeof FeePriority)[keyof typeof FeePriority];
 
 export type NetworkType = NetworkTypeT;
+export type WalletCreateOptions = {
+  allowMismatchedDaemonVersion?: boolean;
+};
 
 export const CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 10n;
 
@@ -462,7 +465,10 @@ export function deleteWalletFiles(walletName: string) {
   }
 }
 
-export function createWallet(networkType: NetworkType = NetworkType.MAINNET) {
+export function createWallet(
+  networkType: NetworkType = NetworkType.MAINNET,
+  options: WalletCreateOptions = {},
+) {
   const wallet = new module.MoneroWasmWallet(networkType);
   const actualNetworkType = wallet.get_network_type();
   if (actualNetworkType !== networkType) {
@@ -470,7 +476,11 @@ export function createWallet(networkType: NetworkType = NetworkType.MAINNET) {
     // This is to verify that enums are used correctly
     throw new Error("Internal error: Wallet network type mismatch");
   }
-  if (networkType === NetworkType.FAKECHAIN) {
+  // Tests may run a MAINNET wallet against a regtest daemon. Keep this opt-in.
+  if (
+    networkType === NetworkType.FAKECHAIN ||
+    options.allowMismatchedDaemonVersion === true
+  ) {
     wallet.allow_mismatched_daemon_version(true);
   }
   return wallet;

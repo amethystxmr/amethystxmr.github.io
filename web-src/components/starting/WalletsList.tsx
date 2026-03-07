@@ -439,7 +439,11 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
 
   try {
     await withFsLock(async () => {
-      const tempWallet = createWallet(options.getValue("networkType"));
+      const tempWallet = createWallet(options.getValue("networkType"), {
+        allowMismatchedDaemonVersion: options.getValue(
+          "allowMismatchedDaemonVersion",
+        ),
+      });
       try {
         await tempWallet.init();
         const secret32 = crypto.getRandomValues(new Uint8Array(32));
@@ -461,7 +465,11 @@ async function getBlockchainHeightByDateUsingTempWallet(
   day: number,
   networkType: NetworkTypeValue = options.getValue("networkType"),
 ): Promise<bigint> {
-  const tempWallet = createWallet(networkType);
+  const tempWallet = createWallet(networkType, {
+    allowMismatchedDaemonVersion: options.getValue(
+      "allowMismatchedDaemonVersion",
+    ),
+  });
   try {
     await tempWallet.init();
     return await tempWallet.get_blockchain_height_by_date(year, month, day);
@@ -657,7 +665,11 @@ function RestoreView({
         setStartingHeight(restoreHeight.toString());
       }
 
-      wallet = createWallet(networkType);
+      wallet = createWallet(networkType, {
+        allowMismatchedDaemonVersion: options.getValue(
+          "allowMismatchedDaemonVersion",
+        ),
+      });
       await wallet.init();
       await withFsLock(async () => {
         if (!wallet) {
@@ -1048,7 +1060,11 @@ function CreateNewWalletView({
       }
 
       const seed = await withFsLock(async () => {
-        wallet = createWallet(options.getValue("networkType"));
+        wallet = createWallet(options.getValue("networkType"), {
+          allowMismatchedDaemonVersion: options.getValue(
+            "allowMismatchedDaemonVersion",
+          ),
+        });
         await wallet.init();
 
         const generatedSecret32 = await wallet.generate(
@@ -1309,7 +1325,11 @@ function OpenWalletView({
         if (isUnmountedRef.current) {
           return;
         }
-        wallet = createWallet(options.getValue("networkType"));
+        wallet = createWallet(options.getValue("networkType"), {
+          allowMismatchedDaemonVersion: options.getValue(
+            "allowMismatchedDaemonVersion",
+          ),
+        });
         await wallet.init();
         if (isUnmountedRef.current) {
           await closeWallet(wallet);

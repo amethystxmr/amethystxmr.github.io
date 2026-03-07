@@ -10,6 +10,7 @@ type OptionSchema = {
   lastWalletName: string | null;
   daemonAddress: string;
   networkType: NetworkTypeValue;
+  allowMismatchedDaemonVersion: boolean;
 };
 
 const DAEMON_LOCAL_ADDRESS = "http://localhost:18081";
@@ -33,6 +34,7 @@ function getDefaultOptions(): OptionSchema {
     lastWalletName: null,
     daemonAddress: getDefaultDaemonAddress(),
     networkType: NetworkType.MAINNET,
+    allowMismatchedDaemonVersion: false,
   };
 }
 
