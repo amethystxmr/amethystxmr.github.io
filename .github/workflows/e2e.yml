@@ -39,25 +39,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          release_json="$(curl -fsSL https://api.github.com/repos/monero-project/monero/releases/latest)"
-          asset_url="$(python3 -c '
-import json, re, sys
-data = json.loads(sys.stdin.read())
-for asset in data.get(\"assets\", []):
-    name = asset.get(\"name\", \"\")
-    if re.match(r\"^monero-linux-x64-v.*\\.tar\\.bz2$\", name):
-        print(asset.get(\"browser_download_url\", \"\"))
-        break
-' <<< \"$release_json\")"
-
-          if [ -z "$asset_url" ] || [ "$asset_url" = "null" ]; then
-            echo "Could not find linux x64 monero release asset" >&2
-            exit 1
-          fi
-
           mkdir -p "$RUNNER_TEMP/monero-release"
           archive_path="$RUNNER_TEMP/monero-release/monero.tar.bz2"
-          curl -fL "$asset_url" -o "$archive_path"
+          curl -fL "https://downloads.getmonero.org/cli/linux64" -o "$archive_path"
           tar -xjf "$archive_path" -C "$RUNNER_TEMP/monero-release"
 
           monerod_path="$(find "$RUNNER_TEMP/monero-release" -type f -name monerod | head -n1)"

@@ -10,14 +10,21 @@ export class InitialWalletListPage {
 
   async waitUntilLoaded(): Promise<void> {
     await expect(
-      this.page.getByRole("button", { name: /restore/i }),
+      this.page.getByRole("button", { name: /^↺\s*Restore$/ }),
     ).toBeVisible();
   }
 
   async openRestoreWallet(): Promise<void> {
-    await this.page.getByRole("button", { name: /restore/i }).click();
+    await this.page.getByRole("button", { name: /^↺\s*Restore$/ }).click();
     await expect(
       this.page.getByRole("heading", { name: /restore wallet/i }),
+    ).toBeVisible();
+  }
+
+  async openCreateWallet(): Promise<void> {
+    await this.page.getByRole("button", { name: /➕︎\s*New wallet/i }).click();
+    await expect(
+      this.page.getByRole("heading", { name: /create new wallet/i }),
     ).toBeVisible();
   }
 
@@ -48,6 +55,21 @@ export class InitialWalletListPage {
     await expect(startingHeightInput).toHaveValue(params.startingHeight ?? "0");
 
     await this.page.getByRole("button", { name: /restore wallet/i }).click();
+
+    const walletMainPage = new WalletMainPage(this.page);
+    await walletMainPage.waitUntilLoaded();
+    return walletMainPage;
+  }
+
+  async createNewWallet(params: { walletName: string }): Promise<WalletMainPage> {
+    await this.page
+      .locator("div")
+      .filter({ hasText: /^Wallet name$/ })
+      .locator("input")
+      .first()
+      .fill(params.walletName);
+    await this.page.getByRole("button", { name: /create wallet/i }).click();
+    await this.page.getByRole("button", { name: /open wallet/i }).click();
 
     const walletMainPage = new WalletMainPage(this.page);
     await walletMainPage.waitUntilLoaded();
