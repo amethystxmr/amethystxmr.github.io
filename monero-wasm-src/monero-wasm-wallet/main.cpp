@@ -1350,6 +1350,15 @@ public:
                            return m_wallet.get_multisig_first_kex_msg(); });
     }
 
+    auto enable_multisig(bool enable)
+    {
+        return promise([this, enable]()
+                       {
+                           m_wallet.enable_multisig(enable);
+                           return true;
+                       });
+    }
+
     auto export_multisig()
     {
         return promise(
@@ -1690,6 +1699,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_multisig_status", &MoneroWasmWallet::get_multisig_status)
         .function("has_multisig_partial_key_images", &MoneroWasmWallet::has_multisig_partial_key_images)
         .function("has_unknown_key_images", &MoneroWasmWallet::has_unknown_key_images)
+        .function("enable_multisig", &MoneroWasmWallet::enable_multisig)
         .function("prepare_multisig", &MoneroWasmWallet::prepare_multisig)
         .function("make_multisig", &MoneroWasmWallet::make_multisig)
         .function("exchange_multisig_keys", &MoneroWasmWallet::exchange_multisig_keys)

@@ -154,6 +154,7 @@ export function MultisigTab({
     setBusy(true);
     setMyRound1Message({ type: "loading" });
     try {
+      await wallet.enable_multisig(true);
       const message = await wallet.prepare_multisig();
       if (isUnmountedRef.current) {
         return;
