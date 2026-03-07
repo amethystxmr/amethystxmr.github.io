@@ -1,19 +1,19 @@
 // @ts-expect-error Generated wasm JS module has no TypeScript declarations.
 import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
 
-export const NetworkType = {
+export const NetworkTypes = {
   MAINNET: 0,
   TESTNET: 1,
   STAGENET: 2,
   FAKECHAIN: 3,
 } as const;
 
-type NetworkTypeT = (typeof NetworkType)[keyof typeof NetworkType];
+export type NetworkType = (typeof NetworkTypes)[keyof typeof NetworkTypes];
 
 type IDBFS = unknown & { readonly __nominal: unique symbol };
 
 export declare class MoneroWasmWallet {
-  constructor(networkType: NetworkTypeT);
+  constructor(networkType: NetworkType);
   init(): Promise<boolean>;
   close_wallet(): Promise<void>;
   delete(): void;
@@ -65,7 +65,7 @@ export declare class MoneroWasmWallet {
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
-  get_network_type(): NetworkTypeT;
+  get_network_type(): NetworkType;
   allow_mismatched_daemon_version(allowMismatch: boolean): void;
   watch_only(): Promise<boolean>;
   is_deterministic(): Promise<boolean>;
@@ -170,7 +170,6 @@ export const FeePriority = {
 
 export type FeePriority = (typeof FeePriority)[keyof typeof FeePriority];
 
-export type NetworkType = NetworkTypeT;
 export type WalletCreateOptions = {
   allowMismatchedDaemonVersion?: boolean;
 };
@@ -466,7 +465,7 @@ export function deleteWalletFiles(walletName: string) {
 }
 
 export function createWallet(
-  networkType: NetworkType = NetworkType.MAINNET,
+  networkType: NetworkType = NetworkTypes.MAINNET,
   options: WalletCreateOptions = {},
 ) {
   const wallet = new module.MoneroWasmWallet(networkType);
@@ -478,7 +477,7 @@ export function createWallet(
   }
   // Tests may run a MAINNET wallet against a regtest daemon. Keep this opt-in.
   if (
-    networkType === NetworkType.FAKECHAIN ||
+    networkType === NetworkTypes.FAKECHAIN ||
     options.allowMismatchedDaemonVersion === true
   ) {
     wallet.allow_mismatched_daemon_version(true);

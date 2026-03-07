@@ -1,8 +1,8 @@
 import type { Page } from "@playwright/test";
 import { MONEROD_RPC_URL } from "../constants";
-import { NetworkType } from "../../monero-wasm-module/walletApi";
+import { NetworkTypes } from "../../monero-wasm-module/walletApi";
 
-const MAINNET_NETWORK_TYPE = NetworkType.MAINNET;
+const MAINNET_NETWORK_TYPE = NetworkTypes.MAINNET;
 
 export async function initializeAppTestSettings(page: Page): Promise<void> {
   await page.addInitScript(

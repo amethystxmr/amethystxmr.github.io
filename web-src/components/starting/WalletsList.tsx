@@ -25,7 +25,7 @@ import {
   deleteWalletFiles,
   getMaxConcurrency,
   getMoneroVersionFull,
-  NetworkType,
+  NetworkTypes,
   type NetworkType as NetworkTypeValue,
   getWalletFilesData,
   getRecommendedMaxConcurrency,
@@ -50,10 +50,10 @@ type OpenedWallet = {
 const DAEMON_CUSTOM_OPTION = "__custom__";
 const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
 const NETWORK_TYPE_OPTIONS = [
-  { value: NetworkType.MAINNET, label: "Mainnet" },
-  { value: NetworkType.TESTNET, label: "Testnet" },
-  { value: NetworkType.STAGENET, label: "Stagenet" },
-  { value: NetworkType.FAKECHAIN, label: "Fakenet" },
+  { value: NetworkTypes.MAINNET, label: "Mainnet" },
+  { value: NetworkTypes.TESTNET, label: "Testnet" },
+  { value: NetworkTypes.STAGENET, label: "Stagenet" },
+  { value: NetworkTypes.FAKECHAIN, label: "Fakenet" },
 ] as const;
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
@@ -136,14 +136,14 @@ function getNetworkTypeSelectValue(networkType: NetworkTypeValue): string {
 function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
   const parsed = Number(value);
   if (
-    parsed === NetworkType.MAINNET ||
-    parsed === NetworkType.TESTNET ||
-    parsed === NetworkType.STAGENET ||
-    parsed === NetworkType.FAKECHAIN
+    parsed === NetworkTypes.MAINNET ||
+    parsed === NetworkTypes.TESTNET ||
+    parsed === NetworkTypes.STAGENET ||
+    parsed === NetworkTypes.FAKECHAIN
   ) {
     return parsed;
   }
-  return NetworkType.MAINNET;
+  return NetworkTypes.MAINNET;
 }
 
 export function WalletsList() {
