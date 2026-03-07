@@ -25,6 +25,8 @@ import {
   deleteWalletFiles,
   getMaxConcurrency,
   getMoneroVersionFull,
+  NetworkType,
+  type NetworkType as NetworkTypeValue,
   getWalletFilesData,
   getRecommendedMaxConcurrency,
   isWalletFileExists,
@@ -47,6 +49,12 @@ type OpenedWallet = {
 
 const DAEMON_CUSTOM_OPTION = "__custom__";
 const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
+const NETWORK_TYPE_OPTIONS = [
+  { value: NetworkType.MAINNET, label: "Mainnet" },
+  { value: NetworkType.TESTNET, label: "Testnet" },
+  { value: NetworkType.STAGENET, label: "Stagenet" },
+  { value: NetworkType.FAKECHAIN, label: "Fakenet" },
+] as const;
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
 
@@ -119,6 +127,23 @@ function getDaemonTestLabel(status: DaemonTestStatus): string {
     return "Failed";
   }
   return "Test";
+}
+
+function getNetworkTypeSelectValue(networkType: NetworkTypeValue): string {
+  return String(networkType);
+}
+
+function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
+  const parsed = Number(value);
+  if (
+    parsed === NetworkType.MAINNET ||
+    parsed === NetworkType.TESTNET ||
+    parsed === NetworkType.STAGENET ||
+    parsed === NetworkType.FAKECHAIN
+  ) {
+    return parsed;
+  }
+  return NetworkType.MAINNET;
 }
 
 export function WalletsList() {
@@ -414,7 +439,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
 
   try {
     await withFsLock(async () => {
-      const tempWallet = createWallet();
+      const tempWallet = createWallet(options.getValue("networkType"));
       try {
         await tempWallet.init();
         const secret32 = crypto.getRandomValues(new Uint8Array(32));
@@ -434,8 +459,9 @@ async function getBlockchainHeightByDateUsingTempWallet(
   year: number,
   month: number,
   day: number,
+  networkType: NetworkTypeValue = options.getValue("networkType"),
 ): Promise<bigint> {
-  const tempWallet = createWallet();
+  const tempWallet = createWallet(networkType);
   try {
     await tempWallet.init();
     return await tempWallet.get_blockchain_height_by_date(year, month, day);
@@ -523,6 +549,7 @@ function RestoreView({
   >("monero-25");
 
   const [restoring, setRestoring] = React.useState(false);
+  const networkType = options.getValue("networkType");
 
   const doRestore = (
     seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
@@ -620,6 +647,7 @@ function RestoreView({
           year,
           month,
           day,
+          networkType,
         );
         if (isUnmountedRef.current) {
           releaseWalletOpenLock?.();
@@ -629,7 +657,7 @@ function RestoreView({
         setStartingHeight(restoreHeight.toString());
       }
 
-      wallet = createWallet();
+      wallet = createWallet(networkType);
       await wallet.init();
       await withFsLock(async () => {
         if (!wallet) {
@@ -738,7 +766,7 @@ function RestoreView({
       day: d.getUTCDate(),
     };
     setLoadingHeight(true);
-    getBlockchainHeightByDateUsingTempWallet(year, month, day)
+    getBlockchainHeightByDateUsingTempWallet(year, month, day, networkType)
       .then((height) => {
         if (isUnmountedRef.current) {
           return;
@@ -1007,7 +1035,7 @@ function CreateNewWalletView({
       }
 
       const seed = await withFsLock(async () => {
-        wallet = createWallet();
+        wallet = createWallet(options.getValue("networkType"));
         await wallet.init();
 
         const generatedSecret32 = await wallet.generate(
@@ -1262,7 +1290,7 @@ function OpenWalletView({
         if (isUnmountedRef.current) {
           return;
         }
-        wallet = createWallet();
+        wallet = createWallet(options.getValue("networkType"));
         await wallet.init();
         if (isUnmountedRef.current) {
           await closeWallet(wallet);
@@ -1435,6 +1463,9 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     typeof navigator.hardwareConcurrency === "number"
       ? navigator.hardwareConcurrency
       : null;
+  const networkType = options.getValue("networkType");
+  const [networkTypeSelectValue, setNetworkTypeSelectValue] =
+    React.useState(() => getNetworkTypeSelectValue(networkType));
   const daemonAddress = options.getValue("daemonAddress");
   const [daemonSelectValue, setDaemonSelectValue] = React.useState(() =>
     getDaemonSelectValue(daemonAddress),
@@ -1474,166 +1505,199 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     setDaemonSelectValue(getDaemonSelectValue(daemonAddress));
   }, [daemonAddress]);
   React.useEffect(() => {
+    setNetworkTypeSelectValue(getNetworkTypeSelectValue(networkType));
+  }, [networkType]);
+  React.useEffect(() => {
     setDaemonTestStatus("idle");
   }, [daemonAddress]);
 
   const isCustomDaemonAddress = daemonSelectValue === DAEMON_CUSTOM_OPTION;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>Options</Header>
 
-      <SectionPanel className="space-y-4">
-        <Toggle
-          checked={loadLastWallet}
-          onChange={(next) => {
-            options.setValue("loadLastWallet", next);
-            refresh((x) => x + 1);
-          }}
-          label="Load last wallet on startup"
-          description="Automatically open the previous wallet after app start."
-        />
-
-        <FormRow>
-          <Label>CPU threads</Label>
-          <InputWithAction
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={cpuThreadsInput}
-            actionLabel="Set recommended"
-            onAction={async () => {
-              const next = recommendedCpuThreads;
-              options.setValue("cpuThreads", next);
-              setMaxConcurrency(next);
-              setCpuThreadsInput(String(next));
-              refresh((x) => x + 1);
-              await alert(`CPU threads set to recommended value: ${next}`);
-            }}
-            onChange={(e) => {
-              const raw = e.target.value.trim();
-              if (!/^\d*$/.test(raw)) {
-                return;
-              }
-              setCpuThreadsInput(raw);
-              if (raw === "") {
-                return;
-              }
-              const parsed = Number(raw);
-              if (!Number.isFinite(parsed) || parsed < 1) {
-                return;
-              }
-              const clamped = Math.min(
-                getMaxConcurrency(),
-                Math.max(1, Math.trunc(parsed)),
-              );
-              options.setValue("cpuThreads", clamped);
-              setMaxConcurrency(clamped);
+      <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+        <div className="space-y-4 scrollbar-glass lg:min-h-0 lg:flex-1 lg:overflow-auto lg:pr-1">
+          <Toggle
+            checked={loadLastWallet}
+            onChange={(next) => {
+              options.setValue("loadLastWallet", next);
               refresh((x) => x + 1);
             }}
-            onBlur={() => {
-              if (cpuThreadsInput === "") {
-                setCpuThreadsInput(String(options.getValue("cpuThreads")));
-              }
-            }}
+            label="Load last wallet on startup"
+            description="Automatically open the previous wallet after app start."
           />
-          <div className="mt-1 text-[11px] text-white/50">
-            {detectedCpuThreads !== null
-              ? `Detected CPU cores: ${detectedCpuThreads}. Recommended: ${recommendedCpuThreads}.`
-              : `Recommended: ${recommendedCpuThreads}.`}
-          </div>
-        </FormRow>
 
-        <FormRow>
-          <Label>Daemon address</Label>
-          <Select.Root
-            value={daemonSelectValue}
-            onValueChange={(next) => {
-              setDaemonSelectValue(next);
-              if (next !== DAEMON_CUSTOM_OPTION) {
-                options.setValue("daemonAddress", next);
+          <FormRow>
+            <Label>CPU threads</Label>
+            <InputWithAction
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={cpuThreadsInput}
+              actionLabel="Set recommended"
+              onAction={async () => {
+                const next = recommendedCpuThreads;
+                options.setValue("cpuThreads", next);
+                setMaxConcurrency(next);
+                setCpuThreadsInput(String(next));
                 refresh((x) => x + 1);
-              }
-            }}
-          >
-            <Select.Trigger>
-              <Select.Value>
-                {daemonSelectValue === DAEMON_CUSTOM_OPTION
-                  ? "Enter custom URL"
-                  : daemonSelectValue}
-              </Select.Value>
-            </Select.Trigger>
-            <Select.Content>
-              {DAEMON_PRESET_OPTIONS.map((address) => (
-                <Select.Option key={address} value={address}>
-                  {address}
-                </Select.Option>
-              ))}
-              <Select.Option value={DAEMON_CUSTOM_OPTION}>
-                Enter custom URL
-              </Select.Option>
-            </Select.Content>
-          </Select.Root>
-          {isCustomDaemonAddress && (
-            <Input
-              className="mt-2 font-mono text-sm"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="https://your-node.example.com:18081"
-              value={daemonAddress}
-              onChange={(e) => {
-                options.setValue("daemonAddress", e.target.value);
-                refresh((x) => x + 1);
+                await alert(`CPU threads set to recommended value: ${next}`);
               }}
-            />
-          )}
-          <div className="mt-2 flex justify-end">
-            <Button
-              type="button"
-              className={`!flex-none !px-5 !py-2 text-xs ${
-                daemonTestStatus === "ok"
-                  ? "text-green-300 hover:text-green-200"
-                  : daemonTestStatus === "failed"
-                    ? "text-red-300 hover:text-red-200"
-                    : ""
-              }`}
-              disabled={daemonTestStatus === "testing"}
-              onClick={async () => {
-                const target = options.getValue("daemonAddress").trim();
-                setDaemonTestStatus("testing");
-                if (!target) {
-                  setDaemonTestStatus("failed");
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                if (!/^\d*$/.test(raw)) {
                   return;
                 }
-                try {
-                  await testDaemonConnection(target);
-                  setDaemonTestStatus("ok");
-                } catch (e) {
-                  console.error("Daemon test failed:", e);
-                  setDaemonTestStatus("failed");
+                setCpuThreadsInput(raw);
+                if (raw === "") {
+                  return;
+                }
+                const parsed = Number(raw);
+                if (!Number.isFinite(parsed) || parsed < 1) {
+                  return;
+                }
+                const clamped = Math.min(
+                  getMaxConcurrency(),
+                  Math.max(1, Math.trunc(parsed)),
+                );
+                options.setValue("cpuThreads", clamped);
+                setMaxConcurrency(clamped);
+                refresh((x) => x + 1);
+              }}
+              onBlur={() => {
+                if (cpuThreadsInput === "") {
+                  setCpuThreadsInput(String(options.getValue("cpuThreads")));
+                }
+              }}
+            />
+            <div className="mt-1 text-[11px] text-white/50">
+              {detectedCpuThreads !== null
+                ? `Detected CPU cores: ${detectedCpuThreads}. Recommended: ${recommendedCpuThreads}.`
+                : `Recommended: ${recommendedCpuThreads}.`}
+            </div>
+          </FormRow>
+
+          <FormRow>
+            <Label>Network type</Label>
+            <Select.Root
+              value={networkTypeSelectValue}
+              onValueChange={(next) => {
+                const parsed = parseNetworkTypeSelectValue(next);
+                setNetworkTypeSelectValue(getNetworkTypeSelectValue(parsed));
+                options.setValue("networkType", parsed);
+                refresh((x) => x + 1);
+              }}
+            >
+              <Select.Trigger>
+                <Select.Value>
+                  {NETWORK_TYPE_OPTIONS.find(
+                    (item) => String(item.value) === networkTypeSelectValue,
+                  )?.label || "Mainnet"}
+                </Select.Value>
+              </Select.Trigger>
+              <Select.Content>
+                {NETWORK_TYPE_OPTIONS.map((item) => (
+                  <Select.Option key={item.value} value={String(item.value)}>
+                    {item.label}
+                  </Select.Option>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </FormRow>
+
+          <FormRow>
+            <Label>Daemon address</Label>
+            <Select.Root
+              value={daemonSelectValue}
+              onValueChange={(next) => {
+                setDaemonSelectValue(next);
+                if (next !== DAEMON_CUSTOM_OPTION) {
+                  options.setValue("daemonAddress", next);
+                  refresh((x) => x + 1);
                 }
               }}
             >
-              {getDaemonTestLabel(daemonTestStatus)}
-            </Button>
-          </div>
-        </FormRow>
-      </SectionPanel>
-
-      <div className="mt-2">
-        <div className="mb-3 px-2 text-center text-[10px] text-white/45">
-          <div className="space-y-1 sm:hidden">
-            <div>{buildInfoText}</div>
-            <div>{moneroVersionText}</div>
-          </div>
-          <div className="hidden sm:block">{`${buildInfoText}, ${moneroVersionText}`}</div>
+              <Select.Trigger>
+                <Select.Value>
+                  {daemonSelectValue === DAEMON_CUSTOM_OPTION
+                    ? "Enter custom URL"
+                    : daemonSelectValue}
+                </Select.Value>
+              </Select.Trigger>
+              <Select.Content>
+                {DAEMON_PRESET_OPTIONS.map((address) => (
+                  <Select.Option key={address} value={address}>
+                    {address}
+                  </Select.Option>
+                ))}
+                <Select.Option value={DAEMON_CUSTOM_OPTION}>
+                  Enter custom URL
+                </Select.Option>
+              </Select.Content>
+            </Select.Root>
+            {isCustomDaemonAddress && (
+              <Input
+                className="mt-2 font-mono text-sm"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="https://your-node.example.com:18081"
+                value={daemonAddress}
+                onChange={(e) => {
+                  options.setValue("daemonAddress", e.target.value);
+                  refresh((x) => x + 1);
+                }}
+              />
+            )}
+            <div className="mt-2 flex justify-end">
+              <Button
+                type="button"
+                className={`!flex-none !px-5 !py-2 text-xs ${
+                  daemonTestStatus === "ok"
+                    ? "text-green-300 hover:text-green-200"
+                    : daemonTestStatus === "failed"
+                      ? "text-red-300 hover:text-red-200"
+                      : ""
+                }`}
+                disabled={daemonTestStatus === "testing"}
+                onClick={async () => {
+                  const target = options.getValue("daemonAddress").trim();
+                  setDaemonTestStatus("testing");
+                  if (!target) {
+                    setDaemonTestStatus("failed");
+                    return;
+                  }
+                  try {
+                    await testDaemonConnection(target);
+                    setDaemonTestStatus("ok");
+                  } catch (e) {
+                    console.error("Daemon test failed:", e);
+                    setDaemonTestStatus("failed");
+                  }
+                }}
+              >
+                {getDaemonTestLabel(daemonTestStatus)}
+              </Button>
+            </div>
+          </FormRow>
         </div>
-        <ButtonsHolder>
-          <Button className="w-full" variant="soft" onClick={onBack}>
-            ← Back
-          </Button>
-        </ButtonsHolder>
-      </div>
+
+        <div className="mt-2 lg:shrink-0">
+          <div className="mb-3 px-2 text-center text-[10px] text-white/45">
+            <div className="space-y-1 sm:hidden">
+              <div>{buildInfoText}</div>
+              <div>{moneroVersionText}</div>
+            </div>
+            <div className="hidden sm:block">{`${buildInfoText}, ${moneroVersionText}`}</div>
+          </div>
+          <ButtonsHolder>
+            <Button className="w-full" variant="soft" onClick={onBack}>
+              ← Back
+            </Button>
+          </ButtonsHolder>
+        </div>
+      </SectionPanel>
     </div>
   );
 }
