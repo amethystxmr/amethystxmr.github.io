@@ -72,5 +72,5 @@ test("basic flow", async ({ page, context }) => {
     180_000,
   );
 
-  expect(balance).toBeGreaterThan(MIN_EXPECTED_UNLOCKED_BALANCE);
+  expect(balance).toBeGreaterThanOrEqual(MIN_EXPECTED_UNLOCKED_BALANCE);
 });

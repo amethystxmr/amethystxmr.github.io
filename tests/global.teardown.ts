@@ -1,7 +1,7 @@
 import { stopMonerod } from "./helpers/monerod";
 
-function globalTeardown(): void {
-  stopMonerod();
+async function globalTeardown(): Promise<void> {
+  await stopMonerod();
 }
 
 export default globalTeardown;

@@ -118,7 +118,7 @@ function readFileTail(filePath: string, maxLines: number): string {
 export async function startMonerod(): Promise<void> {
   fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
   // Always start from a clean chain state for every test run.
-  stopMonerod();
+  await stopMonerod();
 
   const monerodPath = resolveMonerodPath();
   const dataDir = fs.mkdtempSync(
@@ -155,6 +155,8 @@ export async function startMonerod(): Promise<void> {
   );
 
   child.unref();
+  fs.closeSync(stdoutFd);
+  fs.closeSync(stderrFd);
 
   fs.writeFileSync(
     MONEROD_STATE_PATH,
@@ -171,7 +173,20 @@ export async function startMonerod(): Promise<void> {
   await waitForMonerodReady(60_000);
 }
 
-export function stopMonerod(): void {
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      process.kill(pid, 0);
+      await wait(100);
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function stopMonerod(): Promise<void> {
   if (!fs.existsSync(MONEROD_STATE_PATH)) {
     return;
   }
@@ -184,6 +199,16 @@ export function stopMonerod(): void {
     process.kill(pid, "SIGTERM");
   } catch {
     // process already dead.
+  }
+
+  const exitedAfterTerm = await waitForProcessExit(pid, 10_000);
+  if (!exitedAfterTerm) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // process already dead.
+    }
+    await waitForProcessExit(pid, 5_000);
   }
 
   if (typeof dataDir === "string" && dataDir.length > 0) {

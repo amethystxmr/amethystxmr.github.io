@@ -1,10 +1,13 @@
 // @ts-expect-error Generated wasm JS module has no TypeScript declarations.
 import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
+import { NetworkType } from "./networkType";
+import type { NetworkType as NetworkTypeT } from "./networkType";
+export { NetworkType };
 
 type IDBFS = unknown & { readonly __nominal: unique symbol };
 
 export declare class MoneroWasmWallet {
-  constructor(networkType: NetworkType);
+  constructor(networkType: NetworkTypeT);
   init(): Promise<boolean>;
   close_wallet(): Promise<void>;
   delete(): void;
@@ -56,7 +59,7 @@ export declare class MoneroWasmWallet {
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
-  get_network_type(): NetworkType;
+  get_network_type(): NetworkTypeT;
   allow_mismatched_daemon_version(allowMismatch: boolean): void;
   watch_only(): Promise<boolean>;
   is_deterministic(): Promise<boolean>;
@@ -161,14 +164,7 @@ export const FeePriority = {
 
 export type FeePriority = (typeof FeePriority)[keyof typeof FeePriority];
 
-export const NetworkType = {
-  MAINNET: 0,
-  TESTNET: 1,
-  STAGENET: 2,
-  FAKECHAIN: 3,
-} as const;
-
-export type NetworkType = (typeof NetworkType)[keyof typeof NetworkType];
+export type NetworkType = NetworkTypeT;
 
 export const CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 10n;
 

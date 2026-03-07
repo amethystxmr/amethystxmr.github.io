@@ -32,7 +32,7 @@ export async function callMoneroJsonRpc<T>(
       `RPC ${method} failed: [${body.error.code}] ${body.error.message}`,
     );
   }
-  if (!body.result) {
+  if (body.result === undefined) {
     throw new Error(`RPC ${method} returned an empty result`);
   }
 

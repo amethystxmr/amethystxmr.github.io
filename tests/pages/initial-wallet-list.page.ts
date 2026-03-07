@@ -3,6 +3,7 @@ import { WalletMainPage } from "./wallet-main.page";
 
 export class InitialWalletListPage {
   constructor(private readonly page: Page) {}
+  private readonly restoreButtonName = /^(?:↺\s*)?Restore$/i;
 
   async goto(): Promise<void> {
     await this.page.goto("/");
@@ -10,19 +11,19 @@ export class InitialWalletListPage {
 
   async waitUntilLoaded(): Promise<void> {
     await expect(
-      this.page.getByRole("button", { name: /^↺\s*Restore$/ }),
+      this.page.getByRole("button", { name: this.restoreButtonName }),
     ).toBeVisible();
   }
 
   async openRestoreWallet(): Promise<void> {
-    await this.page.getByRole("button", { name: /^↺\s*Restore$/ }).click();
+    await this.page.getByRole("button", { name: this.restoreButtonName }).click();
     await expect(
       this.page.getByRole("heading", { name: /restore wallet/i }),
     ).toBeVisible();
   }
 
   async openCreateWallet(): Promise<void> {
-    await this.page.getByRole("button", { name: /➕︎\s*New wallet/i }).click();
+    await this.page.getByRole("button", { name: /new wallet/i }).click();
     await expect(
       this.page.getByRole("heading", { name: /create new wallet/i }),
     ).toBeVisible();
@@ -47,7 +48,7 @@ export class InitialWalletListPage {
       .fill(params.walletName);
     await this.page
       .locator("div")
-      .filter({ hasText: /^Seed phrase$/ })
+      .filter({ hasText: /^Seed phrase/ })
       .locator("textarea")
       .first()
       .fill(params.seed);
