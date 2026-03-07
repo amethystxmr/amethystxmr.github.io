@@ -884,7 +884,7 @@ function RestoreView({
               },
               {
                 key: "multisig",
-                label: "Mulsitig",
+                label: "Multisig",
                 content: (
                   <div className={restoreTabContentClass}>
                     <FormRow className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
