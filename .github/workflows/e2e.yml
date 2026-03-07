@@ -1,0 +1,86 @@
+name: E2E Tests
+
+on:
+  workflow_call:
+    inputs:
+      build_type:
+        required: true
+        type: string
+
+jobs:
+  e2e_tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download wasm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: monero-wasm-module-${{ inputs.build_type }}
+          path: monero-wasm-module
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Download latest official monerod
+        id: monerod
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_json="$(curl -fsSL https://api.github.com/repos/monero-project/monero/releases/latest)"
+          asset_url="$(python3 -c '
+import json, re, sys
+data = json.loads(sys.stdin.read())
+for asset in data.get(\"assets\", []):
+    name = asset.get(\"name\", \"\")
+    if re.match(r\"^monero-linux-x64-v.*\\.tar\\.bz2$\", name):
+        print(asset.get(\"browser_download_url\", \"\"))
+        break
+' <<< \"$release_json\")"
+
+          if [ -z "$asset_url" ] || [ "$asset_url" = "null" ]; then
+            echo "Could not find linux x64 monero release asset" >&2
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/monero-release"
+          archive_path="$RUNNER_TEMP/monero-release/monero.tar.bz2"
+          curl -fL "$asset_url" -o "$archive_path"
+          tar -xjf "$archive_path" -C "$RUNNER_TEMP/monero-release"
+
+          monerod_path="$(find "$RUNNER_TEMP/monero-release" -type f -name monerod | head -n1)"
+          if [ -z "$monerod_path" ]; then
+            echo "monerod binary not found in downloaded release" >&2
+            exit 1
+          fi
+
+          chmod +x "$monerod_path"
+          echo "path=$monerod_path" >> "$GITHUB_OUTPUT"
+
+      - name: Run E2E tests
+        env:
+          CI: true
+          MONEROD_PATH: ${{ steps.monerod.outputs.path }}
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ inputs.build_type }}
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore

@@ -42,6 +42,14 @@ jobs:
     with:
       build_type: ${{ needs.resolve_build_type.outputs.build_type }}
 
+  e2e_tests:
+    needs:
+      - resolve_build_type
+      - wasm_build
+    uses: ./.github/workflows/e2e.yml
+    with:
+      build_type: ${{ needs.resolve_build_type.outputs.build_type }}
+
   wait_for_pages_deploy:
     needs:
       - web_frontend
