@@ -469,9 +469,6 @@ export function createWallet(networkType: NetworkType = NetworkTypes.MAINNET) {
     // This is to verify that enums are used correctly
     throw new Error("Internal error: Wallet network type mismatch");
   }
-  if (networkType === NetworkTypes.FAKECHAIN) {
-    wallet.allow_mismatched_daemon_version(true);
-  }
   return wallet;
 }
 
