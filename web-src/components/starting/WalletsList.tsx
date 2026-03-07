@@ -1151,16 +1151,18 @@ function CreateNewWalletView({
 
   const isBusy = state.type === "creating-wallet";
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>Create new wallet</Header>
-      <SectionPanel className="space-y-4">
+      <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         {state.type === "creating-wallet" ? (
-          <>
+          <div className="flex h-full min-h-0 flex-col">
             <div className="text-xs tracking-[0.14em] uppercase text-white/45">
-              Creating Wallet
+              Creating wallet
             </div>
-            <ProgressBar state="loading" text="Generating wallet..." />
-          </>
+            <div className="mt-auto">
+              <ProgressBar state="loading" text="Generating wallet..." />
+            </div>
+          </div>
         ) : state.type === "showing-seed" ? (
           <>
             <SurfaceCard className="space-y-3 bg-white/6 p-3">
@@ -1196,27 +1198,29 @@ function CreateNewWalletView({
               </div>
             </SurfaceCard>
 
-            <ButtonsHolder>
-              <Button
-                className="w-full"
-                variant="soft"
-                onClick={doBackToListFromSeedStep}
-              >
-                ✖ Cancel
-              </Button>
-              <Button
-                className="w-full"
-                variant="primary"
-                onClick={() =>
-                  onDone({
-                    wallet: state.wallet,
-                    releaseWalletOpenLock: state.releaseWalletOpenLock,
-                  })
-                }
-              >
-                → Open wallet
-              </Button>
-            </ButtonsHolder>
+            <div className="mt-auto">
+              <ButtonsHolder>
+                <Button
+                  className="w-full"
+                  variant="soft"
+                  onClick={doBackToListFromSeedStep}
+                >
+                  ✖ Cancel
+                </Button>
+                <Button
+                  className="w-full"
+                  variant="primary"
+                  onClick={() =>
+                    onDone({
+                      wallet: state.wallet,
+                      releaseWalletOpenLock: state.releaseWalletOpenLock,
+                    })
+                  }
+                >
+                  → Open wallet
+                </Button>
+              </ButtonsHolder>
+            </div>
           </>
         ) : (
           <>
@@ -1243,24 +1247,26 @@ function CreateNewWalletView({
               }
             />
 
-            <ButtonsHolder>
-              <Button
-                className="w-full"
-                variant="soft"
-                onClick={() => onDone(null)}
-                disabled={isBusy}
-              >
-                ✖ Cancel
-              </Button>
-              <Button
-                className="w-full"
-                variant="primary"
-                onClick={doCreate}
-                disabled={isBusy}
-              >
-                ➕︎ Create wallet
-              </Button>
-            </ButtonsHolder>
+            <div className="mt-auto">
+              <ButtonsHolder>
+                <Button
+                  className="w-full"
+                  variant="soft"
+                  onClick={() => onDone(null)}
+                  disabled={isBusy}
+                >
+                  ✖ Cancel
+                </Button>
+                <Button
+                  className="w-full"
+                  variant="primary"
+                  onClick={doCreate}
+                  disabled={isBusy}
+                >
+                  ➕︎ Create wallet
+                </Button>
+              </ButtonsHolder>
+            </div>
           </>
         )}
       </SectionPanel>
