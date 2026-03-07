@@ -25,7 +25,7 @@ import {
   deleteWalletFiles,
   getMaxConcurrency,
   getMoneroVersionFull,
-  NetworkType,
+  NetworkTypes,
   type NetworkType as NetworkTypeValue,
   getWalletFilesData,
   getRecommendedMaxConcurrency,
@@ -50,10 +50,10 @@ type OpenedWallet = {
 const DAEMON_CUSTOM_OPTION = "__custom__";
 const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
 const NETWORK_TYPE_OPTIONS = [
-  { value: NetworkType.MAINNET, label: "Mainnet" },
-  { value: NetworkType.TESTNET, label: "Testnet" },
-  { value: NetworkType.STAGENET, label: "Stagenet" },
-  { value: NetworkType.FAKECHAIN, label: "Fakenet" },
+  { value: NetworkTypes.MAINNET, label: "Mainnet" },
+  { value: NetworkTypes.TESTNET, label: "Testnet" },
+  { value: NetworkTypes.STAGENET, label: "Stagenet" },
+  { value: NetworkTypes.FAKECHAIN, label: "Fakenet" },
 ] as const;
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
@@ -136,14 +136,14 @@ function getNetworkTypeSelectValue(networkType: NetworkTypeValue): string {
 function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
   const parsed = Number(value);
   if (
-    parsed === NetworkType.MAINNET ||
-    parsed === NetworkType.TESTNET ||
-    parsed === NetworkType.STAGENET ||
-    parsed === NetworkType.FAKECHAIN
+    parsed === NetworkTypes.MAINNET ||
+    parsed === NetworkTypes.TESTNET ||
+    parsed === NetworkTypes.STAGENET ||
+    parsed === NetworkTypes.FAKECHAIN
   ) {
     return parsed;
   }
-  return NetworkType.MAINNET;
+  return NetworkTypes.MAINNET;
 }
 
 export function WalletsList() {
@@ -430,6 +430,14 @@ async function closeWallet(wallet: MoneroWasmWallet): Promise<void> {
   }
 }
 
+function createWalletUsingCurrentOptions(): MoneroWasmWallet {
+  const wallet = createWallet(options.getValue("networkType"));
+  if (options.getValue("allowMismatchedDaemonVersion")) {
+    wallet.allow_mismatched_daemon_version(true);
+  }
+  return wallet;
+}
+
 async function testDaemonConnection(daemonAddress: string): Promise<void> {
   const tempWalletName = `${TEMP_DAEMON_TEST_WALLET_PREFIX}-${Date.now()}-${Math.random()
     .toString(36)
@@ -439,7 +447,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
 
   try {
     await withFsLock(async () => {
-      const tempWallet = createWallet(options.getValue("networkType"));
+      const tempWallet = createWalletUsingCurrentOptions();
       try {
         await tempWallet.init();
         const secret32 = crypto.getRandomValues(new Uint8Array(32));
@@ -459,9 +467,8 @@ async function getBlockchainHeightByDateUsingTempWallet(
   year: number,
   month: number,
   day: number,
-  networkType: NetworkTypeValue = options.getValue("networkType"),
 ): Promise<bigint> {
-  const tempWallet = createWallet(networkType);
+  const tempWallet = createWalletUsingCurrentOptions();
   try {
     await tempWallet.init();
     return await tempWallet.get_blockchain_height_by_date(year, month, day);
@@ -549,7 +556,6 @@ function RestoreView({
   >("monero-25");
 
   const [restoring, setRestoring] = React.useState(false);
-  const networkType = options.getValue("networkType");
 
   const doRestore = (
     seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
@@ -647,7 +653,6 @@ function RestoreView({
           year,
           month,
           day,
-          networkType,
         );
         if (isUnmountedRef.current) {
           releaseWalletOpenLock?.();
@@ -657,7 +662,7 @@ function RestoreView({
         setStartingHeight(restoreHeight.toString());
       }
 
-      wallet = createWallet(networkType);
+      wallet = createWalletUsingCurrentOptions();
       await wallet.init();
       await withFsLock(async () => {
         if (!wallet) {
@@ -766,7 +771,7 @@ function RestoreView({
       day: d.getUTCDate(),
     };
     setLoadingHeight(true);
-    getBlockchainHeightByDateUsingTempWallet(year, month, day, networkType)
+    getBlockchainHeightByDateUsingTempWallet(year, month, day)
       .then((height) => {
         if (isUnmountedRef.current) {
           return;
@@ -1048,7 +1053,7 @@ function CreateNewWalletView({
       }
 
       const seed = await withFsLock(async () => {
-        wallet = createWallet(options.getValue("networkType"));
+        wallet = createWalletUsingCurrentOptions();
         await wallet.init();
 
         const generatedSecret32 = await wallet.generate(
@@ -1309,7 +1314,7 @@ function OpenWalletView({
         if (isUnmountedRef.current) {
           return;
         }
-        wallet = createWallet(options.getValue("networkType"));
+        wallet = createWalletUsingCurrentOptions();
         await wallet.init();
         if (isUnmountedRef.current) {
           await closeWallet(wallet);

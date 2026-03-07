@@ -1,6 +1,6 @@
 import {
   getRecommendedMaxConcurrency,
-  NetworkType,
+  NetworkTypes,
   type NetworkType as NetworkTypeValue,
 } from "../../monero-wasm-module/walletApi";
 
@@ -10,6 +10,7 @@ type OptionSchema = {
   lastWalletName: string | null;
   daemonAddress: string;
   networkType: NetworkTypeValue;
+  allowMismatchedDaemonVersion: boolean;
 };
 
 const DAEMON_LOCAL_ADDRESS = "http://localhost:18081";
@@ -32,7 +33,8 @@ function getDefaultOptions(): OptionSchema {
     cpuThreads: getRecommendedMaxConcurrency(),
     lastWalletName: null,
     daemonAddress: getDefaultDaemonAddress(),
-    networkType: NetworkType.MAINNET,
+    networkType: NetworkTypes.MAINNET,
+    allowMismatchedDaemonVersion: false,
   };
 }
 

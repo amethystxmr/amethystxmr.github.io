@@ -1,0 +1,90 @@
+name: E2E Tests
+
+on:
+  workflow_call:
+    inputs:
+      build_type:
+        required: true
+        type: string
+
+jobs:
+  e2e_tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download wasm artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: monero-wasm-module-${{ inputs.build_type }}
+          path: monero-wasm-module
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Download latest official monerod
+        id: monerod
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_dir="$RUNNER_TEMP/monero-release"
+          mkdir -p "$release_dir"
+          archive_path="$release_dir/monero.tar.bz2"
+          archive_url="$(curl -fLsS -w '%{url_effective}' -o "$archive_path" "https://downloads.getmonero.org/cli/linux64")"
+
+          hashes_path="$release_dir/hashes.txt"
+          curl -fL "https://www.getmonero.org/downloads/hashes.txt" -o "$hashes_path"
+
+          archive_name="$(basename "${archive_url%%\?*}")"
+          expected_hash="$(grep -F "  $archive_name" "$hashes_path" | awk '{print $1}' | head -n1)"
+          if [ -z "$expected_hash" ]; then
+            echo "failed to resolve expected hash for $archive_name from hashes.txt" >&2
+            exit 1
+          fi
+
+          actual_hash="$(sha256sum "$archive_path" | awk '{print $1}')"
+          if [ "$actual_hash" != "$expected_hash" ]; then
+            echo "monero archive SHA256 mismatch" >&2
+            echo "expected: $expected_hash" >&2
+            echo "actual:   $actual_hash" >&2
+            exit 1
+          fi
+
+          tar -xjf "$archive_path" -C "$release_dir"
+
+          monerod_path="$(find "$release_dir" -type f -name monerod | head -n1)"
+          if [ -z "$monerod_path" ]; then
+            echo "monerod binary not found in downloaded release" >&2
+            exit 1
+          fi
+
+          chmod +x "$monerod_path"
+          echo "path=$monerod_path" >> "$GITHUB_OUTPUT"
+
+      - name: Run E2E tests
+        env:
+          CI: true
+          MONEROD_PATH: ${{ steps.monerod.outputs.path }}
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ inputs.build_type }}
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore

@@ -1,2 +1,5 @@
 node_modules
 built-web
+playwright-report
+test-results
+tests/.artifacts

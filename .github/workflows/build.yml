@@ -10,6 +10,9 @@ on:
       - synchronize
       - reopened
 
+permissions:
+  contents: read
+
 jobs:
   resolve_build_type:
     runs-on: ubuntu-latest
@@ -39,6 +42,14 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/web-frontend.yml
+    with:
+      build_type: ${{ needs.resolve_build_type.outputs.build_type }}
+
+  e2e_tests:
+    needs:
+      - resolve_build_type
+      - wasm_build
+    uses: ./.github/workflows/e2e.yml
     with:
       build_type: ${{ needs.resolve_build_type.outputs.build_type }}
 

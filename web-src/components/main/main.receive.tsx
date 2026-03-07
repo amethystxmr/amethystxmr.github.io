@@ -121,6 +121,7 @@ function AddressRow({
       {/* Wide address: read-only input with horizontal scroll */}
       <div className="relative">
         <Input
+          aria-label={`${title} address`}
           readOnly
           value={formattedAddress}
           onFocus={(e) => e.currentTarget.select()}

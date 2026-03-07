@@ -1,6 +1,15 @@
 // @ts-expect-error Generated wasm JS module has no TypeScript declarations.
 import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
 
+export const NetworkTypes = {
+  MAINNET: 0,
+  TESTNET: 1,
+  STAGENET: 2,
+  FAKECHAIN: 3,
+} as const;
+
+export type NetworkType = (typeof NetworkTypes)[keyof typeof NetworkTypes];
+
 type IDBFS = unknown & { readonly __nominal: unique symbol };
 
 export declare class MoneroWasmWallet {
@@ -57,6 +66,7 @@ export declare class MoneroWasmWallet {
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
   get_network_type(): NetworkType;
+  allow_mismatched_daemon_version(allowMismatch: boolean): void;
   watch_only(): Promise<boolean>;
   is_deterministic(): Promise<boolean>;
   get_wallet_file(): Promise<string>;
@@ -160,14 +170,6 @@ export const FeePriority = {
 
 export type FeePriority = (typeof FeePriority)[keyof typeof FeePriority];
 
-export const NetworkType = {
-  MAINNET: 0,
-  TESTNET: 1,
-  STAGENET: 2,
-  FAKECHAIN: 3,
-} as const;
-
-export type NetworkType = (typeof NetworkType)[keyof typeof NetworkType];
 
 export const CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 10n;
 
@@ -436,7 +438,9 @@ export async function clearFilesystem() {
   await saveFilesystem();
 }
 
-window.clearFilesystem = clearFilesystem;
+if (typeof window !== "undefined") {
+  window.clearFilesystem = clearFilesystem;
+}
 
 export function listWalletNames() {
   return module.FS.readdir(".")
@@ -457,7 +461,7 @@ export function deleteWalletFiles(walletName: string) {
   }
 }
 
-export function createWallet(networkType: NetworkType = NetworkType.MAINNET) {
+export function createWallet(networkType: NetworkType = NetworkTypes.MAINNET) {
   const wallet = new module.MoneroWasmWallet(networkType);
   const actualNetworkType = wallet.get_network_type();
   if (actualNetworkType !== networkType) {
