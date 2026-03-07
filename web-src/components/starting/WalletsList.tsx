@@ -1391,23 +1391,26 @@ function OpenWalletView({
   const isBusy = phase !== "idle";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>{fileName}</Header>
 
-      <SectionPanel className="space-y-3">
+      <SectionPanel className="space-y-3 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <div className="text-xs tracking-[0.14em] uppercase text-white/45">
           Opening Wallet
         </div>
 
         {phase === "acquiring-lock" || phase === "opening-initial" ? (
-          <div className="space-y-2">
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="text-sm text-white/80">
               Preparing wallet data...
             </div>
-            <ProgressBar state="loading" text="Loading wallet..." />
+            <div className="mt-auto">
+              <ProgressBar state="loading" text="Loading wallet..." />
+            </div>
           </div>
         ) : (
           <form
+            className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
             autoComplete="off"
             onSubmit={(e) => {
               e.preventDefault();
@@ -1437,31 +1440,33 @@ function OpenWalletView({
               />
             </FormRow>
 
-            <ButtonsHolder>
-              <Button
-                type="button"
-                className="w-full"
-                variant="soft"
-                onClick={() => {
-                  const releaseWalletOpenLock =
-                    walletOpenLockReleaseRef.current;
-                  walletOpenLockReleaseRef.current = null;
-                  releaseWalletOpenLock?.();
-                  onDone(null);
-                }}
-                disabled={isBusy}
-              >
-                ← Back
-              </Button>
-              <Button
-                type="submit"
-                className="w-full"
-                variant="primary"
-                disabled={isBusy}
-              >
-                {isBusy ? "→ Opening..." : "→ Open wallet"}
-              </Button>
-            </ButtonsHolder>
+            <div className="mt-auto">
+              <ButtonsHolder>
+                <Button
+                  type="button"
+                  className="w-full"
+                  variant="soft"
+                  onClick={() => {
+                    const releaseWalletOpenLock =
+                      walletOpenLockReleaseRef.current;
+                    walletOpenLockReleaseRef.current = null;
+                    releaseWalletOpenLock?.();
+                    onDone(null);
+                  }}
+                  disabled={isBusy}
+                >
+                  ← Back
+                </Button>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  variant="primary"
+                  disabled={isBusy}
+                >
+                  {isBusy ? "→ Opening..." : "→ Open wallet"}
+                </Button>
+              </ButtonsHolder>
+            </div>
           </form>
         )}
       </SectionPanel>
