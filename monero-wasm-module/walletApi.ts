@@ -127,6 +127,7 @@ export declare class MoneroWasmWallet {
   get_multisig_status(): Promise<MultisigAccountStatus>;
   has_multisig_partial_key_images(): Promise<boolean>;
   has_unknown_key_images(): Promise<boolean>;
+  enable_multisig(enable: boolean): Promise<boolean>;
   prepare_multisig(): Promise<string>;
   /** Note: this function saves wallet, .keys and .address.txt files! */
   make_multisig(
