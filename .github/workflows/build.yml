@@ -10,6 +10,9 @@ on:
       - synchronize
       - reopened
 
+permissions:
+  contents: read
+
 jobs:
   resolve_build_type:
     runs-on: ubuntu-latest
