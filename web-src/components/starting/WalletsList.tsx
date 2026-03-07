@@ -1155,7 +1155,7 @@ function CreateNewWalletView({
       <Header>Create new wallet</Header>
       <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         {state.type === "creating-wallet" ? (
-          <div className="flex h-full min-h-0 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="text-xs tracking-[0.14em] uppercase text-white/45">
               Creating wallet
             </div>
