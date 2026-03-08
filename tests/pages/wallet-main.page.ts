@@ -28,7 +28,7 @@ export class WalletMainPage {
     throw new Error(`Wallet main view did not show XMR balance within ${timeoutMs}ms`);
   }
 
-  async clickRefreshInOtherTab(): Promise<void> {
+  async reloadAndWaitForWallet(): Promise<void> {
     await this.openTab("other");
     await this.page.getByRole("button", { name: /refresh wallet/i }).click();
   }
@@ -331,7 +331,7 @@ export class WalletMainPage {
 
     while (Date.now() - startedAt < timeoutMs) {
       try {
-        await this.clickRefreshInOtherTab();
+        await this.reloadAndWaitForWallet();
         const counts = await this.getPaymentTypeCounts();
         lastCount = counts[paymentType] ?? 0;
         if (lastCount >= minCount) {
@@ -364,7 +364,7 @@ export class WalletMainPage {
 
     while (Date.now() - startedAt < timeoutMs) {
       try {
-        await this.clickRefreshInOtherTab();
+        await this.reloadAndWaitForWallet();
         const balance = await this.getUnlockedBalanceAtomic();
         if (balance !== null) {
           last = balance;
@@ -391,7 +391,7 @@ export class WalletMainPage {
   async waitForExactSyncedHeight(expectedHeight: number, timeoutMs = 120_000): Promise<void> {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
-      await this.clickRefreshInOtherTab();
+      await this.reloadAndWaitForWallet();
       const walletHeightText =
         (await this.page.getByLabel("Wallet current height").first().textContent()) ?? "";
       const daemonHeightText =
