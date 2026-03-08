@@ -6,8 +6,8 @@ const path = require("node:path");
 
 // Wallet list view is centered around a 640px content column height.
 // Keep the desktop window just slightly larger to fit paddings/header/chrome.
-const APP_WIDTH = 1160;
-const APP_HEIGHT = 696;
+const APP_WIDTH = 1240;
+const APP_HEIGHT = 736;
 const HOST = "127.0.0.1";
 const PORT = 43110;
 
