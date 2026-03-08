@@ -43,6 +43,11 @@ export class WalletMainPage {
     throw new Error(`Wallet main view did not show XMR balance within ${timeoutMs}ms`);
   }
 
+  async reloadAndWaitForWallet(): Promise<void> {
+    await this.page.reload({ waitUntil: "domcontentloaded" });
+    await this.waitUntilLoaded();
+  }
+
   async clickRefreshWallet(): Promise<void> {
     await this.openTab("other");
     await this.page.getByRole("button", { name: /refresh wallet/i }).click();
@@ -362,6 +367,7 @@ export class WalletMainPage {
     minCount: number,
     timeoutMs = 180_000,
   ): Promise<number> {
+    await this.reloadAndWaitForWallet();
     const startedAt = Date.now();
     let lastCount = 0;
 
@@ -394,6 +400,7 @@ export class WalletMainPage {
     minBalanceAtomic: bigint,
     timeoutMs = 180_000,
   ): Promise<bigint> {
+    await this.reloadAndWaitForWallet();
     const startedAt = Date.now();
     let last = 0n;
     let lastUi = "";
@@ -425,6 +432,7 @@ export class WalletMainPage {
   }
 
   async waitForExactSyncedHeight(expectedHeight: number, timeoutMs = 120_000): Promise<void> {
+    await this.reloadAndWaitForWallet();
     const startedAt = Date.now();
     let lastWalletHeightText = "";
     let lastDaemonHeightText = "";
