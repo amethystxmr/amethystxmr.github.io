@@ -9,6 +9,7 @@ on:
       - opened
       - synchronize
       - reopened
+      - labeled
 
 permissions:
   contents: read
@@ -52,6 +53,42 @@ jobs:
     uses: ./.github/workflows/e2e.yml
     with:
       build_type: ${{ needs.resolve_build_type.outputs.build_type }}
+
+  native_apps:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'build native apps'))
+    needs:
+      - resolve_build_type
+      - web_frontend
+    uses: ./.github/workflows/native-apps.yml
+    with:
+      build_type: ${{ needs.resolve_build_type.outputs.build_type }}
+
+  release_native_apps:
+    needs:
+      - native_apps
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: native-*-Release
+          merge-multiple: true
+
+      - name: Create or update release
+        uses: ncipollo/release-action@v1
+        with:
+          allowUpdates: true
+          removeArtifacts: true
+          name: Master Native Build (${{ github.sha }})
+          tag: master-latest
+          commit: ${{ github.sha }}
+          generateReleaseNotes: true
+          artifactErrorsFailBuild: true
+          artifacts: release-assets/*
 
   wait_for_pages_deploy:
     needs:

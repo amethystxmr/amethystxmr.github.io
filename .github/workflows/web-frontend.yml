@@ -47,6 +47,13 @@ jobs:
       - name: Build web frontend
         run: npm run build
 
+      - name: Upload web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-frontend-${{ inputs.build_type }}
+          path: built-web
+          if-no-files-found: error
+
       - name: Upload Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: actions/upload-pages-artifact@v3
