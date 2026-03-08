@@ -180,11 +180,7 @@ export class WalletMainPage {
       return;
     }
     await input.fill(messages);
-    try {
-      await exchangeButton.click({ timeout: 5_000 });
-    } catch {
-      // UI may switch to the ready state while the click is in-flight.
-    }
+    await exchangeButton.click({ timeout: 5_000 });
   }
 
   async createMultisigTransactionAndExport(destinationAddress: string, amountXmr: string): Promise<Uint8Array> {
