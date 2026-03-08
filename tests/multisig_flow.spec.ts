@@ -55,37 +55,16 @@ test.describe("multisig flow", () => {
       const maxRounds = members - threshold + 2;
       for (let round = 0; round < maxRounds; round++) {
         const readyStates = await readUniformReadyStates(multisigWallets, members);
-        const readyCount = readyStates.filter(Boolean).length;
         if (readyStates.every(Boolean)) {
           break;
         }
 
         const currentMessages: string[] = [];
-        let transitionedToReady = false;
         for (const wallet of multisigWallets) {
           const message = await wallet.getCurrentMultisigRoundMessage();
-          if (!message || message.length === 0) {
-            const transitionStates = await readUniformReadyStates(multisigWallets, members);
-            if (transitionStates.every(Boolean)) {
-              transitionedToReady = true;
-              break;
-            }
-            throw new Error(`Missing current multisig message in round ${round + 1}`);
-          }
           currentMessages.push(message);
         }
-        if (transitionedToReady) {
-          break;
-        }
         const joinedMessages = currentMessages.join("\n");
-        if (joinedMessages.length === 0) {
-          throw new Error(`Joined multisig messages are unexpectedly empty in round ${round + 1}`);
-        }
-        if (currentMessages.length !== members) {
-          throw new Error(
-            `Expected ${members} multisig messages in round ${round + 1}, got ${currentMessages.length}`,
-          );
-        }
         for (const wallet of multisigWallets) {
           await wallet.exchangeMultisigRoundMessages(joinedMessages);
         }
@@ -102,7 +81,8 @@ test.describe("multisig flow", () => {
         multisigWallets,
         INITIAL_MINED_BLOCKS + 1,
       );
-      await synchronizeMultisigParticipantData(multisigWallets, threshold);
+      await assertAllWalletsHavePartialKeyImages(multisigWallets);
+      await synchronizeMultisigParticipantData(multisigWallets.slice(0, threshold));
       const multisigUnlocked = await multisigWallets[0].waitForUnlockedBalanceAtLeast(
         MIN_EXPECTED_UNLOCKED_BALANCE,
       );
@@ -182,15 +162,11 @@ async function createWalletOnPage(page: Page, walletName: string): Promise<Walle
   return initial.createNewWallet({ walletName });
 }
 
-async function synchronizeMultisigParticipantData(
-  wallets: WalletMainPage[],
-  threshold: number,
-): Promise<void> {
+async function synchronizeMultisigParticipantData(wallets: WalletMainPage[]): Promise<void> {
   const exportedData = await Promise.all(wallets.map((wallet) => wallet.exportLatestMultisigData()));
   for (let i = 0; i < wallets.length; i++) {
     const dataFromOthers = exportedData
-      .filter((_, dataIndex) => dataIndex !== i)
-      .slice(0, threshold - 1);
+      .filter((_, dataIndex) => dataIndex !== i);
     await wallets[i].importParticipantMultisigData(dataFromOthers);
   }
 
@@ -199,6 +175,15 @@ async function synchronizeMultisigParticipantData(
   );
   if (warnings.some(Boolean)) {
     throw new Error("Multisig wallets still report partial key images after one synchronization pass");
+  }
+}
+
+async function assertAllWalletsHavePartialKeyImages(wallets: WalletMainPage[]): Promise<void> {
+  const warnings = await Promise.all(wallets.map((wallet) => wallet.hasPartialKeyImagesWarning()));
+  if (!warnings.every(Boolean)) {
+    throw new Error(
+      `Expected all wallets to require multisig key image sync, got: ${warnings.join(", ")}`,
+    );
   }
 }
 

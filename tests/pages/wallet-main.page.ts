@@ -146,20 +146,17 @@ export class WalletMainPage {
       .catch(() => false);
   }
 
-  async getCurrentMultisigRoundMessage(timeoutMs = 60_000): Promise<string | null> {
+  async getCurrentMultisigRoundMessage(timeoutMs = 60_000): Promise<string> {
     await this.openTab("multisig");
     const messageField = this.page.getByRole("textbox", {
       name: "Multisig current round message",
       exact: true,
     });
-    const hasField = await messageField.isVisible().catch(() => false);
-    if (!hasField) {
-      return null;
-    }
     await expect(messageField).toBeVisible({ timeout: timeoutMs });
     await expect(messageField).toHaveAttribute("data-ready", "true", {
       timeout: timeoutMs,
     });
+    await expect(messageField).not.toHaveValue("", { timeout: timeoutMs });
     return (await messageField.inputValue()).trim();
   }
 
