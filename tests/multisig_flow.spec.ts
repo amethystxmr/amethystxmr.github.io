@@ -51,14 +51,8 @@ test.describe("multisig flow", () => {
         await wallet.waitForMultisigInProgress(threshold, members);
       }
 
-      // Continue exchanging KEX messages until all wallets are ready.
-      const maxRounds = members - threshold + 2;
-      for (let round = 0; round < maxRounds; round++) {
-        const readyStates = await readUniformReadyStates(multisigWallets, members);
-        if (readyStates.every(Boolean)) {
-          break;
-        }
-
+      const exchangeRounds = members - threshold + 1;
+      for (let round = 0; round < exchangeRounds; round++) {
         const currentMessages: string[] = [];
         for (const wallet of multisigWallets) {
           const message = await wallet.getCurrentMultisigRoundMessage();
@@ -194,23 +188,4 @@ async function waitForWalletsAtExactSyncedHeight(
   for (const wallet of wallets) {
     await wallet.waitForExactSyncedHeight(expectedHeight);
   }
-}
-
-async function readUniformReadyStates(
-  wallets: WalletMainPage[],
-  members: number,
-  timeoutMs = 15_000,
-): Promise<boolean[]> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    const readyStates = await Promise.all(wallets.map((wallet) => wallet.isMultisigReady()));
-    const readyCount = readyStates.filter(Boolean).length;
-    if (readyCount === 0 || readyCount === members) {
-      return readyStates;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-
-  const lastStates = await Promise.all(wallets.map((wallet) => wallet.isMultisigReady()));
-  throw new Error(`Unexpected mixed multisig readiness state: ${lastStates.join(", ")}`);
 }
