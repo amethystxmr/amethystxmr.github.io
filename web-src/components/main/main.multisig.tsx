@@ -419,6 +419,8 @@ export function MultisigTab({
                   </div>
                 <TextArea
                   aria-label="Multisig round 1 message"
+                  data-ready={myRound1Message.type === "ready" ? "true" : "false"}
+                  aria-busy={myRound1Message.type === "loading"}
                   readOnly
                   rows={1}
                   className={`resize-none overflow-hidden [field-sizing:content] ${myRound1Message.type === "error" ? "border border-red-400/60" : ""}`}
@@ -565,6 +567,12 @@ export function MultisigTab({
             <Label>Your message for this round</Label>
             <TextArea
               aria-label="Multisig current round message"
+              data-ready={
+                myLastKexMessage.type === "ready" && myLastKexMessage.value !== ""
+                  ? "true"
+                  : "false"
+              }
+              aria-busy={myLastKexMessage.type === "loading"}
               readOnly
               rows={1}
               className="resize-none overflow-hidden [field-sizing:content]"
