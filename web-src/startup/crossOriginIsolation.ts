@@ -4,7 +4,7 @@ export type CrossOriginIsolationBootstrapResult =
     }
   | {
       type: "skipped";
-      reason: "non-production-build" | "already-isolated";
+      reason: "non-production-build" | "already-isolated" | "native-app";
     }
   | {
       type: "waiting-for-service-worker-control";
@@ -22,6 +22,10 @@ export type CrossOriginIsolationBootstrapResult =
 
 let bootstrapPromise: Promise<CrossOriginIsolationBootstrapResult> | null = null;
 
+export function isNativeAppRuntime() {
+  return window.amethystRuntime?.isNativeApp === true;
+}
+
 function getSwUrl() {
   const path = window.location.pathname;
   const dirPath = path.endsWith("/") ? path : path.replace(/\/[^/]*$/, "/");
@@ -38,6 +42,13 @@ export function ensureCrossOriginIsolationWorkaround() {
       return {
         type: "skipped",
         reason: "non-production-build",
+      } as const;
+    }
+
+    if (isNativeAppRuntime()) {
+      return {
+        type: "skipped",
+        reason: "native-app",
       } as const;
     }
 

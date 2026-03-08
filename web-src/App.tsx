@@ -4,7 +4,10 @@ import {
   AlertProvider,
   MultisigDataOverlayProvider,
 } from "./components/ui";
-import { CrossOriginIsolationBootstrapResult } from "./startup/crossOriginIsolation";
+import {
+  CrossOriginIsolationBootstrapResult,
+  isNativeAppRuntime,
+} from "./startup/crossOriginIsolation";
 
 type AppProps = {
   crossOriginIsolationBootstrap: Promise<CrossOriginIsolationBootstrapResult>;
@@ -65,7 +68,9 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
       }
 
       const hasSharedArrayBuffer = typeof SharedArrayBuffer !== "undefined";
-      const canUseThreads = window.crossOriginIsolated && hasSharedArrayBuffer;
+      const isNativeApp = isNativeAppRuntime();
+      const canUseThreads =
+        hasSharedArrayBuffer && (window.crossOriginIsolated || isNativeApp);
 
       if (!canUseThreads) {
         if (isolationResult.type === "error") {
@@ -78,6 +83,16 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
             type: "error",
             title: "Monero initialization failed",
             details: `${isolationResult.message}${reasonText}`,
+          });
+          return;
+        }
+
+        if (isNativeApp && !hasSharedArrayBuffer) {
+          setBootState({
+            type: "error",
+            title: "Monero initialization failed",
+            details:
+              "SharedArrayBuffer is unavailable in this native runtime. Cross-origin isolation and worker threads are required for wallet startup.",
           });
           return;
         }
