@@ -1166,6 +1166,7 @@ export function SendTab({
                 <div>
                   <Label>Recipient address</Label>
                   <Input
+                    aria-label={`Recipient ${index + 1} address`}
                     value={recipient.address}
                     onChange={(e) =>
                       updateRecipient(index, {
@@ -1182,6 +1183,7 @@ export function SendTab({
                 <div>
                   <Label>Amount (XMR)</Label>
                   <InputWithAction
+                    aria-label={`Recipient ${index + 1} amount`}
                     type="text"
                     inputMode="decimal"
                     value={recipient.amount}

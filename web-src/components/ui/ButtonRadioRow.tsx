@@ -8,6 +8,7 @@ export function ButtonRadioRow({
   onChange,
   disabled = false,
   compact = false,
+  ariaLabelPrefix,
 }: {
   label: React.ReactNode;
   options: number[];
@@ -15,6 +16,7 @@ export function ButtonRadioRow({
   onChange: (next: number) => void;
   disabled?: boolean;
   compact?: boolean;
+  ariaLabelPrefix?: string;
 }) {
   return (
     <div
@@ -38,6 +40,9 @@ export function ButtonRadioRow({
           <Button
             key={option}
             type="button"
+            aria-label={
+              ariaLabelPrefix ? `${ariaLabelPrefix} ${option}` : undefined
+            }
             className={
               compact
                 ? "w-full px-2.5 py-1.5 text-xs"

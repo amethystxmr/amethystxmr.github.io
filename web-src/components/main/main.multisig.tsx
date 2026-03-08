@@ -417,10 +417,11 @@ export function MultisigTab({
                       </div>
                     </Hint>
                   </div>
-                  <TextArea
-                    readOnly
-                    rows={1}
-                    className={`resize-none overflow-hidden [field-sizing:content] ${myRound1Message.type === "error" ? "border border-red-400/60" : ""}`}
+                <TextArea
+                  aria-label="Multisig round 1 message"
+                  readOnly
+                  rows={1}
+                  className={`resize-none overflow-hidden [field-sizing:content] ${myRound1Message.type === "error" ? "border border-red-400/60" : ""}`}
                     value={
                       myRound1Message.type === "loading"
                         ? "Loading..."
@@ -443,6 +444,7 @@ export function MultisigTab({
                       <Button
                         key={option}
                         type="button"
+                        aria-label={`Multisig participants ${option}`}
                         className="w-full px-2.5 py-1.5 text-xs"
                         variant={option === participants ? "primary" : "soft"}
                         disabled={busy}
@@ -484,6 +486,7 @@ export function MultisigTab({
                     { length: participants },
                     (_, i) => i + 1,
                   )}
+                  ariaLabelPrefix="Multisig threshold"
                   value={threshold}
                   compact
                   disabled={busy}
@@ -504,6 +507,7 @@ export function MultisigTab({
                     </Hint>
                   </div>
                   <TextArea
+                    aria-label="Multisig round 1 messages input"
                     rows={10}
                     className="scrollbar-glass scrollbar-hidden-mobile resize-none lg:min-h-0 lg:flex-1"
                     value={othersRound1Messages}
@@ -560,6 +564,7 @@ export function MultisigTab({
           <div className="space-y-1">
             <Label>Your message for this round</Label>
             <TextArea
+              aria-label="Multisig current round message"
               readOnly
               rows={1}
               className="resize-none overflow-hidden [field-sizing:content]"
@@ -577,6 +582,7 @@ export function MultisigTab({
           <div className="space-y-1 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
             <Label>All participants round {thisRound} messages</Label>
             <TextArea
+              aria-label={`Multisig round ${thisRound} messages input`}
               rows={12}
               className="scrollbar-glass scrollbar-hidden-mobile resize-none lg:min-h-0 lg:flex-1"
               value={othersRoundMessages}
