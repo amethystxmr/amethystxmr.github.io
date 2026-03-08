@@ -406,14 +406,13 @@ export class WalletMainPage {
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       await this.clickRefreshInOtherTab();
-      const bodyText = (await this.page.locator("body").innerText()).replace(/\u00A0/g, " ");
-      const matches = [...bodyText.matchAll(/(\d+)\s*\/\s*(\d+)/g)];
-      const hasExpected = matches.some((match) => {
-        const walletHeight = Number.parseInt(match[1] ?? "", 10);
-        const daemonHeight = Number.parseInt(match[2] ?? "", 10);
-        return walletHeight === expectedHeight && daemonHeight === expectedHeight;
-      });
-      if (hasExpected) {
+      const walletHeightText =
+        (await this.page.getByLabel("Wallet current height").first().textContent()) ?? "";
+      const daemonHeightText =
+        (await this.page.getByLabel("Daemon current height").first().textContent()) ?? "";
+      const walletHeight = Number.parseInt(walletHeightText.trim(), 10);
+      const daemonHeight = Number.parseInt(daemonHeightText.trim(), 10);
+      if (walletHeight === expectedHeight && daemonHeight === expectedHeight) {
         return;
       }
       await this.page.waitForTimeout(1_000);
