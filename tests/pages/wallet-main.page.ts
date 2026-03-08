@@ -277,13 +277,6 @@ export class WalletMainPage {
     });
   }
 
-  private async readAndCloseMultisigExportOverlay(headerPattern: RegExp): Promise<string> {
-    await expect(this.page.getByText(headerPattern)).toBeVisible();
-    const overlayText = await this.page.locator("textarea[readonly]").last().inputValue();
-    await this.page.getByRole("button", { name: /^Close$/i }).click();
-    return overlayText.trim();
-  }
-
   private async downloadFromExportOverlay(headerPattern: RegExp): Promise<Uint8Array> {
     await expect(this.page.getByText(headerPattern)).toBeVisible();
     const downloadPromise = this.page.waitForEvent("download");
