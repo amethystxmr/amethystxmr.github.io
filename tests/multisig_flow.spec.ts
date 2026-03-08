@@ -62,11 +62,9 @@ test.describe("multisig flow", () => {
           const message = await wallet.getCurrentMultisigRoundMessage();
           currentMessages.push(message);
         }
-        for (let i = 0; i < multisigWallets.length; i++) {
-          const messagesFromOthers = currentMessages
-            .filter((_, messageIndex) => messageIndex !== i)
-            .join("\n");
-          await multisigWallets[i].exchangeMultisigRoundMessages(messagesFromOthers);
+        const joinedMessages = currentMessages.join("\n");
+        for (const wallet of multisigWallets) {
+          await wallet.exchangeMultisigRoundMessages(joinedMessages);
         }
 
         if (round < exchangeRounds - 1) {
