@@ -5,7 +5,7 @@
   "license": "ISC",
   "author": "",
   "type": "module",
-  "main": "index.html",
+  "main": "electron/main.cjs",
   "scripts": {
     "test": "npm run test:e2e",
     "test:e2e": "playwright test",
@@ -14,10 +14,42 @@
     "test:e2e:install": "playwright install chromium",
     "dev": "vite",
     "build": "vite build",
+    "native:dev": "npm run build && electron .",
+    "native:pack": "npm run build && electron-builder --dir",
+    "native:dist": "npm run build && electron-builder --publish never",
+    "native:dist:ci": "electron-builder --publish never",
     "logo-gen": "./scripts/generate-pwa-icons.sh",
     "preview": "vite preview",
     "lint": "eslint web-src monero-wasm-module vite.config.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "build": {
+    "appId": "org.amethystxmr.wallet",
+    "productName": "AmethystXMR",
+    "directories": {
+      "output": "dist-native"
+    },
+    "files": [
+      "built-web/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        "portable"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
+    "mac": {
+      "target": [
+        "zip"
+      ]
+    }
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
@@ -42,6 +74,8 @@
     "@eslint/js": "^9.39.3",
     "@playwright/test": "^1.58.2",
     "@vitejs/plugin-react": "^5.1.4",
+    "electron": "^37.10.3",
+    "electron-builder": "^26.8.1",
     "eslint": "^9.39.3",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.26",
