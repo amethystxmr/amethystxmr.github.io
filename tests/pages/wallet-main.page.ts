@@ -11,7 +11,22 @@ export class WalletMainPage {
   private static readonly ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
 
   async openTab(name: "receive" | "send" | "transactions" | "multisig" | "other"): Promise<void> {
-    await this.page.getByRole("tab", { name: new RegExp(name, "i") }).click();
+    const tab = this.page.getByRole("tab", { name: new RegExp(name, "i") });
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await this.waitForBlockingOverlayToDisappear();
+      try {
+        await tab.click({ timeout: 5_000 });
+      } catch {
+        // Retry if click was intercepted by transient UI state.
+      }
+      const isSelected = (await tab.getAttribute("aria-selected")) === "true";
+      if (isSelected) {
+        await this.waitForBlockingOverlayToDisappear();
+        return;
+      }
+      await this.page.waitForTimeout(200);
+    }
+    throw new Error(`Failed to open tab: ${name}`);
   }
 
   async waitUntilLoaded(timeoutMs = 60_000): Promise<void> {
@@ -28,9 +43,15 @@ export class WalletMainPage {
     throw new Error(`Wallet main view did not show XMR balance within ${timeoutMs}ms`);
   }
 
-  async reloadAndWaitForWallet(): Promise<void> {
+  async clickRefreshWallet(): Promise<void> {
     await this.openTab("other");
     await this.page.getByRole("button", { name: /refresh wallet/i }).click();
+    const refreshingLabel = this.page.getByText(/Refreshing\.\.\./i);
+    const isRefreshingVisible = await refreshingLabel.isVisible().catch(() => false);
+    if (isRefreshingVisible) {
+      await refreshingLabel.waitFor({ state: "hidden", timeout: 120_000 });
+    }
+    await this.waitForBlockingOverlayToDisappear(120_000);
   }
 
   async getPrimaryAddress(): Promise<string> {
@@ -160,27 +181,42 @@ export class WalletMainPage {
     return (await messageField.inputValue()).trim();
   }
 
+  async waitForMultisigRound(round: number, timeoutMs = 60_000): Promise<void> {
+    await this.openTab("multisig");
+    await expect(
+      this.page.getByText(new RegExp(`All participants round\\s+${round}\\s+messages`, "i")),
+    ).toBeVisible({ timeout: timeoutMs });
+  }
+
   async exchangeMultisigRoundMessages(messages: string): Promise<void> {
-    if (messages.trim().length === 0) {
+    await this.openTab("multisig");
+    const readyExportButton = this.page.getByRole("button", {
+      name: /export latest multisig data/i,
+    });
+    if (await readyExportButton.isVisible().catch(() => false)) {
       return;
     }
-    await this.openTab("multisig");
     const exchangeButton = this.page.getByRole("button", {
       name: /exchange multisig keys/i,
     });
-    const hasButton = await exchangeButton.isVisible().catch(() => false);
-    if (!hasButton) {
-      return;
-    }
+    await expect(exchangeButton).toBeVisible();
     const input = this.page.getByRole("textbox", {
       name: /Multisig round \d+ messages input/,
     });
-    const hasInput = await input.isVisible().catch(() => false);
-    if (!hasInput) {
-      return;
-    }
+    await expect(input).toBeVisible();
     await input.fill(messages);
     await exchangeButton.click({ timeout: 5_000 });
+    const exchangeErrorNotice = this.page.getByText(/Failed to exchange multisig keys:/i);
+    const hasError = await exchangeErrorNotice
+      .waitFor({ state: "visible", timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!hasError) {
+      return;
+    }
+    const errorText = (await exchangeErrorNotice.textContent())?.trim() || "unknown error";
+    await this.page.getByRole("button", { name: /^OK$/i }).click();
+    throw new Error(errorText);
   }
 
   async createMultisigTransactionAndExport(destinationAddress: string, amountXmr: string): Promise<Uint8Array> {
@@ -331,7 +367,7 @@ export class WalletMainPage {
 
     while (Date.now() - startedAt < timeoutMs) {
       try {
-        await this.reloadAndWaitForWallet();
+        await this.clickRefreshWallet();
         const counts = await this.getPaymentTypeCounts();
         lastCount = counts[paymentType] ?? 0;
         if (lastCount >= minCount) {
@@ -364,7 +400,7 @@ export class WalletMainPage {
 
     while (Date.now() - startedAt < timeoutMs) {
       try {
-        await this.reloadAndWaitForWallet();
+        await this.clickRefreshWallet();
         const balance = await this.getUnlockedBalanceAtomic();
         if (balance !== null) {
           last = balance;
@@ -390,21 +426,45 @@ export class WalletMainPage {
 
   async waitForExactSyncedHeight(expectedHeight: number, timeoutMs = 120_000): Promise<void> {
     const startedAt = Date.now();
+    let lastWalletHeightText = "";
+    let lastDaemonHeightText = "";
+    let lastWalletHeight: number | null = null;
+    let lastDaemonHeight: number | null = null;
+
     while (Date.now() - startedAt < timeoutMs) {
-      await this.reloadAndWaitForWallet();
-      const walletHeightText =
-        (await this.page.getByLabel("Wallet current height").first().textContent()) ?? "";
-      const daemonHeightText =
-        (await this.page.getByLabel("Daemon current height").first().textContent()) ?? "";
-      const walletHeight = Number.parseInt(walletHeightText.trim(), 10);
-      const daemonHeight = Number.parseInt(daemonHeightText.trim(), 10);
-      if (walletHeight === expectedHeight && daemonHeight === expectedHeight) {
-        return;
+      try {
+        await this.clickRefreshWallet();
+        const walletHeightText =
+          (await this.page.getByLabel("Wallet current height").first().textContent()) ?? "";
+        const daemonHeightText =
+          (await this.page.getByLabel("Daemon current height").first().textContent()) ?? "";
+        lastWalletHeightText = walletHeightText.trim();
+        lastDaemonHeightText = daemonHeightText.trim();
+
+        const walletHeight = Number.parseInt(lastWalletHeightText, 10);
+        const daemonHeight = Number.parseInt(lastDaemonHeightText, 10);
+
+        if (!Number.isNaN(walletHeight)) {
+          lastWalletHeight = walletHeight;
+        }
+        if (!Number.isNaN(daemonHeight)) {
+          lastDaemonHeight = daemonHeight;
+        }
+
+        if (walletHeight === expectedHeight && daemonHeight === expectedHeight) {
+          return;
+        }
+      } catch {
+        // Refresh/read may fail transiently while wallet is updating.
       }
       await this.page.waitForTimeout(1_000);
     }
 
-    throw new Error(`Wallet did not reach exact synced height ${expectedHeight}/${expectedHeight}`);
+    throw new Error(
+      `Wallet did not reach exact synced height ${expectedHeight}/${expectedHeight}. ` +
+      `Last wallet height: ${lastWalletHeight ?? "NaN"} (UI text: "${lastWalletHeightText}"), ` +
+      `last daemon height: ${lastDaemonHeight ?? "NaN"} (UI text: "${lastDaemonHeightText}")`,
+    );
   }
 
   private static parseXmrTextToAtomic(text: string): bigint | null {
@@ -420,4 +480,16 @@ export class WalletMainPage {
     const fraction = BigInt(fractionPadded);
     return whole * WalletMainPage.ATOMIC_UNITS_PER_XMR + fraction;
   }
+
+  private async waitForBlockingOverlayToDisappear(timeoutMs = 30_000): Promise<void> {
+    const blockingOverlay = this.page.locator(
+      "div[class*='inset-0'][class*='z-[70]']",
+    );
+    const hasVisibleOverlay = await blockingOverlay.first().isVisible().catch(() => false);
+    if (!hasVisibleOverlay) {
+      return;
+    }
+    await blockingOverlay.first().waitFor({ state: "hidden", timeout: timeoutMs });
+  }
+
 }

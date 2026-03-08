@@ -1,7 +1,7 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { MONERO_MINING_ADDRESS } from "./constants";
 import { generateBlocks } from "./helpers/moneroRpc";
-import { startMonerod, stopMonerod } from "./helpers/monerod";
+import { startMonerod } from "./helpers/monerod";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 import { type MultisigSignResult, WalletMainPage } from "./pages/wallet-main.page";
@@ -20,7 +20,6 @@ const CASES = [
 
 test.describe("multisig flow", () => {
   test.beforeEach(async ({ page }) => {
-    await stopMonerod();
     await startMonerod();
     await initializeAppTestSettings(page);
   });
@@ -53,14 +52,27 @@ test.describe("multisig flow", () => {
 
       const exchangeRounds = members - threshold + 1;
       for (let round = 0; round < exchangeRounds; round++) {
+        const expectedRound = round + 2;
+        for (const wallet of multisigWallets) {
+          await wallet.waitForMultisigRound(expectedRound);
+        }
+
         const currentMessages: string[] = [];
         for (const wallet of multisigWallets) {
           const message = await wallet.getCurrentMultisigRoundMessage();
           currentMessages.push(message);
         }
-        const joinedMessages = currentMessages.join("\n");
-        for (const wallet of multisigWallets) {
-          await wallet.exchangeMultisigRoundMessages(joinedMessages);
+        for (let i = 0; i < multisigWallets.length; i++) {
+          const messagesFromOthers = currentMessages
+            .filter((_, messageIndex) => messageIndex !== i)
+            .join("\n");
+          await multisigWallets[i].exchangeMultisigRoundMessages(messagesFromOthers);
+        }
+
+        if (round < exchangeRounds - 1) {
+          for (const wallet of multisigWallets) {
+            await wallet.waitForMultisigRound(expectedRound + 1);
+          }
         }
       }
 
