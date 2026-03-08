@@ -39,6 +39,7 @@ let mainWindow = null;
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
   app.quit();
+  process.exit(0);
 }
 
 function securityHeaders() {
