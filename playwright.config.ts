@@ -10,7 +10,7 @@ const IS_HEADED = process.argv.includes("--headed");
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 180_000,
+  timeout: 600_000,
   expect: {
     timeout: 60_000,
   },

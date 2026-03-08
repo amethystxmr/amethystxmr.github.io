@@ -1,8 +1,19 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { WalletMainPage } from "./wallet-main.page";
 
 export class InitialWalletListPage {
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page) {
+    return new Proxy(this, {
+      get: (target, prop, receiver) => {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof prop !== "string" || typeof value !== "function" || prop === "constructor") {
+          return value;
+        }
+        return (...args: unknown[]) =>
+          test.step(`${target.constructor.name}.${prop}`, async () => value.apply(target, args));
+      },
+    }) as this;
+  }
   private readonly restoreButtonName = /^(?:↺\s*)?Restore$/i;
 
   async goto(): Promise<void> {

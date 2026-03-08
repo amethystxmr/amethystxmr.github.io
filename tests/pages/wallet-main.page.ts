@@ -1,4 +1,4 @@
-import { expect, type Download, type Page } from "@playwright/test";
+import { expect, test, type Download, type Page } from "@playwright/test";
 import { Buffer } from "node:buffer";
 
 export type MultisigSignResult =
@@ -6,7 +6,21 @@ export type MultisigSignResult =
   | { sent: false; exportedData: Uint8Array };
 
 export class WalletMainPage {
-  constructor(private readonly page: Page) {}
+  constructor(private readonly page: Page) {
+    return new Proxy(this, {
+      get: (target, prop, receiver) => {
+        const value = Reflect.get(target, prop, receiver);
+        if (typeof prop !== "string" || typeof value !== "function" || prop === "constructor") {
+          return value;
+        }
+        if (prop.startsWith("readDownloadToUint8Array") || prop.startsWith("parseXmrTextToAtomic")) {
+          return value;
+        }
+        return (...args: unknown[]) =>
+          test.step(`${target.constructor.name}.${prop}`, async () => value.apply(target, args));
+      },
+    }) as this;
+  }
 
   private static readonly ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
 

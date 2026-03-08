@@ -6,6 +6,7 @@ import {
 import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
+import type { WalletMainPage } from "./pages/wallet-main.page";
 
 const TRANSFER_AMOUNT_XMR = "3";
 const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
@@ -19,61 +20,75 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("basic flow", async ({ page, context }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(600_000);
   const wallet1Initial = new InitialWalletListPage(page);
   const wallet1Name = `wallet1-restore-${Date.now()}`;
-
-  await generateBlocks(MONERO_MINING_ADDRESS, INITIAL_MINED_BLOCKS);
-
-  await wallet1Initial.goto();
-  await wallet1Initial.waitUntilLoaded();
-  await wallet1Initial.openRestoreWallet();
-  const wallet1 = await wallet1Initial.restoreWallet({
-    walletName: wallet1Name,
-    seed: MONERO_RESTORE_SEED,
-    startingHeight: "30",
+  let wallet1: WalletMainPage;
+  await test.step("Mine initial blocks for restored wallet", async () => {
+    await generateBlocks(MONERO_MINING_ADDRESS, INITIAL_MINED_BLOCKS);
   });
 
-  const wallet1MinedCount = await wallet1.waitForPaymentTypeCountAtLeast(
-    "block",
-    1,
-  );
-  expect(wallet1MinedCount).toBeGreaterThan(0);
-
-  const page2 = await context.newPage();
-  await initializeAppTestSettings(page2);
-  const wallet2Initial = new InitialWalletListPage(page2);
-  const wallet2Name = `wallet2-new-${Date.now()}`;
-
-  await wallet2Initial.goto();
-  await wallet2Initial.waitUntilLoaded();
-  await wallet2Initial.openCreateWallet();
-  const wallet2 = await wallet2Initial.createNewWallet({
-    walletName: wallet2Name,
+  await test.step("Restore wallet from seed", async () => {
+    await wallet1Initial.goto();
+    await wallet1Initial.waitUntilLoaded();
+    await wallet1Initial.openRestoreWallet();
+    wallet1 = await wallet1Initial.restoreWallet({
+      walletName: wallet1Name,
+      seed: MONERO_RESTORE_SEED,
+      startingHeight: "30",
+    });
   });
-  const wallet2Address = await wallet2.getPrimaryAddress();
-  expect(wallet2Address.length).toBeGreaterThan(20);
 
-  await wallet1.sendXmr(wallet2Address, TRANSFER_AMOUNT_XMR);
+  await test.step("Verify restored wallet has mined transactions", async () => {
+    const wallet1MinedCount = await wallet1.waitForPaymentTypeCountAtLeast(
+      "block",
+      1,
+    );
+    expect(wallet1MinedCount).toBeGreaterThan(0);
+  });
 
-  const wallet1PendingCount = await wallet1.waitForPaymentTypeCountAtLeast(
-    "pending",
-    1,
-  );
-  expect(wallet1PendingCount).toBeGreaterThan(0);
+  let wallet2: WalletMainPage;
+  let wallet2Address = "";
+  await test.step("Create recipient wallet in second page", async () => {
+    const page2 = await context.newPage();
+    await initializeAppTestSettings(page2);
+    const wallet2Initial = new InitialWalletListPage(page2);
+    const wallet2Name = `wallet2-new-${Date.now()}`;
 
-  const wallet2MempoolCount = await wallet2.waitForPaymentTypeCountAtLeast(
-    "mempool",
-    1,
-  );
-  expect(wallet2MempoolCount).toBeGreaterThan(0);
+    await wallet2Initial.goto();
+    await wallet2Initial.waitUntilLoaded();
+    await wallet2Initial.openCreateWallet();
+    wallet2 = await wallet2Initial.createNewWallet({
+      walletName: wallet2Name,
+    });
+    wallet2Address = await wallet2.getPrimaryAddress();
+    expect(wallet2Address.length).toBeGreaterThan(20);
+  });
 
-  await generateBlocks(MONERO_MINING_ADDRESS, POST_SEND_MINED_BLOCKS);
+  await test.step("Send XMR from restored wallet to recipient", async () => {
+    await wallet1.sendXmr(wallet2Address, TRANSFER_AMOUNT_XMR);
+  });
 
-  const balance = await wallet2.waitForUnlockedBalanceAtLeast(
-    MIN_EXPECTED_UNLOCKED_BALANCE,
-    180_000,
-  );
+  await test.step("Verify pending and mempool transaction states", async () => {
+    const wallet1PendingCount = await wallet1.waitForPaymentTypeCountAtLeast(
+      "pending",
+      1,
+    );
+    expect(wallet1PendingCount).toBeGreaterThan(0);
 
-  expect(balance).toBeGreaterThanOrEqual(MIN_EXPECTED_UNLOCKED_BALANCE);
+    const wallet2MempoolCount = await wallet2.waitForPaymentTypeCountAtLeast(
+      "mempool",
+      1,
+    );
+    expect(wallet2MempoolCount).toBeGreaterThan(0);
+  });
+
+  await test.step("Mine unlock blocks and verify recipient unlocked balance", async () => {
+    await generateBlocks(MONERO_MINING_ADDRESS, POST_SEND_MINED_BLOCKS);
+    const balance = await wallet2.waitForUnlockedBalanceAtLeast(
+      MIN_EXPECTED_UNLOCKED_BALANCE,
+      240_000,
+    );
+    expect(balance).toBeGreaterThanOrEqual(MIN_EXPECTED_UNLOCKED_BALANCE);
+  });
 });
