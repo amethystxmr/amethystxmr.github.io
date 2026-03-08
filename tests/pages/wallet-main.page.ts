@@ -1,4 +1,9 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Download, type Page } from "@playwright/test";
+import { Buffer } from "node:buffer";
+
+export type MultisigSignResult =
+  | { sent: true; exportedData: null }
+  | { sent: false; exportedData: Uint8Array };
 
 export class WalletMainPage {
   constructor(private readonly page: Page) {}
@@ -38,21 +43,284 @@ export class WalletMainPage {
 
   async sendXmr(destinationAddress: string, amountXmr: string): Promise<void> {
     await this.openTab("send");
-    await this.page
-      .locator("div")
-      .filter({ hasText: /^Recipient address$/ })
-      .locator("input")
-      .first()
-      .fill(destinationAddress);
-    await this.page
-      .getByPlaceholder("0.000000000000")
-      .first()
-      .fill(amountXmr);
+    await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
+    await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
 
     await this.page.getByRole("button", { name: /review transaction/i }).click();
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
     await this.page.getByRole("button", { name: /send another/i }).click();
+  }
+
+  async waitForMultisigInProgress(threshold: number, total: number, timeoutMs = 180_000): Promise<void> {
+    const startedAt = Date.now();
+    const setupHeader = this.page.getByText(
+      new RegExp(`Setting up\\s+${threshold}-of-${total}\\s+multisig`, "i"),
+    );
+    const readyHeader = this.page.getByText(
+      new RegExp(`Multisig\\s+${threshold}-of-${total}\\s+is\\s+ready\\s+to\\s+use`, "i"),
+    );
+    const exchangeButton = this.page.getByRole("button", {
+      name: /exchange multisig keys/i,
+    });
+
+    while (Date.now() - startedAt < timeoutMs) {
+      await this.openTab("multisig");
+      if (await readyHeader.isVisible().catch(() => false)) {
+        return;
+      }
+      if (
+        (await setupHeader.isVisible().catch(() => false)) &&
+        (await exchangeButton.isVisible().catch(() => false))
+      ) {
+        return;
+      }
+      await this.page.waitForTimeout(500);
+    }
+
+    throw new Error(`Multisig did not reach in-progress state within ${timeoutMs}ms`);
+  }
+
+  async waitForMultisigReady(threshold: number, total: number, timeoutMs = 180_000): Promise<void> {
+    const startedAt = Date.now();
+    const readyHeader = this.page.getByText(
+      new RegExp(`Multisig\\s+${threshold}-of-${total}\\s+is\\s+ready\\s+to\\s+use`, "i"),
+    );
+    const exportButton = this.page.getByRole("button", {
+      name: /export latest multisig data/i,
+    });
+    const readyStatus = this.page.getByText(/status:\s*ready to create or sign transactions/i);
+
+    while (Date.now() - startedAt < timeoutMs) {
+      await this.openTab("multisig");
+      const headerVisible = await readyHeader.isVisible().catch(() => false);
+      const exportVisible = await exportButton.isVisible().catch(() => false);
+      if (headerVisible || exportVisible) {
+        await expect(readyHeader).toBeVisible();
+        await expect(exportButton).toBeVisible();
+        await expect(readyStatus).toBeVisible();
+        return;
+      }
+      await this.page.waitForTimeout(500);
+    }
+
+    throw new Error(`Multisig did not become ready within ${timeoutMs}ms`);
+  }
+
+  async prepareMultisigAndGetRound1Message(timeoutMs = 60_000): Promise<string> {
+    await this.openTab("multisig");
+    await this.page.getByRole("button", { name: /prepare multisig/i }).click();
+    const messageField = this.page.getByRole("textbox", {
+      name: "Multisig round 1 message",
+      exact: true,
+    });
+    await expect(messageField).toBeVisible({ timeout: timeoutMs });
+    await expect(messageField).toHaveAttribute("data-ready", "true", {
+      timeout: timeoutMs,
+    });
+    return (await messageField.inputValue()).trim();
+  }
+
+  async makeMultisig(threshold: number, participants: number, allRoundMessages: string): Promise<void> {
+    await this.openTab("multisig");
+    if (participants > 4) {
+      const moreButton = this.page.getByRole("button", { name: /^More$/i });
+      if (await moreButton.isVisible().catch(() => false)) {
+        await moreButton.click();
+      }
+    }
+    await this.page.getByRole("button", { name: `Multisig participants ${participants}` }).click();
+    await this.page.getByRole("button", { name: `Multisig threshold ${threshold}` }).click();
+    await this.page
+      .getByRole("textbox", { name: "Multisig round 1 messages input", exact: true })
+      .fill(allRoundMessages);
+    await this.page
+      .getByRole("button", { name: new RegExp(`make\\s+${threshold}\\/${participants}\\s+multisig`, "i") })
+      .click();
+  }
+
+  async isMultisigReady(): Promise<boolean> {
+    await this.openTab("multisig");
+    return await this.page.getByRole("button", { name: /export latest multisig data/i })
+      .isVisible()
+      .catch(() => false);
+  }
+
+  async getCurrentMultisigRoundMessage(timeoutMs = 60_000): Promise<string | null> {
+    await this.openTab("multisig");
+    const messageField = this.page.getByRole("textbox", {
+      name: "Multisig current round message",
+      exact: true,
+    });
+    const hasField = await messageField.isVisible().catch(() => false);
+    if (!hasField) {
+      return null;
+    }
+    await expect(messageField).toBeVisible({ timeout: timeoutMs });
+    await expect(messageField).toHaveAttribute("data-ready", "true", {
+      timeout: timeoutMs,
+    });
+    return (await messageField.inputValue()).trim();
+  }
+
+  async exchangeMultisigRoundMessages(messages: string): Promise<void> {
+    if (messages.trim().length === 0) {
+      return;
+    }
+    await this.openTab("multisig");
+    const exchangeButton = this.page.getByRole("button", {
+      name: /exchange multisig keys/i,
+    });
+    const hasButton = await exchangeButton.isVisible().catch(() => false);
+    if (!hasButton) {
+      return;
+    }
+    const input = this.page.getByRole("textbox", {
+      name: /Multisig round \d+ messages input/,
+    });
+    const hasInput = await input.isVisible().catch(() => false);
+    if (!hasInput) {
+      return;
+    }
+    await input.fill(messages);
+    try {
+      await exchangeButton.click({ timeout: 5_000 });
+    } catch {
+      // UI may switch to the ready state while the click is in-flight.
+    }
+  }
+
+  async createMultisigTransactionAndExport(destinationAddress: string, amountXmr: string): Promise<Uint8Array> {
+    await this.openTab("send");
+    await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
+    await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
+    await this.page.getByRole("button", { name: /review transaction/i }).click();
+    await this.page.getByRole("button", { name: /^✓\s*Confirm$/i }).click();
+    return await this.downloadFromExportOverlay(/Partially signed transaction/i);
+  }
+
+  async exportLatestMultisigData(): Promise<Uint8Array> {
+    await this.openTab("multisig");
+    await this.page.getByRole("button", { name: /export latest multisig data/i }).click();
+    await this.page.getByRole("button", { name: /yes,\s*export/i }).click();
+    await expect(this.page.getByText(/Your multisig data/i)).toBeVisible();
+    const downloadPromise = this.page.waitForEvent("download");
+    await this.page.getByRole("button", { name: /^Save to file$/i }).click();
+    const download = await downloadPromise;
+    return await this.readDownloadToUint8Array(download);
+  }
+
+  async importParticipantMultisigData(files: Uint8Array[]): Promise<void> {
+    await this.openTab("multisig");
+    await this.page.getByRole("button", { name: /import participant data/i }).click();
+    await expect(this.page.getByText(/paste data from others here/i)).toBeVisible();
+    const fileInput = this.page.locator('input[type="file"]');
+    await fileInput.setInputFiles(
+      files.map((buffer, index) => ({
+        name: `multisig-${index + 1}.bin`,
+        mimeType: "application/octet-stream",
+        buffer: Buffer.from(buffer),
+      })),
+    );
+    const successAlert = this.page.getByText(/Multisig info imported/i);
+    const errorAlert = this.page.getByText(/Wrong number of multisig sources|Failed to import/i);
+    const hasSuccess = await successAlert
+      .waitFor({ state: "visible", timeout: 60_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!hasSuccess) {
+      const errorText = ((await errorAlert.textContent().catch(() => "")) || "").trim();
+      if (await this.page.getByRole("button", { name: /^OK$/i }).isVisible().catch(() => false)) {
+        await this.page.getByRole("button", { name: /^OK$/i }).click();
+      }
+      throw new Error(`Failed to import multisig participant data: ${errorText || "unknown error"}`);
+    }
+    await this.page.getByRole("button", { name: /^OK$/i }).click();
+  }
+
+  async hasPartialKeyImagesWarning(): Promise<boolean> {
+    await this.openTab("multisig");
+    return await this.page
+      .getByText(/partial key images detected/i)
+      .isVisible()
+      .catch(() => false);
+  }
+
+  async signMultisigTransactionAndContinue(
+    importData: Uint8Array,
+  ): Promise<MultisigSignResult> {
+    await this.openTab("send");
+    await this.page.getByRole("button", { name: /sign multisig tx/i }).click();
+    await this.importMultisigTxDataFromFile(importData);
+
+    const finalizeButton = this.page.getByRole("button", { name: /^✓\s*Finalize\s*&\s*Send$/i });
+    const confirmButton = this.page.getByRole("button", { name: /^✓\s*Confirm$/i });
+    await expect(
+      this.page.getByRole("button", { name: /^✓\s*(Confirm|Finalize\s*&\s*Send)$/i }),
+    ).toBeVisible();
+    const isFinalSigner = await finalizeButton.isVisible().catch(() => false);
+    if (isFinalSigner) {
+      await finalizeButton.click();
+      await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
+      return { exportedData: null, sent: true };
+    }
+
+    await confirmButton.click();
+    const exportedData = await this.downloadFromExportOverlay(/Signed multisig tx/i);
+    return { exportedData, sent: false };
+  }
+
+  private async importMultisigTxDataFromFile(data: Uint8Array): Promise<void> {
+    await expect(this.page.getByText(/paste multisig tx data here/i)).toBeVisible();
+    const fileInput = this.page.locator('input[type="file"]');
+    await fileInput.setInputFiles({
+      name: "partially-signed-multisig.bin",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from(data),
+    });
+  }
+
+  private async readAndCloseMultisigExportOverlay(headerPattern: RegExp): Promise<string> {
+    await expect(this.page.getByText(headerPattern)).toBeVisible();
+    const overlayText = await this.page.locator("textarea[readonly]").last().inputValue();
+    await this.page.getByRole("button", { name: /^Close$/i }).click();
+    return overlayText.trim();
+  }
+
+  private async downloadFromExportOverlay(headerPattern: RegExp): Promise<Uint8Array> {
+    await expect(this.page.getByText(headerPattern)).toBeVisible();
+    const downloadPromise = this.page.waitForEvent("download");
+    await this.page.getByRole("button", { name: /^Save to file$/i }).click();
+    const download = await downloadPromise;
+    return await this.readDownloadToUint8Array(download);
+  }
+
+  private async readDownloadToUint8Array(download: Download): Promise<Uint8Array> {
+    const stream = await download.createReadStream();
+    if (!stream) {
+      throw new Error("Failed to read downloaded multisig data");
+    }
+
+    const chunks: Uint8Array[] = [];
+    await new Promise<void>((resolve, reject) => {
+      stream.on("data", (chunk) => {
+        if (chunk instanceof Uint8Array) {
+          chunks.push(chunk);
+          return;
+        }
+        reject(new Error("Unexpected chunk type while reading download"));
+      });
+      stream.on("end", () => resolve());
+      stream.on("error", (error) => reject(error));
+    });
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const out = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return out;
   }
 
   async getPaymentTypeCounts(): Promise<Record<string, number>> {
@@ -132,6 +400,26 @@ export class WalletMainPage {
     throw new Error(
       `Unlocked balance did not reach ${minBalanceAtomic} atomic units. Last value: ${last}. Last UI text: ${lastUi}`,
     );
+  }
+
+  async waitForExactSyncedHeight(expectedHeight: number, timeoutMs = 120_000): Promise<void> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      await this.clickRefreshInOtherTab();
+      const bodyText = (await this.page.locator("body").innerText()).replace(/\u00A0/g, " ");
+      const matches = [...bodyText.matchAll(/(\d+)\s*\/\s*(\d+)/g)];
+      const hasExpected = matches.some((match) => {
+        const walletHeight = Number.parseInt(match[1] ?? "", 10);
+        const daemonHeight = Number.parseInt(match[2] ?? "", 10);
+        return walletHeight === expectedHeight && daemonHeight === expectedHeight;
+      });
+      if (hasExpected) {
+        return;
+      }
+      await this.page.waitForTimeout(1_000);
+    }
+
+    throw new Error(`Wallet did not reach exact synced height ${expectedHeight}/${expectedHeight}`);
   }
 
   private static parseXmrTextToAtomic(text: string): bigint | null {

@@ -608,7 +608,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 </div>
                 {status && (
                   <span className="text-[11px] text-white/45">
-                    {status.walletHeight}/{status.daemonHeight}
+                    <span aria-label="Wallet current height">
+                      {status.walletHeight.toString()}
+                    </span>
+                    <span aria-hidden="true">/</span>
+                    <span aria-label="Daemon current height">
+                      {status.daemonHeight.toString()}
+                    </span>
                   </span>
                 )}
               </div>
