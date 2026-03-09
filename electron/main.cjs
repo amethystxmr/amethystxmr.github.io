@@ -29,6 +29,11 @@ const MIME_TYPES = {
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
   ".map": "application/json; charset=utf-8",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".eot": "application/vnd.ms-fontobject",
 };
 
 app.setPath("userData", USER_DATA_DIR);
