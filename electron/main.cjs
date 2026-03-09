@@ -69,7 +69,12 @@ function getContentType(filePath) {
 }
 
 function resolveRequestPath(requestPathname) {
-  let rawPath = decodeURIComponent(requestPathname || "/");
+  let rawPath;
+  try {
+    rawPath = decodeURIComponent(requestPathname || "/");
+  } catch {
+    return null;
+  }
   if (rawPath === "/") {
     rawPath = "/index.html";
   }
@@ -117,7 +122,17 @@ async function readServedFile(requestPathname) {
 function createStaticServer() {
   return new Promise((resolve, reject) => {
     const server = http.createServer(async (req, res) => {
-      const url = new URL(req.url || "/", `http://${HOST}`);
+      let url;
+      try {
+        url = new URL(req.url || "/", `http://${HOST}`);
+      } catch {
+        res.writeHead(400, {
+          ...securityHeaders(),
+          "Content-Type": "text/plain; charset=utf-8",
+        });
+        res.end("Bad request");
+        return;
+      }
       const served = await readServedFile(url.pathname);
 
       if (!served) {
