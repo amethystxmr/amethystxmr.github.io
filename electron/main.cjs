@@ -1,7 +1,6 @@
 const { app, BrowserWindow, shell } = require("electron");
 const fs = require("node:fs/promises");
 const http = require("node:http");
-const os = require("node:os");
 const path = require("node:path");
 
 // Wallet list view is centered around a 640px content column height.
@@ -12,7 +11,6 @@ const HOST = "127.0.0.1";
 const PORT = 43110;
 
 const DIST_DIR = path.resolve(__dirname, "..", "built-web");
-const USER_DATA_DIR = path.join(os.homedir(), ".amethystxmr");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -36,7 +34,16 @@ const MIME_TYPES = {
   ".eot": "application/vnd.ms-fontobject",
 };
 
-app.setPath("userData", USER_DATA_DIR);
+function resolveUserDataDir() {
+  const defaultUserDataDir = app.getPath("userData");
+  const defaultLeaf = path.basename(defaultUserDataDir);
+  if (defaultLeaf.toLowerCase().includes("amethystxmr")) {
+    return defaultUserDataDir;
+  }
+  return path.join(path.dirname(defaultUserDataDir), "amethystxmr");
+}
+
+app.setPath("userData", resolveUserDataDir());
 
 let staticServer = null;
 let mainWindow = null;
