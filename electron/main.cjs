@@ -1,14 +1,14 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, protocol } = require("electron");
 const fs = require("node:fs/promises");
-const http = require("node:http");
 const path = require("node:path");
 
 // Wallet list view is centered around a 640px content column height.
 // Keep the desktop window just slightly larger to fit paddings/header/chrome.
 const APP_WIDTH = 1200;
 const APP_HEIGHT = 736;
-const HOST = "127.0.0.1";
-const PORT = 43110;
+const APP_PROTOCOL = "amethyst";
+const APP_PROTOCOL_HOST = "app";
+const APP_ORIGIN = `${APP_PROTOCOL}://${APP_PROTOCOL_HOST}`;
 
 const DIST_DIR = path.resolve(__dirname, "..", "built-web");
 
@@ -45,8 +45,20 @@ function resolveUserDataDir() {
 
 app.setPath("userData", resolveUserDataDir());
 
-let staticServer = null;
 let mainWindow = null;
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: APP_PROTOCOL,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
@@ -119,43 +131,60 @@ async function readServedFile(requestPathname) {
   }
 }
 
-function createStaticServer() {
-  return new Promise((resolve, reject) => {
-    const server = http.createServer(async (req, res) => {
-      let url;
-      try {
-        url = new URL(req.url || "/", `http://${HOST}`);
-      } catch {
-        res.writeHead(400, {
-          ...securityHeaders(),
-          "Content-Type": "text/plain; charset=utf-8",
-        });
-        res.end("Bad request");
-        return;
-      }
-      const served = await readServedFile(url.pathname);
-
-      if (!served) {
-        res.writeHead(404, {
-          ...securityHeaders(),
-          "Content-Type": "text/plain; charset=utf-8",
-        });
-        res.end("Not found");
-        return;
-      }
-
-      res.writeHead(200, {
-        ...securityHeaders(),
-        "Content-Type": getContentType(served.filePath),
-      });
-      res.end(served.content);
-    });
-
-    server.on("error", reject);
-    server.listen(PORT, HOST, () => {
-      resolve(server);
-    });
+function makeTextResponse(status, text) {
+  return new Response(text, {
+    status,
+    headers: {
+      ...securityHeaders(),
+      "Content-Type": "text/plain; charset=utf-8",
+    },
   });
+}
+
+async function handleAppProtocol(request) {
+  let requestUrl;
+  try {
+    requestUrl = new URL(request.url);
+  } catch {
+    return makeTextResponse(400, "Bad request");
+  }
+
+  if (
+    requestUrl.protocol !== `${APP_PROTOCOL}:` ||
+    requestUrl.host !== APP_PROTOCOL_HOST
+  ) {
+    return makeTextResponse(404, "Not found");
+  }
+
+  const served = await readServedFile(requestUrl.pathname);
+  if (!served) {
+    return makeTextResponse(404, "Not found");
+  }
+
+  return new Response(served.content, {
+    status: 200,
+    headers: {
+      ...securityHeaders(),
+      "Content-Type": getContentType(served.filePath),
+    },
+  });
+}
+
+async function registerAppProtocol() {
+  await protocol.handle(APP_PROTOCOL, handleAppProtocol);
+}
+
+function isSafeExternalUrl(urlString) {
+  try {
+    const parsed = new URL(urlString);
+    return (
+      parsed.protocol === "https:" ||
+      parsed.protocol === "http:" ||
+      parsed.protocol === "mailto:"
+    );
+  } catch {
+    return false;
+  }
 }
 
 function createWindow(baseUrl) {
@@ -180,8 +209,30 @@ function createWindow(baseUrl) {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (isSafeExternalUrl(url)) {
+      void shell.openExternal(url);
+    }
     return { action: "deny" };
+  });
+
+  win.webContents.on("will-navigate", (event, url) => {
+    if (url.startsWith(`${APP_ORIGIN}/`)) {
+      return;
+    }
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) {
+      void shell.openExternal(url);
+    }
+  });
+
+  win.webContents.on("will-redirect", (event, url) => {
+    if (url.startsWith(`${APP_ORIGIN}/`)) {
+      return;
+    }
+    event.preventDefault();
+    if (isSafeExternalUrl(url)) {
+      void shell.openExternal(url);
+    }
   });
 
   void win.loadURL(baseUrl);
@@ -195,8 +246,8 @@ function createWindow(baseUrl) {
 
 async function start() {
   await fs.access(path.join(DIST_DIR, "index.html"));
-  staticServer = await createStaticServer();
-  createWindow(`http://${HOST}:${PORT}/`);
+  await registerAppProtocol();
+  createWindow(`${APP_ORIGIN}/`);
 }
 
 app.whenReady().then(async () => {
@@ -220,10 +271,4 @@ app.on("second-instance", () => {
 
 app.on("window-all-closed", () => {
   app.quit();
-});
-
-app.on("before-quit", () => {
-  if (staticServer) {
-    staticServer.close();
-  }
 });
