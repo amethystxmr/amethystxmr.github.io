@@ -239,10 +239,14 @@ export function SendTab({
       }),
     [recipients],
   );
+  const allAmountCount = parsedRecipients.filter((r) => r.isAllAmount).length;
+  const hasAllRecipient = allAmountCount > 0;
+  const hasMultipleRecipients = recipients.length > 1;
   const isValid =
     recipients.length > 0 &&
     parsedRecipients.every((recipient) => recipient.isValid) &&
-    parsedRecipients.filter((r) => r.isAllAmount).length <= 1 &&
+    allAmountCount <= 1 &&
+    (!hasAllRecipient || recipients.length === 1) &&
     state.type === "entering";
 
   async function handleCreateTx() {
@@ -256,7 +260,6 @@ export function SendTab({
       return;
     }
 
-    const allAmountCount = parsedRecipients.filter((r) => r.isAllAmount).length;
     if (allAmountCount > 1) {
       setState({
         type: "error",
@@ -264,12 +267,17 @@ export function SendTab({
       });
       return;
     }
+    if (allAmountCount === 1 && parsedRecipients.length !== 1) {
+      setState({
+        type: "error",
+        message: "Amount ALL can only be used with one destination",
+      });
+      return;
+    }
     const allRecipientIndex =
       allAmountCount === 1
         ? parsedRecipients.findIndex((recipient) => recipient.isAllAmount)
         : -1;
-    const subtractFeeFromIndex =
-      allRecipientIndex >= 0 ? allRecipientIndex : null;
     let allAmountValue: bigint | null = null;
     if (allRecipientIndex >= 0) {
       if (currentUnlockedNonStrictBalance === null) {
@@ -325,12 +333,18 @@ export function SendTab({
     setState({ type: "building-transaction" });
     let txHandle: PendingTxHandle | null = null;
     try {
-      txHandle = await wallet.transfer_prepare(
-        destinations,
-        amounts,
-        feePriority,
-        subtractFeeFromIndex,
-      );
+      txHandle =
+        allRecipientIndex >= 0
+          ? await wallet.transfer_prepare_sweep_all(
+              destinations[allRecipientIndex],
+              feePriority,
+            )
+          : await wallet.transfer_prepare(
+              destinations,
+              amounts,
+              feePriority,
+              null,
+            );
       const transferInfo = wallet.get_transfers_info(txHandle);
       const multisigStatus = await wallet.get_multisig_status();
       if (isUnmountedRef.current) {
@@ -864,6 +878,9 @@ export function SendTab({
   }
 
   function addRecipient() {
+    if (hasAllRecipient) {
+      return;
+    }
     setRecipients((prevRecipients) => [
       ...prevRecipients,
       { address: "", amount: "" },
@@ -1054,6 +1071,7 @@ export function SendTab({
                 type="button"
                 onClick={addRecipient}
                 className="!flex-none px-2.5 py-1 text-xs"
+                disabled={hasAllRecipient}
               >
                 ➕︎ Add destination
               </Button>
@@ -1196,7 +1214,11 @@ export function SendTab({
                     autoComplete="off"
                     actionLabel="All"
                     actionDisabled={
-                      parsedRecipients.filter((r) => r.isAllAmount).length > 0
+                      hasMultipleRecipients ||
+                      parsedRecipients.some(
+                        (parsedRecipient, parsedIndex) =>
+                          parsedIndex !== index && parsedRecipient.isAllAmount,
+                      )
                     }
                     onAction={() =>
                       updateRecipient(index, {
@@ -1209,10 +1231,22 @@ export function SendTab({
                       ≈ {fiatValue.toFixed(2)} EUR
                     </div>
                   )}
+                  {isAllAmount && (
+                    <div className="mt-1 text-xs text-white/50">
+                      Wallet will sweep your spendable unlocked balance minus
+                      network fees to this address. The final amount may be sent
+                      in one or more transactions.
+                    </div>
+                  )}
                 </div>
               </SurfaceCard>
             );
           })}
+          {hasAllRecipient && (
+            <div className="rounded-xl bg-white/6 px-3 py-2 text-xs text-white/70 ring-1 ring-white/10">
+              Amount ALL only supports one destination. Add destination is disabled until ALL is cleared.
+            </div>
+          )}
 
           <div>
             <Label>Priority</Label>

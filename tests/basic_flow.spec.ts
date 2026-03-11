@@ -91,4 +91,32 @@ test("basic flow", async ({ page, context }) => {
     );
     expect(balance).toBeGreaterThanOrEqual(MIN_EXPECTED_UNLOCKED_BALANCE);
   });
+
+  let wallet2BalanceBeforeSweep: bigint | null = null;
+  await test.step("Capture recipient balance before sweep all", async () => {
+    wallet2BalanceBeforeSweep = await wallet2.getUnlockedBalanceAtomic();
+    expect(wallet2BalanceBeforeSweep).not.toBeNull();
+  });
+
+  await test.step("Sweep all remaining funds from restored wallet to recipient", async () => {
+    await wallet1.sweepAllXmr(wallet2Address);
+  });
+
+  await test.step("Verify sweep all reaches recipient wallet", async () => {
+    const wallet1PendingCountAfterSweep =
+      await wallet1.waitForPaymentTypeCountAtLeast("pending", 1);
+    expect(wallet1PendingCountAfterSweep).toBeGreaterThanOrEqual(1);
+
+    const wallet2MempoolCountAfterSweep =
+      await wallet2.waitForPaymentTypeCountAtLeast("mempool", 1);
+    expect(wallet2MempoolCountAfterSweep).toBeGreaterThanOrEqual(1);
+
+    await generateBlocks(MONERO_MINING_ADDRESS, POST_SEND_MINED_BLOCKS);
+
+    const sweptBalance = await wallet2.waitForUnlockedBalanceAtLeast(
+      (wallet2BalanceBeforeSweep ?? 0n) + 1n,
+      240_000,
+    );
+    expect(sweptBalance).toBeGreaterThan(wallet2BalanceBeforeSweep ?? 0n);
+  });
 });
