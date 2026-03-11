@@ -90,6 +90,7 @@ jobs:
           commit: ${{ github.sha }}
           generateReleaseNotes: true
           artifactErrorsFailBuild: true
+          makeLatest: true
           immutableCreate: true
           skipIfReleaseExists: true
           artifacts: release-assets/*
