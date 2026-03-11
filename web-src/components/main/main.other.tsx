@@ -50,7 +50,6 @@ type SuggestedCoinRestoreState =
   | {
       type: "loaded";
       coin: TransferItem | null;
-      dateText: string | null;
     }
   | { type: "error" };
 
@@ -158,6 +157,7 @@ export function OtherTab({
     : daemonLastBlockHeight !== null
       ? "No confirmed history found yet, using current daemon height."
       : "Waiting for daemon height...";
+
   React.useEffect(() => {
     if (!seedState.open) {
       setSuggestedCoinRestoreState({ type: "idle" });
@@ -187,18 +187,9 @@ export function OtherTab({
           }
         }
 
-        const matchingPayment =
-          earliestUnspentCoin === null
-            ? null
-            : payments?.find((payment) => payment.tx_hash === earliestUnspentCoin.txid) ??
-              null;
-
         setSuggestedCoinRestoreState({
           type: "loaded",
           coin: earliestUnspentCoin,
-          dateText: matchingPayment
-            ? formatWalletTimestamp(matchingPayment.timestamp)
-            : null,
         });
       } catch (e) {
         console.error("Failed to load first unspent coin:", e);
@@ -212,7 +203,25 @@ export function OtherTab({
     return () => {
       cancelled = true;
     };
-  }, [seedState.open, wallet, payments, isUnmountedRef]);
+  }, [seedState.open, wallet, isUnmountedRef]);
+
+  const suggestedCoinRestoreDateText = React.useMemo(() => {
+    if (
+      suggestedCoinRestoreState.type !== "loaded" ||
+      suggestedCoinRestoreState.coin === null
+    ) {
+      return null;
+    }
+
+    const suggestedCoin = suggestedCoinRestoreState.coin;
+    const matchingPayment =
+      payments?.find((payment) => payment.tx_hash === suggestedCoin.txid) ??
+      null;
+
+    return matchingPayment
+      ? formatWalletTimestamp(matchingPayment.timestamp)
+      : null;
+  }, [payments, suggestedCoinRestoreState]);
 
   const isSeedButtonDisabled = multisigStatus === null;
   const isMultisigWallet = multisigStatus?.multisig_is_active ?? false;
@@ -784,12 +793,20 @@ export function OtherTab({
                   <span className="font-mono text-white/90">
                     {suggestedCoinRestoreState.coin.block_height.toString()}
                   </span>
-                  {suggestedCoinRestoreState.dateText ? (
+                  {suggestedCoinRestoreDateText ? (
                     <span className="text-white/60">
                       {" "}
-                      ({suggestedCoinRestoreState.dateText})
+                      ({suggestedCoinRestoreDateText})
                     </span>
                   ) : null}
+                </div>
+              ) : suggestedCoinRestoreState.type === "loading" ? (
+                <div className="text-xs text-white/50">
+                  Loading first unspent coin suggestion...
+                </div>
+              ) : suggestedCoinRestoreState.type === "error" ? (
+                <div className="text-xs text-red-300">
+                  Failed to load first unspent coin suggestion.
                 </div>
               ) : null}
 
