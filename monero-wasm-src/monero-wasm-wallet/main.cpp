@@ -864,6 +864,19 @@ public:
                        { return transfer_impl(dst_addresses, amounts, priority, subtract_fee_from_index); });
     }
 
+    auto transfer_prepare_sweep_all(
+        const std::string &dst_address,
+        WalletPriorityBacking priority)
+    {
+        if (dst_address.empty())
+        {
+            throw std::runtime_error("Destination address is empty");
+        }
+
+        return promise([this, dst_address, priority]()
+                       { return transfer_sweep_all_impl(dst_address, priority); });
+    }
+
     emscripten::val get_transfers_info(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
         return get_transfers_info_impl(*ptx_vector);
@@ -1084,6 +1097,42 @@ public:
                                                          static_cast<uint32_t>(priority),
                                                          extra,
                                                          0, subaddr_indices, subtract_fee_from_outputs);
+        if (ptx_vector.empty())
+        {
+            throw std::runtime_error("No outputs found, or daemon is not ready");
+        }
+
+        return std::make_shared<std::vector<tools::wallet2::pending_tx>>(std::move(ptx_vector));
+    }
+
+    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_sweep_all_impl(
+        const std::string &dst_address,
+        WalletPriorityBacking priority)
+    {
+        cryptonote::address_parse_info info;
+        const auto is_valid = cryptonote::get_account_address_from_str(
+            info, m_wallet.nettype(), dst_address);
+        if (!is_valid)
+        {
+            throw std::runtime_error("Invalid destination address");
+        }
+
+        const size_t min_ring_size = m_wallet.get_min_ring_size();
+        const size_t fake_outs_count = min_ring_size - 1;
+
+        std::vector<uint8_t> extra;
+        std::set<uint32_t> subaddr_indices;
+
+        auto ptx_vector = m_wallet.create_transactions_all(
+            0,
+            info.address,
+            info.is_subaddress,
+            1,
+            fake_outs_count,
+            static_cast<uint32_t>(priority),
+            extra,
+            0,
+            subaddr_indices);
         if (ptx_vector.empty())
         {
             throw std::runtime_error("No outputs found, or daemon is not ready");
@@ -1693,6 +1742,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("get_blockchain_height_by_date", &MoneroWasmWallet::get_blockchain_height_by_date)
         .function("words_to_bytes", &MoneroWasmWallet::words_to_bytes)
         .function("transfer_prepare", &MoneroWasmWallet::transfer_prepare)
+        .function("transfer_prepare_sweep_all", &MoneroWasmWallet::transfer_prepare_sweep_all)
         .function("get_transfers_info", &MoneroWasmWallet::get_transfers_info)
         .function("transfer_commit_tx", &MoneroWasmWallet::transfer_commit_tx)
         .function("save_multisig_tx_pending_tx", &MoneroWasmWallet::save_multisig_tx_pending_tx)
