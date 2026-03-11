@@ -78,9 +78,9 @@ jobs:
           pattern: native-*-Release
           merge-multiple: true
 
-      - name: Build date-and-commit release tag
+      - name: Build commit release tag
         id: release_tag
-        run: echo "value=master-$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: echo "value=master-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         uses: ncipollo/release-action@v1
