@@ -78,16 +78,15 @@ jobs:
           pattern: native-*-Release
           merge-multiple: true
 
-      - name: Create or update release
+      - name: Create release
         uses: ncipollo/release-action@v1
         with:
-          allowUpdates: true
-          removeArtifacts: true
           name: Master Native Build (${{ github.sha }})
-          tag: master-latest
-          commit: ${{ github.sha }}
+          tag: master-${{ github.sha }}
           generateReleaseNotes: true
           artifactErrorsFailBuild: true
+          immutableCreate: true
+          skipIfReleaseExists: true
           artifacts: release-assets/*
 
   wait_for_pages_deploy:
