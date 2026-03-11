@@ -1233,7 +1233,9 @@ export function SendTab({
                   )}
                   {isAllAmount && (
                     <div className="mt-1 text-xs text-white/50">
-                      Wallet will sweep the unlocked balance to this address.
+                      Wallet will sweep your spendable unlocked balance minus
+                      network fees to this address. The final amount may be sent
+                      in one or more transactions.
                     </div>
                   )}
                 </div>
