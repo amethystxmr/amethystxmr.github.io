@@ -78,11 +78,15 @@ jobs:
           pattern: native-*-Release
           merge-multiple: true
 
+      - name: Build date-based release tag
+        id: release_tag
+        run: echo "value=master-$(date -u +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+
       - name: Create release
         uses: ncipollo/release-action@v1
         with:
           name: Master Native Build (${{ github.sha }})
-          tag: master-${{ github.sha }}
+          tag: ${{ steps.release_tag.outputs.value }}
           generateReleaseNotes: true
           artifactErrorsFailBuild: true
           immutableCreate: true
