@@ -4,6 +4,7 @@ import {
   MultisigAccountStatus,
   MoneroWasmWallet,
   PaymentDetailsTransformed,
+  TransferItem,
   WalletKeys,
   readFile,
   unlinkFile,
@@ -43,6 +44,16 @@ type SeedRevealState =
     }
   | { open: true; type: "error"; error: string };
 
+type SuggestedCoinRestoreState =
+  | { type: "idle" }
+  | { type: "loading" }
+  | {
+      type: "loaded";
+      coin: TransferItem | null;
+      dateText: string | null;
+    }
+  | { type: "error" };
+
 export function OtherTab({
   onExit,
   wallet,
@@ -76,6 +87,8 @@ export function OtherTab({
   const [seedCopyState, setSeedCopyState] = React.useState<
     "idle" | "ok" | "fail"
   >("idle");
+  const [suggestedCoinRestoreState, setSuggestedCoinRestoreState] =
+    React.useState<SuggestedCoinRestoreState>({ type: "idle" });
   const [now, setNow] = React.useState(() => Date.now());
   const [rescanState, setRescanState] = React.useState({
     open: false,
@@ -145,6 +158,61 @@ export function OtherTab({
     : daemonLastBlockHeight !== null
       ? "No confirmed history found yet, using current daemon height."
       : "Waiting for daemon height...";
+  React.useEffect(() => {
+    if (!seedState.open) {
+      setSuggestedCoinRestoreState({ type: "idle" });
+      return;
+    }
+
+    let cancelled = false;
+    setSuggestedCoinRestoreState({ type: "loading" });
+
+    void (async () => {
+      try {
+        const transfers = await wallet.get_transfers();
+        if (cancelled || isUnmountedRef.current) {
+          return;
+        }
+
+        let earliestUnspentCoin: TransferItem | null = null;
+        for (const coin of transfers) {
+          if (coin.spent || coin.block_height <= 0n) {
+            continue;
+          }
+          if (
+            earliestUnspentCoin === null ||
+            coin.block_height < earliestUnspentCoin.block_height
+          ) {
+            earliestUnspentCoin = coin;
+          }
+        }
+
+        const matchingPayment =
+          earliestUnspentCoin === null
+            ? null
+            : payments?.find((payment) => payment.tx_hash === earliestUnspentCoin.txid) ??
+              null;
+
+        setSuggestedCoinRestoreState({
+          type: "loaded",
+          coin: earliestUnspentCoin,
+          dateText: matchingPayment
+            ? formatWalletTimestamp(matchingPayment.timestamp)
+            : null,
+        });
+      } catch (e) {
+        console.error("Failed to load first unspent coin:", e);
+        if (cancelled || isUnmountedRef.current) {
+          return;
+        }
+        setSuggestedCoinRestoreState({ type: "error" });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [seedState.open, wallet, payments, isUnmountedRef]);
 
   const isSeedButtonDisabled = multisigStatus === null;
   const isMultisigWallet = multisigStatus?.multisig_is_active ?? false;
@@ -691,21 +759,39 @@ export function OtherTab({
             </div>
 
             <div className="scrollbar-glass scrollbar-hidden-mobile flex-1 space-y-3 overflow-y-auto rounded-xl bg-white/[0.03] p-3 ring-1 ring-white/10">
-              <div className="text-[11px] text-white/50">
-                Suggested restore scan start block (
-                {suggestedRestoreSourceText.toLowerCase()})
-              </div>
-              <div className="font-mono text-sm text-white/90">
-                {suggestedRestoreHeight !== null
-                  ? suggestedRestoreHeight.toString()
-                  : "Loading..."}
+              <div className="text-xs text-white/50">
+                Suggested restore scan start block:{" "}
+                <span className="font-mono text-white/90">
+                  {suggestedRestoreHeight !== null
+                    ? suggestedRestoreHeight.toString()
+                    : "Loading..."}
+                </span>
                 {firstConfirmedDateText ? (
-                  <span className="font-sans text-sm text-white/60">
+                  <span className="text-white/60">
                     {" "}
                     ({firstConfirmedDateText})
                   </span>
                 ) : null}
+                <span className="text-white/50">
+                  {" "}
+                  ({suggestedRestoreSourceText.toLowerCase()})
+                </span>
               </div>
+              {suggestedCoinRestoreState.type === "loaded" &&
+              suggestedCoinRestoreState.coin !== null ? (
+                <div className="text-xs text-white/50">
+                  Alternatively you can use first unspent coin height:{" "}
+                  <span className="font-mono text-white/90">
+                    {suggestedCoinRestoreState.coin.block_height.toString()}
+                  </span>
+                  {suggestedCoinRestoreState.dateText ? (
+                    <span className="text-white/60">
+                      {" "}
+                      ({suggestedCoinRestoreState.dateText})
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
 
               {seedState.type === "loading" ? (
                 <div className="text-xs text-white/60">
