@@ -1,0 +1,59 @@
+name: Native Apps
+
+on:
+  workflow_call:
+    inputs:
+      build_type:
+        required: true
+        type: string
+
+jobs:
+  native_apps:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_suffix: linux
+            target: --linux AppImage
+          - os: windows-latest
+            artifact_suffix: windows
+            target: --win portable
+          - os: macos-latest
+            artifact_suffix: macos
+            target: --mac dmg
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download built web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-frontend-${{ inputs.build_type }}
+          path: built-web
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native artifact
+        shell: bash
+        run: npm run native:dist:ci -- ${{ matrix.target }}
+
+      - name: Upload native artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.artifact_suffix }}-${{ inputs.build_type }}
+          path: |
+            dist-native/*.AppImage
+            dist-native/*.exe
+            dist-native/*.zip
+            dist-native/*.dmg
+          if-no-files-found: error

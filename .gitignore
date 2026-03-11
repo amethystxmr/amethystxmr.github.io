@@ -3,3 +3,4 @@ built-web
 playwright-report
 test-results
 tests/.artifacts
+dist-native

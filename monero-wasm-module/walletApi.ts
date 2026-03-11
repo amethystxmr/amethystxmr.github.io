@@ -322,7 +322,7 @@ type HttpFetchState =
 
 declare global {
   interface Window {
-    module: Module;
+    moneroWalletModule: Module;
     clearFilesystem: typeof clearFilesystem;
     globalHttpConfig: {
       mapUrl: (url: string) => string;
@@ -344,7 +344,7 @@ export async function initModule() {
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
   setMaxConcurrency(getRecommendedMaxConcurrency());
-  window.module = module;
+  window.moneroWalletModule = module;
 
   window.globalHttpConfig = {
     mapUrl: () => {
