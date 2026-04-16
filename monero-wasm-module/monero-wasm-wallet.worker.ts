@@ -64,6 +64,9 @@ let operationChain = Promise.resolve();
 
 function runExclusive<T>(task: () => T | Promise<T>): Promise<T> {
   const run = operationChain.then(task, task);
+  // Keep the internal queue tail always fulfilled: callers await `run` and still
+  // see rejections there, but we must not leave `operationChain` rejected or later
+  // serial scheduling can inherit a broken chain / unhandled tail rejections.
   operationChain = run.then(
     () => undefined,
     () => undefined,
