@@ -824,7 +824,7 @@ function RestoreView({
   };
 
   const startingHeightBlock = (
-    <FormRow className="mb-0!">
+    <FormRow className="!mb-0">
       <Label>Starting height</Label>
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
@@ -901,7 +901,7 @@ function RestoreView({
                 label: "Cake 16 words",
                 content: (
                   <div className={restoreTabContentClass}>
-                    <FormRow className="mb-0! lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                    <FormRow className="!mb-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
                       <Label>Seed phrase</Label>
                       <TextArea
                         rows={3}
@@ -1660,7 +1660,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
             <div className="mt-2 flex justify-end">
               <Button
                 type="button"
-                className={`flex-none! px-5! py-2! text-xs ${
+                className={`!flex-none !px-5 !py-2 text-xs ${
                   daemonTestStatus === "ok"
                     ? "text-green-300 hover:text-green-200"
                     : daemonTestStatus === "failed"
@@ -1989,7 +1989,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-nowrap sm:gap-2">
                     <Button
-                      className="flex-none! whitespace-nowrap sm:shrink-0"
+                      className="!flex-none whitespace-nowrap sm:shrink-0"
                       variant="soft"
                       onClick={() => {
                         setRemoveState({ type: "confirm", walletName });
@@ -1998,7 +1998,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                       🗑 Remove
                     </Button>
                     <Button
-                      className="flex-none! whitespace-nowrap sm:shrink-0"
+                      className="!flex-none whitespace-nowrap sm:shrink-0"
                       variant="soft"
                       onClick={() => {
                         setRenameState({
@@ -2011,7 +2011,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                       ✎ Rename
                     </Button>
                     <Button
-                      className="flex-none! whitespace-nowrap sm:shrink-0"
+                      className="!flex-none whitespace-nowrap sm:shrink-0"
                       variant="soft"
                       onClick={async () => {
                         await doExportWallet(walletName);

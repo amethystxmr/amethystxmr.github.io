@@ -12,8 +12,8 @@ import type {
 } from "./monero-wasm-wallet.ts";
 
 type StoredHandle =
-  | { type: "pendingTx"; value: SyncPendingTxHandle }
-  | { type: "multisigTxSet"; value: SyncMultisigTxSetHandle };
+  | { type: "pendingTx"; value: SyncPendingTxHandle; walletId: number }
+  | { type: "multisigTxSet"; value: SyncMultisigTxSetHandle; walletId: number };
 
 export type WorkerHandleRef = {
   __workerHandle: true;
@@ -70,9 +70,10 @@ function getWallet(walletId: number) {
 function storeHandle(
   handle: SyncPendingTxHandle | SyncMultisigTxSetHandle,
   type: StoredHandle["type"],
+  walletId: number,
 ): WorkerHandleRef {
   const id = nextHandleId++;
-  handles.set(id, { type, value: handle } as StoredHandle);
+  handles.set(id, { type, value: handle, walletId } as StoredHandle);
   return { __workerHandle: true, type, id };
 }
 
@@ -160,12 +161,12 @@ function unwrapHandleArg(method: string, arg: unknown): unknown {
   return arg;
 }
 
-function wrapHandleResult(method: string, result: unknown) {
+function wrapHandleResult(method: string, result: unknown, walletId: number) {
   if (method === "transfer_prepare" || method === "transfer_prepare_sweep_all") {
-    return storeHandle(result as SyncPendingTxHandle, "pendingTx");
+    return storeHandle(result as SyncPendingTxHandle, "pendingTx", walletId);
   }
   if (method === "load_multisig_tx") {
-    return storeHandle(result as SyncMultisigTxSetHandle, "multisigTxSet");
+    return storeHandle(result as SyncMultisigTxSetHandle, "multisigTxSet", walletId);
   }
   return result;
 }
@@ -217,6 +218,12 @@ const api = {
       wallet.delete();
       wallets.delete(walletId);
       newBlockCallbacks.delete(walletId);
+      for (const [handleId, stored] of handles) {
+        if (stored.walletId === walletId) {
+          stored.value.delete();
+          handles.delete(handleId);
+        }
+      }
     });
   },
 
@@ -234,7 +241,7 @@ const api = {
       if (method === "get_payments" || method === "get_payments_mempool") {
         return sortPayments(result as PaymentDetails[]);
       }
-      return wrapHandleResult(method, result);
+      return wrapHandleResult(method, result, walletId);
     });
   },
 

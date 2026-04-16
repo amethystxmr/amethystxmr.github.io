@@ -161,7 +161,20 @@ public:
         {
             throw std::runtime_error("js_http_client::invoke called while another request is in progress");
         }
-        m_is_busy = true;
+        struct BusyGuard
+        {
+            bool &busy;
+            explicit BusyGuard(bool &b)
+                : busy(b)
+            {
+                busy = true;
+            }
+            ~BusyGuard()
+            {
+                busy = false;
+            }
+        };
+        BusyGuard busyGuard(m_is_busy);
 
         std::string uri_str(uri.data(), uri.size());
         printf("js_http_client(%i)::invoke called with uri=%s\n", m_my_id, uri_str.c_str());
@@ -190,7 +203,6 @@ public:
             static_cast<int>(reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_mime_tipe))),
             static_cast<int>(reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_body))));
 
-        m_is_busy = false;
         return m_response_info.m_response_code != 0;
     }
     bool invoke_get(

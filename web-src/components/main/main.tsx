@@ -788,7 +788,7 @@ function WalletSplitMetricCard({
       </div>
       <div
         aria-label={`${title} ${topLabel} value`}
-        className="min-w-0 text-sm leading-tight font-semibold text-white/90 wrap-break-word sm:text-base"
+        className="min-w-0 break-words text-sm leading-tight font-semibold text-white/90 sm:text-base"
         title={topValue}
       >
         {topValue}
@@ -800,7 +800,7 @@ function WalletSplitMetricCard({
         <>
           <div
             aria-label={`${title} ${bottomLabel} value`}
-            className="mt-1.5 min-w-0 text-sm leading-tight font-semibold text-white/75 wrap-break-word sm:text-base"
+            className="mt-1.5 min-w-0 break-words text-sm leading-tight font-semibold text-white/75 sm:text-base"
             title={bottomValue}
           >
             {bottomValue}
