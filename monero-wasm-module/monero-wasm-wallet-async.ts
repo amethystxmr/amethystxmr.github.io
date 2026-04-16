@@ -1,5 +1,4 @@
-import { proxy, wrap, type Remote } from "comlink";
-import WorkerUrl from "./monero-wasm-wallet.worker?worker";
+import { proxy, wrap } from "comlink";
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority as FeePriorityValues,
@@ -42,13 +41,25 @@ export type {
 export const FeePriority = FeePriorityValues;
 export type FeePriority = FeePriorityValue;
 
-const worker = new WorkerUrl();
+const worker = new Worker(
+  new URL("./monero-wasm-wallet.worker.ts", import.meta.url),
+  { type: "module" },
+);
 const api = wrap<MoneroWasmWalletWorkerApi>(worker);
 
-type Api = Remote<MoneroWasmWalletWorkerApi>;
+let operationChain = Promise.resolve();
 
-function getApi(): Api {
-  return api;
+function enqueue<T>(task: () => Promise<T>): Promise<T> {
+  const run = operationChain.then(task, task);
+  operationChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+function moduleCall<T>(method: string, args: unknown[]): Promise<T> {
+  return enqueue(() => api.moduleCall(method, args)) as Promise<T>;
 }
 
 type HandleType = WorkerHandleRef["type"];
@@ -60,7 +71,7 @@ class WorkerHandle {
   ) {}
 
   delete(): void {
-    void this.deleteRemote(this.ref);
+    void enqueue(() => this.deleteRemote(this.ref));
   }
 }
 
@@ -76,52 +87,54 @@ function makeHandle<T extends HandleType>(
   ref: WorkerHandleRef & { type: T },
 ): T extends "pendingTx" ? PendingTxHandle : MultisigTxSetHandle {
   return new WorkerHandle(ref, (handleRef) =>
-    getApi().deleteHandle(handleRef),
+    api.deleteHandle(handleRef),
   ) as T extends "pendingTx" ? PendingTxHandle : MultisigTxSetHandle;
 }
 
 export async function initModule() {
-  return getApi().initModule();
+  return enqueue(() => api.initModule());
 }
 
 export async function loadFilesystem() {
-  return getApi().loadFilesystem();
+  return moduleCall<void>("loadFilesystem", []);
 }
 
 export async function saveFilesystem() {
-  return getApi().saveFilesystem();
+  return moduleCall<void>("saveFilesystem", []);
 }
 
 export async function listWalletNames() {
-  return getApi().listWalletNames();
+  return moduleCall<string[]>("listWalletNames", []);
 }
 
 export async function deleteWalletFiles(walletName: string) {
-  return getApi().deleteWalletFiles(walletName);
+  return moduleCall<void>("deleteWalletFiles", [walletName]);
 }
 
 export async function readFile(path: string) {
-  return getApi().readFile(path);
+  return moduleCall<Uint8Array>("readFile", [path]);
 }
 
 export async function writeFile(path: string, data: Uint8Array) {
-  return getApi().writeFile(path, data);
+  return moduleCall<void>("writeFile", [path, data]);
 }
 
 export async function unlinkFile(path: string) {
-  return getApi().unlinkFile(path);
+  return moduleCall<void>("unlinkFile", [path]);
 }
 
 export async function isWalletFileExists(walletName: string) {
-  return getApi().isWalletFileExists(walletName);
+  return moduleCall<boolean>("isWalletFileExists", [walletName]);
 }
 
 export async function renameWallet(oldName: string, newName: string) {
-  return getApi().renameWallet(oldName, newName);
+  return moduleCall<void>("renameWallet", [oldName, newName]);
 }
 
 export async function getWalletFilesData(walletName: string) {
-  return getApi().getWalletFilesData(walletName);
+  return moduleCall<{ name: string; data: Uint8Array }[]>("getWalletFilesData", [
+    walletName,
+  ]);
 }
 
 export async function saveWalletFilesData(
@@ -129,34 +142,30 @@ export async function saveWalletFilesData(
   keysFileData: Uint8Array,
   otherFilesData: { name: string; data: Uint8Array }[],
 ) {
-  return getApi().saveWalletFilesData(walletName, keysFileData, otherFilesData);
-}
-
-export function getMaxConcurrency() {
-  return 1;
-}
-
-export function getRecommendedMaxConcurrency() {
-  return 1;
-}
-
-export async function setMaxConcurrency(threads: number) {
-  return getApi().setMaxConcurrency(threads);
+  return moduleCall<void>("saveWalletFilesData", [
+    walletName,
+    keysFileData,
+    otherFilesData,
+  ]);
 }
 
 export async function decodePolyseed(moneroPolyseed: string) {
-  return getApi().decodePolyseed(moneroPolyseed);
+  return moduleCall<{
+    birthday: bigint;
+    privateKey: Uint8Array;
+    langStr: string;
+  }>("decodePolyseed", [moneroPolyseed]);
 }
 
 export async function getMoneroVersionFull() {
-  return getApi().getMoneroVersionFull();
+  return moduleCall<string>("getMoneroVersionFull", []);
 }
 
-export async function setHttpBaseUrl(baseUrl: string) {
-  return getApi().setHttpBaseUrl(baseUrl);
+export function setHttpBaseUrl(baseUrl: string): void {
+  void enqueue(() => api.setHttpBaseUrl(baseUrl));
 }
 
-export async function setHttpOnFetch(
+export function setHttpOnFetch(
   callback:
     | ((
         url: string,
@@ -166,14 +175,14 @@ export async function setHttpOnFetch(
         progressTotal: number,
       ) => void)
     | null,
-) {
-  return getApi().setHttpOnFetch(callback ? proxy(callback) : null);
+): void {
+  void enqueue(() => api.setHttpOnFetch(callback ? proxy(callback) : null));
 }
 
 export function createWallet(
   networkType: NetworkType = NetworkTypes.MAINNET,
 ) {
-  return new MoneroWasmWallet(getApi().createWallet(networkType));
+  return new MoneroWasmWallet(enqueue(() => api.createWallet(networkType)));
 }
 
 export class MoneroWasmWallet {
@@ -183,27 +192,37 @@ export class MoneroWasmWallet {
     return this.walletIdPromise;
   }
 
-  private async call(method: string, ...args: unknown[]) {
-    const walletId = await this.id();
-    return (getApi() as unknown as Record<string, (...args: unknown[]) => unknown>)[
-      method
-    ](walletId, ...args);
+  private call<T>(method: string, ...args: unknown[]) {
+    return enqueue(async () =>
+      api.walletCall(await this.id(), method, this.toRemoteArgs(args)),
+    ) as Promise<T>;
+  }
+
+  private toRemoteArg(value: unknown): unknown {
+    if (value instanceof WorkerHandle) {
+      return value.ref;
+    }
+    return value;
+  }
+
+  private toRemoteArgs(args: unknown[]) {
+    return args.map((arg) => this.toRemoteArg(arg));
   }
 
   async init() {
-    return this.call("init") as Promise<boolean>;
+    return this.call<boolean>("init");
   }
 
   async close_wallet() {
-    return this.call("close_wallet") as Promise<void>;
+    return this.call<void>("close_wallet");
   }
 
   async delete() {
-    return getApi().deleteWallet(await this.id());
+    return enqueue(async () => api.deleteWallet(await this.id()));
   }
 
   async get_daemon_blockchain_height() {
-    return this.call("get_daemon_blockchain_height") as Promise<bigint>;
+    return this.call<bigint>("get_daemon_blockchain_height");
   }
 
   async generate(
@@ -213,14 +232,14 @@ export class MoneroWasmWallet {
     recover: boolean,
     twoRandom: boolean,
   ) {
-    return this.call(
+    return this.call<Uint8Array>(
       "generate",
       fileName,
       password,
       secret32,
       recover,
       twoRandom,
-    ) as Promise<Uint8Array>;
+    );
   }
 
   async generate_multisig_restore(
@@ -229,13 +248,13 @@ export class MoneroWasmWallet {
     multisigDataHex: string,
     createAddressFile: boolean,
   ) {
-    return this.call(
+    return this.call<boolean>(
       "generate_multisig_restore",
       fileName,
       password,
       multisigDataHex,
       createAddressFile,
-    ) as Promise<boolean>;
+    );
   }
 
   async generate_from_keys(
@@ -246,7 +265,7 @@ export class MoneroWasmWallet {
     secretSpendKey: Uint8Array,
     createAddressFile: boolean,
   ) {
-    return this.call(
+    return this.call<boolean>(
       "generate_from_keys",
       fileName,
       password,
@@ -254,7 +273,7 @@ export class MoneroWasmWallet {
       secretViewKey,
       secretSpendKey,
       createAddressFile,
-    ) as Promise<boolean>;
+    );
   }
 
   async generate_view_only_from_keys(
@@ -264,34 +283,34 @@ export class MoneroWasmWallet {
     secretViewKey: Uint8Array,
     createAddressFile: boolean,
   ) {
-    return this.call(
+    return this.call<boolean>(
       "generate_view_only_from_keys",
       fileName,
       password,
       address,
       secretViewKey,
       createAddressFile,
-    ) as Promise<boolean>;
+    );
   }
 
   async is_synced() {
-    return this.call("is_synced") as Promise<boolean>;
+    return this.call<boolean>("is_synced");
   }
 
   async store() {
-    return this.call("store") as Promise<void>;
+    return this.call<void>("store");
   }
 
   async set_attribute(key: string, value: string) {
-    return this.call("set_attribute", key, value) as Promise<boolean>;
+    return this.call<boolean>("set_attribute", key, value);
   }
 
   async get_attribute(key: string) {
-    return this.call("get_attribute", key) as Promise<string>;
+    return this.call<string>("get_attribute", key);
   }
 
   async load(fileName: string, password: string) {
-    return this.call("load", fileName, password) as Promise<void>;
+    return this.call<void>("load", fileName, password);
   }
 
   async refresh(
@@ -301,164 +320,137 @@ export class MoneroWasmWallet {
     tryIncremental: boolean,
     maxBlocks: bigint,
   ) {
-    return this.call(
+    return this.call<{ blocksFetched: bigint; receivedMoney: boolean }>(
       "refresh",
       isTrustedWallet,
       startHeight,
       checkPool,
       tryIncremental,
       maxBlocks,
-    ) as Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
+    );
   }
 
   async rewrite(fileName: string, password: string) {
-    return this.call("rewrite", fileName, password) as Promise<void>;
+    return this.call<void>("rewrite", fileName, password);
   }
 
   async set_on_new_block_callback(
     callback: ((height: bigint, timestamp: bigint) => void) | null,
-  ) {
-    return this.call(
-      "set_on_new_block_callback",
-      callback ? proxy(callback) : null,
-    ) as Promise<void>;
+  ): Promise<void> {
+    return enqueue(async () =>
+      api.walletSetNewBlockCallback(
+        await this.id(),
+        callback ? proxy(callback) : null,
+      ),
+    );
   }
 
   async get_seed(seedLanguage: string, seedPassword: string) {
-    return this.call("get_seed", seedLanguage, seedPassword) as Promise<string>;
+    return this.call<string>("get_seed", seedLanguage, seedPassword);
   }
 
   async get_multisig_seed(seedPassword: string) {
-    return this.call("get_multisig_seed", seedPassword) as Promise<string>;
+    return this.call<string>("get_multisig_seed", seedPassword);
   }
 
   async get_address() {
-    return this.call("get_address") as Promise<string>;
+    return this.call<string>("get_address");
   }
 
-  async get_network_type() {
-    return this.call("get_network_type") as Promise<NetworkType>;
+  get_network_type() {
+    return this.call<NetworkType>("get_network_type");
   }
 
   async allow_mismatched_daemon_version(allowMismatch: boolean) {
-    return this.call(
-      "allow_mismatched_daemon_version",
-      allowMismatch,
-    ) as Promise<void>;
+    return this.call<void>("allow_mismatched_daemon_version", allowMismatch);
   }
 
   async watch_only() {
-    return this.call("watch_only") as Promise<boolean>;
+    return this.call<boolean>("watch_only");
   }
 
   async is_deterministic() {
-    return this.call("is_deterministic") as Promise<boolean>;
+    return this.call<boolean>("is_deterministic");
   }
 
   async get_wallet_file() {
-    return this.call("get_wallet_file") as Promise<string>;
+    return this.call<string>("get_wallet_file");
   }
 
   async get_tx_proof(txid: string, dstaddress: string, note: string) {
-    return this.call("get_tx_proof", txid, dstaddress, note) as Promise<string>;
+    return this.call<string>("get_tx_proof", txid, dstaddress, note);
   }
 
   async get_tx_key(txid: string) {
-    return this.call("get_tx_key", txid) as Promise<string>;
+    return this.call<string>("get_tx_key", txid);
   }
 
   async get_tx_keys_for_address(txid: string, dstaddress: string) {
-    return this.call(
-      "get_tx_keys_for_address",
-      txid,
-      dstaddress,
-    ) as Promise<string[]>;
+    return this.call<string[]>("get_tx_keys_for_address", txid, dstaddress);
   }
 
   async balance(indexMajor: number, strict: boolean) {
-    return this.call("balance", indexMajor, strict) as Promise<bigint>;
+    return this.call<bigint>("balance", indexMajor, strict);
   }
 
   async unlocked_balance(indexMajor: number, strict: boolean) {
-    return this.call("unlocked_balance", indexMajor, strict) as Promise<{
+    return this.call<{
       balance: bigint;
       blocks_to_unlock: bigint;
       time_to_unlock: bigint;
-    }>;
+    }>("unlocked_balance", indexMajor, strict);
   }
 
   async set_refresh_from_block_height(height: bigint) {
-    return this.call("set_refresh_from_block_height", height) as Promise<boolean>;
+    return this.call<boolean>("set_refresh_from_block_height", height);
   }
 
   async set_explicit_refresh_from_block_height(value: boolean) {
-    return this.call(
-      "set_explicit_refresh_from_block_height",
-      value,
-    ) as Promise<boolean>;
+    return this.call<boolean>("set_explicit_refresh_from_block_height", value);
   }
 
   async get_blockchain_current_height() {
-    return this.call("get_blockchain_current_height") as Promise<bigint>;
+    return this.call<bigint>("get_blockchain_current_height");
   }
 
   async get_blockchain_height_by_date(year: number, month: number, day: number) {
-    return this.call(
-      "get_blockchain_height_by_date",
-      year,
-      month,
-      day,
-    ) as Promise<bigint>;
+    return this.call<bigint>("get_blockchain_height_by_date", year, month, day);
   }
 
   async words_to_bytes(words: string, language: string) {
-    return this.call("words_to_bytes", words, language) as Promise<Uint8Array | null>;
+    return this.call<Uint8Array | null>("words_to_bytes", words, language);
   }
 
   async get_payments(minHeight: bigint, maxHeight: bigint) {
-    return this.call(
-      "get_payments",
-      minHeight,
-      maxHeight,
-    ) as Promise<PaymentDetailsTransformed[]>;
+    return this.call<PaymentDetailsTransformed[]>("get_payments", minHeight, maxHeight);
   }
 
   async get_payments_mempool() {
-    return this.call("get_payments_mempool") as Promise<
-      PaymentDetailsTransformed[]
-    >;
+    return this.call<PaymentDetailsTransformed[]>("get_payments_mempool");
   }
 
   async get_num_subaddresses(indexMajor: number) {
-    return this.call("get_num_subaddresses", indexMajor) as Promise<number>;
+    return this.call<number>("get_num_subaddresses", indexMajor);
   }
 
   async get_subaddress_as_str(indexMajor: number, indexMinor: number) {
-    return this.call(
-      "get_subaddress_as_str",
-      indexMajor,
-      indexMinor,
-    ) as Promise<string>;
+    return this.call<string>("get_subaddress_as_str", indexMajor, indexMinor);
   }
 
   async get_subaddress_label(indexMajor: number, indexMinor: number) {
-    return this.call(
-      "get_subaddress_label",
-      indexMajor,
-      indexMinor,
-    ) as Promise<string>;
+    return this.call<string>("get_subaddress_label", indexMajor, indexMinor);
   }
 
   async get_wallet_addresses(accountId: number) {
-    return this.call("get_wallet_addresses", accountId) as Promise<WalletAddress[]>;
+    return this.call<WalletAddress[]>("get_wallet_addresses", accountId);
   }
 
   async get_keys(accountIdx: number) {
-    return this.call("get_keys", accountIdx) as Promise<WalletKeys>;
+    return this.call<WalletKeys>("get_keys", accountIdx);
   }
 
   async add_subaddress(indexMajor: number, label: string) {
-    return this.call("add_subaddress", indexMajor, label) as Promise<void>;
+    return this.call<void>("add_subaddress", indexMajor, label);
   }
 
   async transfer_prepare(
@@ -467,13 +459,13 @@ export class MoneroWasmWallet {
     priority: FeePriorityValue,
     subtractFeeFromIndex: number | null,
   ) {
-    const ref = (await this.call(
+    const ref = await this.call<WorkerHandleRef & { type: "pendingTx" }>(
       "transfer_prepare",
       destinations,
       amounts,
       priority,
       subtractFeeFromIndex,
-    )) as WorkerHandleRef & { type: "pendingTx" };
+    );
     return makeHandle(ref);
   }
 
@@ -481,96 +473,80 @@ export class MoneroWasmWallet {
     destination: string,
     priority: FeePriorityValue,
   ) {
-    const ref = (await this.call(
+    const ref = await this.call<WorkerHandleRef & { type: "pendingTx" }>(
       "transfer_prepare_sweep_all",
       destination,
       priority,
-    )) as WorkerHandleRef & { type: "pendingTx" };
+    );
     return makeHandle(ref);
   }
 
   async get_transfers() {
-    return this.call("get_transfers") as Promise<TransferItem[]>;
+    return this.call<TransferItem[]>("get_transfers");
   }
 
   async get_transfers_info(handle: PendingTxHandle) {
-    return this.call(
-      "get_transfers_info",
-      handle.ref,
-    ) as Promise<TransferInfoItem[]>;
+    return this.call<TransferInfoItem[]>("get_transfers_info", handle);
   }
 
   async transfer_commit_tx(handle: PendingTxHandle) {
-    return this.call("transfer_commit_tx", handle.ref) as Promise<void>;
+    return this.call<void>("transfer_commit_tx", handle);
   }
 
   async save_multisig_tx_pending_tx(handle: PendingTxHandle) {
-    return this.call(
-      "save_multisig_tx_pending_tx",
-      handle.ref,
-    ) as Promise<Uint8Array>;
+    return this.call<Uint8Array>("save_multisig_tx_pending_tx", handle);
   }
 
   async load_multisig_tx(data: Uint8Array, doAccept: boolean) {
-    const ref = (await this.call(
+    const ref = await this.call<WorkerHandleRef & { type: "multisigTxSet" }>(
       "load_multisig_tx",
       data,
       doAccept,
-    )) as WorkerHandleRef & { type: "multisigTxSet" };
+    );
     return makeHandle(ref);
   }
 
   async get_multisig_tx_set_info(handle: MultisigTxSetHandle) {
-    return this.call(
-      "get_multisig_tx_set_info",
-      handle.ref,
-    ) as Promise<TransferInfoItem[]>;
+    return this.call<TransferInfoItem[]>("get_multisig_tx_set_info", handle);
   }
 
   async get_multisig_tx_signers_count(
     handle: MultisigTxSetHandle,
     excludeSelf: boolean,
   ) {
-    return this.call(
-      "get_multisig_tx_signers_count",
-      handle.ref,
-      excludeSelf,
-    ) as Promise<number>;
+    return this.call<number>("get_multisig_tx_signers_count", handle, excludeSelf);
   }
 
   async sign_multisig_tx(handle: MultisigTxSetHandle) {
-    return this.call("sign_multisig_tx", handle.ref) as Promise<string[]>;
+    return this.call<string[]>("sign_multisig_tx", handle);
   }
 
   async save_multisig_tx(handle: MultisigTxSetHandle) {
-    return this.call("save_multisig_tx", handle.ref) as Promise<Uint8Array>;
+    return this.call<Uint8Array>("save_multisig_tx", handle);
   }
 
   async transfer_commit_tx_multisig(handle: MultisigTxSetHandle) {
-    return this.call(
-      "transfer_commit_tx_multisig",
-      handle.ref,
-    ) as Promise<void>;
+    return this.call<void>("transfer_commit_tx_multisig", handle);
   }
 
   async get_multisig_status() {
-    return this.call("get_multisig_status") as Promise<MultisigAccountStatus>;
+    return this.call<MultisigAccountStatus>("get_multisig_status");
   }
 
   async has_multisig_partial_key_images() {
-    return this.call("has_multisig_partial_key_images") as Promise<boolean>;
+    return this.call<boolean>("has_multisig_partial_key_images");
   }
 
   async has_unknown_key_images() {
-    return this.call("has_unknown_key_images") as Promise<boolean>;
+    return this.call<boolean>("has_unknown_key_images");
   }
 
   async enable_multisig(enable: boolean) {
-    return this.call("enable_multisig", enable) as Promise<boolean>;
+    return this.call<boolean>("enable_multisig", enable);
   }
 
   async prepare_multisig() {
-    return this.call("prepare_multisig") as Promise<string>;
+    return this.call<string>("prepare_multisig");
   }
 
   async make_multisig(
@@ -578,54 +554,41 @@ export class MoneroWasmWallet {
     initialKexMsgs: string[],
     threshold: number,
   ) {
-    return this.call(
-      "make_multisig",
-      password,
-      initialKexMsgs,
-      threshold,
-    ) as Promise<string>;
+    return this.call<string>("make_multisig", password, initialKexMsgs, threshold);
   }
 
   async exchange_multisig_keys(password: string, kexMsgs: string[]) {
-    return this.call(
-      "exchange_multisig_keys",
-      password,
-      kexMsgs,
-    ) as Promise<string>;
+    return this.call<string>("exchange_multisig_keys", password, kexMsgs);
   }
 
   async export_multisig() {
-    return this.call("export_multisig") as Promise<Uint8Array>;
+    return this.call<Uint8Array>("export_multisig");
   }
 
   async import_multisig(infos: Uint8Array[]) {
-    return this.call("import_multisig", infos) as Promise<number>;
+    return this.call<number>("import_multisig", infos);
   }
 
   async export_key_images(filename: string, all: boolean) {
-    return this.call("export_key_images", filename, all) as Promise<boolean>;
+    return this.call<boolean>("export_key_images", filename, all);
   }
 
   async import_key_images(
     filename: string,
     importWhenUntrustedDaemon: boolean,
   ) {
-    return this.call(
+    return this.call<KeyImagesImportResult>(
       "import_key_images",
       filename,
       importWhenUntrustedDaemon,
-    ) as Promise<KeyImagesImportResult>;
+    );
   }
 
   async verify_password(password: string) {
-    return this.call("verify_password", password) as Promise<boolean>;
+    return this.call<boolean>("verify_password", password);
   }
 
   async rescan_blockchain(hard: boolean, keepKeyImages: boolean) {
-    return this.call(
-      "rescan_blockchain",
-      hard,
-      keepKeyImages,
-    ) as Promise<boolean>;
+    return this.call<boolean>("rescan_blockchain", hard, keepKeyImages);
   }
 }

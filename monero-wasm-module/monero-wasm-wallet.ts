@@ -14,8 +14,8 @@ type IDBFS = unknown & { readonly __nominal: unique symbol };
 
 export declare class MoneroWasmWallet {
   constructor(networkType: NetworkType);
-  init(): Promise<boolean>;
-  close_wallet(): Promise<void>;
+  init(): boolean;
+  close_wallet(): void;
   delete(): void;
   get_daemon_blockchain_height(): Promise<bigint>;
   generate(
@@ -24,13 +24,13 @@ export declare class MoneroWasmWallet {
     secret32: Uint8Array,
     recover: boolean,
     two_random: boolean,
-  ): Promise<Uint8Array>;
+  ): Uint8Array;
   generate_multisig_restore(
     fileName: string,
     password: string,
     multisigDataHex: string,
     createAddressFile: boolean,
-  ): Promise<boolean>;
+  ): boolean;
   generate_from_keys(
     fileName: string,
     password: string,
@@ -38,131 +38,131 @@ export declare class MoneroWasmWallet {
     secretViewKey: Uint8Array,
     secretSpendKey: Uint8Array,
     createAddressFile: boolean,
-  ): Promise<boolean>;
+  ): boolean;
   generate_view_only_from_keys(
     fileName: string,
     password: string,
     address: string,
     secretViewKey: Uint8Array,
     createAddressFile: boolean,
-  ): Promise<boolean>;
-  is_synced(): Promise<boolean>;
-  store(): Promise<void>;
-  set_attribute(key: string, value: string): Promise<boolean>;
-  get_attribute(key: string): Promise<string>;
-  load(fileName: string, password: string): Promise<void>;
+  ): boolean;
+  is_synced(): boolean;
+  store(): void;
+  set_attribute(key: string, value: string): boolean;
+  get_attribute(key: string): string;
+  load(fileName: string, password: string): void;
   refresh(
     isTrustedWallet: boolean,
-    startHeight: number,
+    startHeight: bigint,
     checkPool: boolean,
     tryIncremental: boolean,
-    maxBlocks: number,
+    maxBlocks: bigint,
   ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
-  rewrite(fileName: string, password: string): Promise<void>;
+  rewrite(fileName: string, password: string): void;
   set_on_new_block_callback: (
     callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) => void;
   drain_new_block_events(): { height: bigint; timestamp: bigint }[];
-  get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
-  get_multisig_seed(seedPassword: string): Promise<string>;
-  get_address(): Promise<string>;
+  get_seed(seedLanguage: string, seedPassword: string): string;
+  get_multisig_seed(seedPassword: string): string;
+  get_address(): string;
   get_network_type(): NetworkType;
   allow_mismatched_daemon_version(allowMismatch: boolean): void;
-  watch_only(): Promise<boolean>;
-  is_deterministic(): Promise<boolean>;
-  get_wallet_file(): Promise<string>;
-  get_tx_proof(txid: string, dstaddress: string, note: string): Promise<string>;
-  get_tx_key(txid: string): Promise<string>;
-  get_tx_keys_for_address(txid: string, dstaddress: string): Promise<string[]>;
-  balance(index_major: number, strict: boolean): Promise<bigint>;
+  watch_only(): boolean;
+  is_deterministic(): boolean;
+  get_wallet_file(): string;
+  get_tx_proof(txid: string, dstaddress: string, note: string): string;
+  get_tx_key(txid: string): string;
+  get_tx_keys_for_address(txid: string, dstaddress: string): string[];
+  balance(index_major: number, strict: boolean): bigint;
   unlocked_balance(
     index_major: number,
     strict: boolean,
-  ): Promise<{
+  ): {
     balance: bigint;
     blocks_to_unlock: bigint;
     time_to_unlock: bigint;
-  }>;
-  set_refresh_from_block_height(height: bigint): Promise<boolean>;
-  set_explicit_refresh_from_block_height(value: boolean): Promise<boolean>;
+  };
+  set_refresh_from_block_height(height: bigint): boolean;
+  set_explicit_refresh_from_block_height(value: boolean): boolean;
   /**
    * Current height in the wallet. When it is same as get_daemon_blockchain_height() then it is synced
    */
-  get_blockchain_current_height(): Promise<bigint>;
+  get_blockchain_current_height(): bigint;
   get_blockchain_height_by_date(
     year: number,
     month: number,
     day: number,
-  ): Promise<bigint>;
+  ): bigint;
   words_to_bytes(words: string, language: string): Uint8Array | null;
   get_payments(
     minHeight: bigint,
     maxHeight: bigint,
-  ): Promise<PaymentDetails[]>;
+  ): PaymentDetails[];
   get_payments_mempool(): Promise<PaymentDetails[]>;
-  get_num_subaddresses(index_major: number): Promise<number>;
+  get_num_subaddresses(index_major: number): number;
   get_subaddress_as_str(
     index_major: number,
     index_minor: number,
-  ): Promise<string>;
+  ): string;
   get_subaddress_label(
     index_major: number,
     index_minor: number,
-  ): Promise<string>;
-  get_wallet_addresses(accountId: number): Promise<WalletAddress[]>;
-  get_keys(accountIdx: number): Promise<WalletKeys>;
-  add_subaddress(index_major: number, label: string): Promise<void>;
+  ): string;
+  get_wallet_addresses(accountId: number): WalletAddress[];
+  get_keys(accountIdx: number): WalletKeys;
+  add_subaddress(index_major: number, label: string): void;
   transfer_prepare(
     destinations: string[],
     amounts: bigint[],
     priority: FeePriority,
     subtractFeeFromIndex: number | null,
-  ): Promise<PendingTxHandle>;
+  ): PendingTxHandle;
   transfer_prepare_sweep_all(
     destination: string,
     priority: FeePriority,
-  ): Promise<PendingTxHandle>;
-  get_transfers(): Promise<TransferItem[]>;
+  ): PendingTxHandle;
+  get_transfers(): TransferItem[];
   get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
-  save_multisig_tx_pending_tx(handle: PendingTxHandle): Promise<Uint8Array>;
+  save_multisig_tx_pending_tx(handle: PendingTxHandle): Uint8Array;
   load_multisig_tx(
     data: Uint8Array,
     do_accept: boolean,
-  ): Promise<MultisigTxSetHandle>;
+  ): MultisigTxSetHandle;
   get_multisig_tx_set_info(handle: MultisigTxSetHandle): TransferInfoItem[];
   get_multisig_tx_signers_count(
     handle: MultisigTxSetHandle,
     excludeSelf: boolean,
   ): number;
-  sign_multisig_tx(handle: MultisigTxSetHandle): Promise<string[]>;
-  save_multisig_tx(handle: MultisigTxSetHandle): Promise<Uint8Array>;
+  sign_multisig_tx(handle: MultisigTxSetHandle): string[];
+  save_multisig_tx(handle: MultisigTxSetHandle): Uint8Array;
   transfer_commit_tx_multisig(handle: MultisigTxSetHandle): Promise<void>;
 
-  get_multisig_status(): Promise<MultisigAccountStatus>;
-  has_multisig_partial_key_images(): Promise<boolean>;
-  has_unknown_key_images(): Promise<boolean>;
-  enable_multisig(enable: boolean): Promise<boolean>;
-  prepare_multisig(): Promise<string>;
+  get_multisig_status(): MultisigAccountStatus;
+  has_multisig_partial_key_images(): boolean;
+  has_unknown_key_images(): boolean;
+  enable_multisig(enable: boolean): boolean;
+  prepare_multisig(): string;
   /** Note: this function saves wallet, .keys and .address.txt files! */
   make_multisig(
     password: string,
     initial_kex_msgs: string[],
     threshold: number,
-  ): Promise<string>;
+  ): string;
   /**
    * Note: this also saves files.
    */
-  exchange_multisig_keys(password: string, kex_msgs: string[]): Promise<string>;
-  export_multisig(): Promise<Uint8Array>;
-  import_multisig(infos: Uint8Array[]): Promise<number>;
-  export_key_images(filename: string, all: boolean): Promise<boolean>;
+  exchange_multisig_keys(password: string, kex_msgs: string[]): string;
+  export_multisig(): Uint8Array;
+  import_multisig(infos: Uint8Array[]): number;
+  export_key_images(filename: string, all: boolean): boolean;
   import_key_images(
     filename: string,
     import_when_untrusted_daemon: boolean,
   ): Promise<KeyImagesImportResult>;
-  verify_password(password: string): Promise<boolean>;
-  rescan_blockchain(hard: boolean, keep_key_images: boolean): Promise<boolean>;
+  verify_password(password: string): boolean;
+  rescan_blockchain(hard: boolean, keep_key_images: boolean): boolean;
 }
 
 export const FeePriority = {
@@ -313,7 +313,6 @@ interface Module {
   };
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
-  set_max_concurrency(threads: number): void;
   get_monero_version_full(): string;
   decodePolyseed(moneroPolyseed: string): {
     birthday: bigint;
@@ -350,42 +349,28 @@ declare global {
   var globalHttpConfig: GlobalHttpConfig;
 }
 
+function ensureGlobalHttpConfig(): GlobalHttpConfig {
+  globalThis.globalHttpConfig ??= {
+    mapUrl: () => {
+      throw new Error("mapUrl not set");
+    },
+    onFetch: (...args) => {
+      console.log("onFetch", ...args);
+    },
+  };
+  return globalThis.globalHttpConfig;
+}
+
 export async function initModule() {
   if (module) {
     return module;
   }
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
-  setMaxConcurrency(1);
   globalThis.moneroWalletModule = module;
-
-  globalThis.globalHttpConfig ??= {
-    mapUrl: () => {
-      throw new Error("mapUrl not set");
-    },
-    // mapUrl: (url) => "https://xmr-node.cakewallet.com:18081" + url,
-    onFetch: (...args) => {
-      console.log("onFetch", ...args);
-    },
-  };
+  ensureGlobalHttpConfig();
 
   return module;
-}
-
-export function getMaxConcurrency() {
-  return 1;
-}
-
-export function getRecommendedMaxConcurrency() {
-  return 1;
-}
-
-export function setMaxConcurrency(_threads: number) {
-  void _threads;
-  if (!module) {
-    throw new Error("Module not initialized");
-  }
-  module.set_max_concurrency(1);
 }
 
 export function decodePolyseed(moneroPolyseed: string) {
@@ -400,6 +385,20 @@ export function getMoneroVersionFull() {
     throw new Error("Module not initialized");
   }
   return module.get_monero_version_full();
+}
+
+export function setHttpBaseUrl(baseUrl: string): void {
+  ensureGlobalHttpConfig().mapUrl = (url: string) => `${baseUrl}${url}`;
+}
+
+export function setHttpOnFetch(
+  callback: GlobalHttpConfig["onFetch"] | null,
+): void {
+  ensureGlobalHttpConfig().onFetch =
+    callback ??
+    (() => {
+      // no-op
+    });
 }
 
 export async function loadFilesystem() {

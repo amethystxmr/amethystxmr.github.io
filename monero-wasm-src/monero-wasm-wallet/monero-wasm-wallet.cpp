@@ -47,6 +47,10 @@ public:
     // Full wallet callbacks
     void on_new_block(uint64_t height, const cryptonote::block &block) override
     {
+        if (m_new_block_events.size() >= MAX_NEW_BLOCK_EVENTS)
+        {
+            m_new_block_events.erase(m_new_block_events.begin());
+        }
         m_new_block_events.push_back(NewBlockEvent{height, block.timestamp});
     }
     /*
@@ -425,36 +429,29 @@ public:
 
     auto get_wallet_addresses(uint32_t accountId)
     {
-        return promise(
-            [this, accountId]()
-            {
-                auto result = std::vector<WalletAddress>{};
-                auto count = m_wallet.get_num_subaddresses(accountId);
-                result.reserve(count);
-                for (uint32_t indexMinor = 0; indexMinor < count; ++indexMinor)
-                {
-                    auto subaddr_index = cryptonote::subaddress_index{accountId, indexMinor};
-                    result.push_back(WalletAddress{
-                        m_wallet.get_subaddress_as_str(subaddr_index),
-                        m_wallet.get_subaddress_label(subaddr_index),
-                        indexMinor,
-                    });
-                }
-                return result;
-            },
-            [](const std::vector<WalletAddress> &addresses) -> emscripten::val
-            {
-                auto result = emscripten::val::array();
-                for (size_t i = 0; i < addresses.size(); ++i)
-                {
-                    auto item = emscripten::val::object();
-                    item.set("address", addresses[i].address);
-                    item.set("label", addresses[i].label);
-                    item.set("indexMinor", addresses[i].indexMinor);
-                    result.set(static_cast<uint32_t>(i), item);
-                }
-                return result;
+        auto addresses = std::vector<WalletAddress>{};
+        auto count = m_wallet.get_num_subaddresses(accountId);
+        addresses.reserve(count);
+        for (uint32_t indexMinor = 0; indexMinor < count; ++indexMinor)
+        {
+            auto subaddr_index = cryptonote::subaddress_index{accountId, indexMinor};
+            addresses.push_back(WalletAddress{
+                m_wallet.get_subaddress_as_str(subaddr_index),
+                m_wallet.get_subaddress_label(subaddr_index),
+                indexMinor,
             });
+        }
+
+        auto result = emscripten::val::array();
+        for (size_t i = 0; i < addresses.size(); ++i)
+        {
+            auto item = emscripten::val::object();
+            item.set("address", addresses[i].address);
+            item.set("label", addresses[i].label);
+            item.set("indexMinor", addresses[i].indexMinor);
+            result.set(static_cast<uint32_t>(i), item);
+        }
+        return result;
     }
     auto add_subaddress(uint32_t index_major, const std::string &label)
     {
@@ -555,6 +552,11 @@ public:
         return static_cast<uint64_t>(value);
     }
 
+    static emscripten::val uint64_to_bigint(uint64_t value)
+    {
+        return emscripten::val::global("BigInt")(std::to_string(value));
+    }
+
     RefreshResult refresh(bool trusted_daemon, double start_height, bool check_pool = true, bool try_incremental = true, double max_blocks = static_cast<double>(std::numeric_limits<uint64_t>::max()))
     {
         auto r = RefreshResult{};
@@ -583,8 +585,8 @@ public:
         {
             const auto &event = m_new_block_events[i];
             auto item = emscripten::val::object();
-            item.set("height", event.height);
-            item.set("timestamp", event.timestamp);
+            item.set("height", uint64_to_bigint(event.height));
+            item.set("timestamp", uint64_to_bigint(event.timestamp));
             out.set(i, item);
         }
         m_new_block_events.clear();
@@ -624,7 +626,7 @@ public:
             {
                 auto item = emscripten::val::object();
                 item.set("address", part.substr(0, colon));
-                item.set("amount", std::stoull(part.substr(colon + 1)));
+                item.set("amount", uint64_to_bigint(std::stoull(part.substr(colon + 1))));
                 result.set(static_cast<uint32_t>(result_index++), item);
             }
             if (end == std::string::npos)
@@ -642,12 +644,12 @@ public:
         item.set("payment_id", payment.payment_id);
         item.set("type", payment.type);
         item.set("is_unlocked", payment.is_unlocked);
-        item.set("block_height", payment.block_height);
-        item.set("unlock_time", payment.unlock_time);
-        item.set("timestamp", payment.timestamp);
-        item.set("amount", payment.amount);
+        item.set("block_height", uint64_to_bigint(payment.block_height));
+        item.set("unlock_time", uint64_to_bigint(payment.unlock_time));
+        item.set("timestamp", uint64_to_bigint(payment.timestamp));
+        item.set("amount", uint64_to_bigint(payment.amount));
         item.set("tx_hash", payment.tx_hash);
-        item.set("fee", payment.fee);
+        item.set("fee", uint64_to_bigint(payment.fee));
         item.set("destinationsStr", payment.destinationsStr);
         item.set("destinations", payment_destinations_to_js_array(payment.destinationsStr));
         item.set("index_major", payment.index_major);
@@ -836,14 +838,14 @@ public:
                 {
                     const auto &td = incoming_transfers[i];
                     auto item = emscripten::val::object();
-                    item.set("block_height", td.m_block_height);
+                    item.set("block_height", uint64_to_bigint(td.m_block_height));
                     item.set("txid", epee::string_tools::pod_to_hex(td.m_txid));
-                    item.set("global_output_index", td.m_global_output_index);
-                    item.set("local_output_index", td.m_internal_output_index);
+                    item.set("global_output_index", uint64_to_bigint(td.m_global_output_index));
+                    item.set("local_output_index", uint64_to_bigint(td.m_internal_output_index));
                     item.set("spent", td.m_spent);
                     item.set("froze", td.m_frozen);
-                    item.set("spent_height", td.m_spent_height);
-                    item.set("amount", td.m_amount);
+                    item.set("spent_height", uint64_to_bigint(td.m_spent_height));
+                    item.set("amount", uint64_to_bigint(td.m_amount));
                     item.set("rct", td.m_rct);
                     item.set("key_image_known", td.m_key_image_known);
                     item.set("key_image_request", td.m_key_image_request);
@@ -1093,8 +1095,8 @@ public:
         {
             const auto &ptx = ptx_vector[tx_index];
             auto tx_item = emscripten::val::object();
-            tx_item.set("fee", ptx.fee);
-            tx_item.set("changeAmount", ptx.change_dts.amount);
+            tx_item.set("fee", uint64_to_bigint(ptx.fee));
+            tx_item.set("changeAmount", uint64_to_bigint(ptx.change_dts.amount));
 
             auto destinations = emscripten::val::array();
             for (size_t dst_index = 0; dst_index < ptx.dests.size(); ++dst_index)
@@ -1102,7 +1104,7 @@ public:
                 const auto &dst = ptx.dests[dst_index];
                 auto dst_item = emscripten::val::object();
                 dst_item.set("dstAddress", cryptonote::get_account_address_as_str(m_wallet.nettype(), dst.is_subaddress, dst.addr));
-                dst_item.set("dspAmount", dst.amount);
+                dst_item.set("dspAmount", uint64_to_bigint(dst.amount));
                 destinations.set(static_cast<uint32_t>(dst_index), dst_item);
             }
             tx_item.set("destinations", destinations);
@@ -1763,6 +1765,7 @@ private:
 
     tools::wallet2 m_wallet;
 
+    static constexpr size_t MAX_NEW_BLOCK_EVENTS = 1024;
     std::vector<NewBlockEvent> m_new_block_events;
 };
 

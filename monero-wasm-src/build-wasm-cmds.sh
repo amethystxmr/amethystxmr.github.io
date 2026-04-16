@@ -26,8 +26,6 @@ mkdir -p "$BUILD_DEPENDS_DIR"
 
 export EM_CACHE="$(pwd)/$BUILD_EMCACHE_DIR"
 
-git submodule update --init --recursive --force
-
 (
   cd monero
   shopt -s nullglob

@@ -160,10 +160,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         state satisfies never;
       }
     };
-    void setHttpOnFetch(onFetch);
+    setHttpOnFetch(onFetch);
 
     return () => {
-      void setHttpOnFetch(null);
+      setHttpOnFetch(null);
     };
   }, [wallet]);
 
@@ -788,7 +788,7 @@ function WalletSplitMetricCard({
       </div>
       <div
         aria-label={`${title} ${topLabel} value`}
-        className="min-w-0 text-sm leading-tight font-semibold text-white/90 break-words sm:text-base"
+        className="min-w-0 text-sm leading-tight font-semibold text-white/90 wrap-break-word sm:text-base"
         title={topValue}
       >
         {topValue}
@@ -800,7 +800,7 @@ function WalletSplitMetricCard({
         <>
           <div
             aria-label={`${title} ${bottomLabel} value`}
-            className="mt-1.5 min-w-0 text-sm leading-tight font-semibold text-white/75 break-words sm:text-base"
+            className="mt-1.5 min-w-0 text-sm leading-tight font-semibold text-white/75 wrap-break-word sm:text-base"
             title={bottomValue}
           >
             {bottomValue}

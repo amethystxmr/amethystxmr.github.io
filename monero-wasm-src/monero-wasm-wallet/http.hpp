@@ -214,11 +214,13 @@ public:
     uint64_t get_bytes_sent() const
     {
         printf("js_http_client(%i)::get_bytes_sent called\n", m_my_id);
+        // TODO: Count bytes
         return 0;
     }
     uint64_t get_bytes_received() const
     {
         printf("js_http_client(%i)::get_bytes_received called\n", m_my_id);
+        // TODO: Count bytes
         return 0;
     }
 

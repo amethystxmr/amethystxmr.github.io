@@ -159,7 +159,7 @@ static bool find_embedded_file(const std::string &name, std::string &data) {
 
 #endif /* TRANSLATION_FILES_H */
 ]==])
-add_custom_target(generate_translations_header DEPENDS "${TRANSLATIONS_HEADER}")
+add_custom_target(generate_translations_header)
 
 include(${CMAKE_SOURCE_DIR}/monero/cmake/Version.cmake)
 monero_add_library(version SOURCES ${CMAKE_BINARY_DIR}/version.cpp DEPENDS genversion)

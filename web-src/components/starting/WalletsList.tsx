@@ -7,7 +7,6 @@ import {
   Toggle,
   Header,
   Input,
-  InputWithAction,
   Label,
   ListRowButton,
   OverlayDialog,
@@ -23,19 +22,16 @@ import {
   createWallet,
   decodePolyseed,
   deleteWalletFiles,
-  getMaxConcurrency,
   getMoneroVersionFull,
   NetworkTypes,
   type NetworkType as NetworkTypeValue,
   getWalletFilesData,
-  getRecommendedMaxConcurrency,
   isWalletFileExists,
   listWalletNames,
   MoneroWasmWallet,
   renameWallet,
   saveWalletFilesData,
   setHttpBaseUrl,
-  setMaxConcurrency,
 } from "../../../monero-wasm-module/monero-wasm-wallet-async";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
@@ -153,9 +149,10 @@ export function WalletsList() {
   const buildListView = React.useCallback(async () => {
     return { type: "list" as const, walletNames: await listWalletNames() };
   }, []);
-  const cpuThreads = options.getValue("cpuThreads");
-
   const [view, setView] = React.useState<
+    | {
+        type: "loading-list";
+      }
     | {
         type: "list";
         walletNames: string[];
@@ -181,10 +178,12 @@ export function WalletsList() {
     | {
         type: "create-new-wallet";
       }
-  >({ type: "list", walletNames: [] });
+  >({ type: "loading-list" });
   const backToList = React.useCallback(
     () => {
-      void buildListView().then(setView);
+      void buildListView().then((nextView) => {
+        setView(nextView);
+      });
     },
     [buildListView],
   );
@@ -248,11 +247,7 @@ export function WalletsList() {
   );
 
   React.useEffect(() => {
-    setMaxConcurrency(cpuThreads);
-  }, [cpuThreads]);
-
-  React.useEffect(() => {
-    void setHttpBaseUrl(daemonAddress);
+    setHttpBaseUrl(daemonAddress);
   }, [daemonAddress]);
 
   React.useEffect(() => {
@@ -262,9 +257,12 @@ export function WalletsList() {
       if (cancelled) {
         return;
       }
-      setView((current) =>
-        current.type === "list" ? { type: "list", walletNames } : current,
-      );
+      setView((current) => {
+        if (current.type === "loading-list" || current.type === "list") {
+          return { type: "list", walletNames };
+        }
+        return current;
+      });
       const walletNameFromHash = getWalletNameFromHash();
       if (walletNameFromHash) {
         if (!walletNames.includes(walletNameFromHash)) {
@@ -331,6 +329,22 @@ export function WalletsList() {
         isStartupAutoOpen={view.isStartupAutoOpen}
         onDone={handleOpenDone}
       />
+    );
+  } else if (view.type === "loading-list") {
+    return (
+      <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
+        <Header>Amethyst XMR Wallet</Header>
+        <SectionPanel className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="text-xs tracking-[0.14em] uppercase text-white/45">
+              Loading wallets
+            </div>
+            <div className="mt-auto">
+              <ProgressBar state="loading" text="Reading wallet list..." />
+            </div>
+          </div>
+        </SectionPanel>
+      </div>
     );
   } else if (view.type === "list") {
     return (
@@ -448,10 +462,10 @@ async function closeWallet(wallet: MoneroWasmWallet): Promise<void> {
   }
 }
 
-function createWalletUsingCurrentOptions(): MoneroWasmWallet {
+async function createWalletUsingCurrentOptions(): Promise<MoneroWasmWallet> {
   const wallet = createWallet(options.getValue("networkType"));
   if (options.getValue("allowMismatchedDaemonVersion")) {
-    void wallet.allow_mismatched_daemon_version(true);
+    await wallet.allow_mismatched_daemon_version(true);
   }
   return wallet;
 }
@@ -460,10 +474,10 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
   const tempWalletName = `${TEMP_DAEMON_TEST_WALLET_PREFIX}-${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 8)}`;
-  await setHttpBaseUrl(daemonAddress);
+  setHttpBaseUrl(daemonAddress);
   try {
     await withFsLock(async () => {
-      const tempWallet = createWalletUsingCurrentOptions();
+      const tempWallet = await createWalletUsingCurrentOptions();
       try {
         await tempWallet.init();
         const secret32 = crypto.getRandomValues(new Uint8Array(32));
@@ -475,7 +489,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
       }
     });
   } finally {
-    await setHttpBaseUrl(options.getValue("daemonAddress"));
+    setHttpBaseUrl(options.getValue("daemonAddress"));
   }
 }
 
@@ -484,7 +498,7 @@ async function getBlockchainHeightByDateUsingTempWallet(
   month: number,
   day: number,
 ): Promise<bigint> {
-  const tempWallet = createWalletUsingCurrentOptions();
+  const tempWallet = await createWalletUsingCurrentOptions();
   try {
     await tempWallet.init();
     return await tempWallet.get_blockchain_height_by_date(year, month, day);
@@ -678,7 +692,7 @@ function RestoreView({
         setStartingHeight(restoreHeight.toString());
       }
 
-      wallet = createWalletUsingCurrentOptions();
+      wallet = await createWalletUsingCurrentOptions();
       await wallet.init();
       await withFsLock(async () => {
         if (!wallet) {
@@ -810,7 +824,7 @@ function RestoreView({
   };
 
   const startingHeightBlock = (
-    <FormRow className="!mb-0">
+    <FormRow className="mb-0!">
       <Label>Starting height</Label>
       <div className="flex flex-col gap-2 sm:flex-row">
         <Input
@@ -887,7 +901,7 @@ function RestoreView({
                 label: "Cake 16 words",
                 content: (
                   <div className={restoreTabContentClass}>
-                    <FormRow className="!mb-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+                    <FormRow className="mb-0! lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
                       <Label>Seed phrase</Label>
                       <TextArea
                         rows={3}
@@ -1069,7 +1083,7 @@ function CreateNewWalletView({
       }
 
       const seed = await withFsLock(async () => {
-        wallet = createWalletUsingCurrentOptions();
+        wallet = await createWalletUsingCurrentOptions();
         await wallet.init();
 
         const generatedSecret32 = await wallet.generate(
@@ -1330,7 +1344,7 @@ function OpenWalletView({
         if (isUnmountedRef.current) {
           return;
         }
-        wallet = createWalletUsingCurrentOptions();
+        wallet = await createWalletUsingCurrentOptions();
         await wallet.init();
         if (isUnmountedRef.current) {
           await closeWallet(wallet);
@@ -1498,16 +1512,6 @@ function OpenWalletView({
 function OptionsView({ onBack }: { onBack: () => void }) {
   const alert = useAlert();
   const loadLastWallet = options.getValue("loadLastWallet");
-  const cpuThreads = options.getValue("cpuThreads");
-  const [cpuThreadsInput, setCpuThreadsInput] = React.useState(() =>
-    String(cpuThreads),
-  );
-  const recommendedCpuThreads = getRecommendedMaxConcurrency();
-  const detectedCpuThreads =
-    typeof navigator !== "undefined" &&
-    typeof navigator.hardwareConcurrency === "number"
-      ? navigator.hardwareConcurrency
-      : null;
   const networkType = options.getValue("networkType");
   const [networkTypeSelectValue, setNetworkTypeSelectValue] =
     React.useState(() => getNetworkTypeSelectValue(networkType));
@@ -1538,9 +1542,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     React.useState("Monero unknown");
 
   const refresh = React.useState(0)[1];
-  React.useEffect(() => {
-    setCpuThreadsInput(String(cpuThreads));
-  }, [cpuThreads]);
   React.useEffect(() => {
     setDaemonSelectValue(getDaemonSelectValue(daemonAddress));
   }, [daemonAddress]);
@@ -1585,56 +1586,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
             label="Load last wallet on startup"
             description="Automatically open the previous wallet after app start."
           />
-
-          <FormRow>
-            <Label>CPU threads</Label>
-            <InputWithAction
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={cpuThreadsInput}
-              actionLabel="Set recommended"
-              onAction={async () => {
-                const next = recommendedCpuThreads;
-                options.setValue("cpuThreads", next);
-                setMaxConcurrency(next);
-                setCpuThreadsInput(String(next));
-                refresh((x) => x + 1);
-                await alert(`CPU threads set to recommended value: ${next}`);
-              }}
-              onChange={(e) => {
-                const raw = e.target.value.trim();
-                if (!/^\d*$/.test(raw)) {
-                  return;
-                }
-                setCpuThreadsInput(raw);
-                if (raw === "") {
-                  return;
-                }
-                const parsed = Number(raw);
-                if (!Number.isFinite(parsed) || parsed < 1) {
-                  return;
-                }
-                const clamped = Math.min(
-                  getMaxConcurrency(),
-                  Math.max(1, Math.trunc(parsed)),
-                );
-                options.setValue("cpuThreads", clamped);
-                setMaxConcurrency(clamped);
-                refresh((x) => x + 1);
-              }}
-              onBlur={() => {
-                if (cpuThreadsInput === "") {
-                  setCpuThreadsInput(String(options.getValue("cpuThreads")));
-                }
-              }}
-            />
-            <div className="mt-1 text-[11px] text-white/50">
-              {detectedCpuThreads !== null
-                ? `Detected CPU cores: ${detectedCpuThreads}. Recommended: ${recommendedCpuThreads}.`
-                : `Recommended: ${recommendedCpuThreads}.`}
-            </div>
-          </FormRow>
 
           <FormRow>
             <Label>Network type</Label>
@@ -1710,7 +1661,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
             <div className="mt-2 flex justify-end">
               <Button
                 type="button"
-                className={`!flex-none !px-5 !py-2 text-xs ${
+                className={`flex-none! px-5! py-2! text-xs ${
                   daemonTestStatus === "ok"
                     ? "text-green-300 hover:text-green-200"
                     : daemonTestStatus === "failed"
@@ -2039,7 +1990,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                   </div>
                   <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-nowrap sm:gap-2">
                     <Button
-                      className="!flex-none whitespace-nowrap sm:shrink-0"
+                      className="flex-none! whitespace-nowrap sm:shrink-0"
                       variant="soft"
                       onClick={() => {
                         setRemoveState({ type: "confirm", walletName });
@@ -2048,7 +1999,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                       🗑 Remove
                     </Button>
                     <Button
-                      className="!flex-none whitespace-nowrap sm:shrink-0"
+                      className="flex-none! whitespace-nowrap sm:shrink-0"
                       variant="soft"
                       onClick={() => {
                         setRenameState({
@@ -2061,7 +2012,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
                       ✎ Rename
                     </Button>
                     <Button
-                      className="!flex-none whitespace-nowrap sm:shrink-0"
+                      className="flex-none! whitespace-nowrap sm:shrink-0"
                       variant="soft"
                       onClick={async () => {
                         await doExportWallet(walletName);
