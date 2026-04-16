@@ -49,6 +49,8 @@ const api = wrap<MoneroWasmWalletWorkerApi>(worker);
 
 let operationChain = Promise.resolve();
 
+/** Serialize every Comlink RPC to the wallet worker (matches `enqueue` in
+ * `monero-wasm-wallet.worker.ts`, which serializes sync WASM on the worker). */
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
   const run = operationChain.then(task, task);
   // Keep the internal queue tail always fulfilled: callers await `run` and still

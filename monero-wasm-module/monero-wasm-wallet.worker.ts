@@ -62,7 +62,11 @@ globalThis.globalHttpConfig = {
 
 let operationChain = Promise.resolve();
 
-function runExclusive<T>(task: () => T | Promise<T>): Promise<T> {
+/** Same serial-queue idea as `enqueue` in `monero-wasm-wallet-async.ts`.
+ * Comlink `expose` does not hold the message port until an async handler finishes,
+ * so concurrent inbound messages could overlap; our main thread awaits each RPC,
+ * but this queue still serializes sync WASM + worker globals as a safety net. */
+function enqueue<T>(task: () => T | Promise<T>): Promise<T> {
   const run = operationChain.then(task, task);
   // Keep the internal queue tail always fulfilled: callers await `run` and still
   // see rejections there, but we must not leave `operationChain` rejected or later
@@ -188,15 +192,15 @@ function wrapHandleResult(method: string, result: unknown, walletId: number) {
 
 const api = {
   async initModule() {
-    await runExclusive(() => syncApi.initModule());
+    await enqueue(() => syncApi.initModule());
   },
 
   async moduleCall(method: string, args: unknown[]) {
-    return runExclusive(async () => invokeMethod(syncApi, method, args));
+    return enqueue(async () => invokeMethod(syncApi, method, args));
   },
 
   setHttpBaseUrl(baseUrl: string) {
-    return runExclusive(() => {
+    return enqueue(() => {
       httpBaseUrl = baseUrl;
     });
   },
@@ -212,13 +216,13 @@ const api = {
         ) => void)
       | null,
   ) {
-    return runExclusive(() => {
+    return enqueue(() => {
       onFetchCallback = callback;
     });
   },
 
   async createWallet(networkType: NetworkType = syncApi.NetworkTypes.MAINNET) {
-    return runExclusive(async () => {
+    return enqueue(async () => {
       await syncApi.initModule();
       const wallet = syncApi.createWallet(networkType);
       const id = nextWalletId++;
@@ -228,7 +232,7 @@ const api = {
   },
 
   async deleteWallet(walletId: number) {
-    return runExclusive(() => {
+    return enqueue(() => {
       const wallet = getWallet(walletId);
       wallet.delete();
       wallets.delete(walletId);
@@ -243,7 +247,7 @@ const api = {
   },
 
   async walletCall(walletId: number, method: string, args: unknown[]) {
-    return runExclusive(async () => {
+    return enqueue(async () => {
       const wallet = getWallet(walletId);
       const normalizedArgs = args.map((arg) => unwrapHandleArg(method, arg));
       const result = await invokeMethod(wallet, method, normalizedArgs);
@@ -264,7 +268,7 @@ const api = {
     walletId: number,
     callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) {
-    return runExclusive(() => {
+    return enqueue(() => {
       if (callback) {
         newBlockCallbacks.set(walletId, callback);
       } else {
@@ -275,7 +279,7 @@ const api = {
   },
 
   async deleteHandle(handle: WorkerHandleRef) {
-    return runExclusive(() => {
+    return enqueue(() => {
       deleteHandle(handle);
     });
   },
