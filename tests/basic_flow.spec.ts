@@ -31,6 +31,17 @@ test("basic flow", async ({ page, context }) => {
   await test.step("Restore wallet from seed", async () => {
     await wallet1Initial.goto();
     await wallet1Initial.waitUntilLoaded();
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          crossOriginIsolated: globalThis.crossOriginIsolated,
+          hasSharedArrayBuffer: "SharedArrayBuffer" in globalThis,
+        })),
+      )
+      .toEqual({
+        crossOriginIsolated: false,
+        hasSharedArrayBuffer: false,
+      });
     await wallet1Initial.openRestoreWallet();
     wallet1 = await wallet1Initial.restoreWallet({
       walletName: wallet1Name,

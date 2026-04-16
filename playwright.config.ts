@@ -39,7 +39,7 @@ export default defineConfig({
   globalSetup: "./tests/global.setup.ts",
   globalTeardown: "./tests/global.teardown.ts",
   webServer: {
-    command: `npm run dev -- --host ${APP_HOST} --port ${APP_PORT} --strictPort`,
+    command: `npm run build && npm run preview -- --host ${APP_HOST} --port ${APP_PORT} --strictPort`,
     url: APP_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

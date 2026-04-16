@@ -9,18 +9,17 @@
 #include "wallet/api/wallet2_api.h"
 #include "version.h"
 #include "mnemonics/electrum-words.h"
-#include <thread>
 #include "memwipe.h"
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
-#include "emscripten/proxying.h"
 
 #include "http.hpp"
 
 #include <emscripten/val.h>
 #include <optional>
 #include <cstdint>
+#include <vector>
 
 #include "multisig/multisig.h"
 #include "multisig/multisig_account.h"
@@ -39,20 +38,16 @@ static_assert(std::is_same_v<WalletPriorityBacking, unsigned int>,
 class MoneroWasmWallet : public tools::i_wallet2_callback
 {
 public:
+    struct NewBlockEvent
+    {
+        uint64_t height;
+        uint64_t timestamp;
+    };
+
     // Full wallet callbacks
     void on_new_block(uint64_t height, const cryptonote::block &block) override
     {
-        auto timestamp = block.timestamp;
-        mainThreadQueue.proxyAsync(
-            mainThread,
-            [this, height, timestamp]()
-            {
-                if (m_on_new_block_callback.isNull() || m_on_new_block_callback.isUndefined())
-                {
-                    return;
-                }
-                m_on_new_block_callback(height, timestamp);
-            });
+        m_new_block_events.push_back(NewBlockEvent{height, block.timestamp});
     }
     /*
     virtual void on_reorg(uint64_t height, uint64_t blocks_detached, size_t transfers_detached) {}
@@ -79,18 +74,11 @@ public:
               true,                                                           // unattended
               std::make_unique<js_client_factory>())                          // http_client_factory
     {
-        // TODO: Start the worker thread
-
         std::cout << "Wallet created" << std::endl;
         m_wallet.callback(this);
-
-        pthread_create(&walletThread, NULL, [](void *) -> void *
-                       { emscripten_exit_with_live_runtime(); }, NULL);
     }
     ~MoneroWasmWallet()
     {
-        pthread_cancel(walletThread);
-        // pthread_join(walletThread, NULL);
         m_wallet.stop();
         std::cout << "Wallet destroyed" << std::endl;
     }
@@ -437,21 +425,36 @@ public:
 
     auto get_wallet_addresses(uint32_t accountId)
     {
-        return promise([this, accountId]()
-                       {
-                           auto result = std::vector<WalletAddress>{};
-                           auto count = m_wallet.get_num_subaddresses(accountId);
-                           result.reserve(count);
-                           for (uint32_t indexMinor = 0; indexMinor < count; ++indexMinor)
-                           {
-                               auto subaddr_index = cryptonote::subaddress_index{accountId, indexMinor};
-                               result.push_back(WalletAddress{
-                                   m_wallet.get_subaddress_as_str(subaddr_index),
-                                   m_wallet.get_subaddress_label(subaddr_index),
-                                   indexMinor,
-                               });
-                           }
-                           return result; });
+        return promise(
+            [this, accountId]()
+            {
+                auto result = std::vector<WalletAddress>{};
+                auto count = m_wallet.get_num_subaddresses(accountId);
+                result.reserve(count);
+                for (uint32_t indexMinor = 0; indexMinor < count; ++indexMinor)
+                {
+                    auto subaddr_index = cryptonote::subaddress_index{accountId, indexMinor};
+                    result.push_back(WalletAddress{
+                        m_wallet.get_subaddress_as_str(subaddr_index),
+                        m_wallet.get_subaddress_label(subaddr_index),
+                        indexMinor,
+                    });
+                }
+                return result;
+            },
+            [](const std::vector<WalletAddress> &addresses) -> emscripten::val
+            {
+                auto result = emscripten::val::array();
+                for (size_t i = 0; i < addresses.size(); ++i)
+                {
+                    auto item = emscripten::val::object();
+                    item.set("address", addresses[i].address);
+                    item.set("label", addresses[i].label);
+                    item.set("indexMinor", addresses[i].indexMinor);
+                    result.set(static_cast<uint32_t>(i), item);
+                }
+                return result;
+            });
     }
     auto add_subaddress(uint32_t index_major, const std::string &label)
     {
@@ -540,18 +543,52 @@ public:
         uint64_t unspent;
     };
 
-    auto refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
+    static uint64_t js_number_to_uint64(double value, const char *name)
     {
-        return promise([this, trusted_daemon, start_height, check_pool, try_incremental, max_blocks]()
-                       {
-                           auto r = RefreshResult{};
-                           m_wallet.refresh(trusted_daemon, start_height, r.blocksFetched, r.receivedMoney, check_pool, try_incremental, max_blocks);
-                           return r; });
+        if (!std::isfinite(value) ||
+            value < 0 ||
+            value != std::floor(value) ||
+            value > static_cast<double>(std::numeric_limits<uint64_t>::max()))
+        {
+            throw std::runtime_error(std::string(name) + " must be a non-negative integer");
+        }
+        return static_cast<uint64_t>(value);
+    }
+
+    RefreshResult refresh(bool trusted_daemon, double start_height, bool check_pool = true, bool try_incremental = true, double max_blocks = static_cast<double>(std::numeric_limits<uint64_t>::max()))
+    {
+        auto r = RefreshResult{};
+        m_wallet.refresh(
+            trusted_daemon,
+            js_number_to_uint64(start_height, "startHeight"),
+            r.blocksFetched,
+            r.receivedMoney,
+            check_pool,
+            try_incremental,
+            js_number_to_uint64(max_blocks, "maxBlocks"));
+        return r;
     }
 
     void set_on_new_block_callback(emscripten::val callback)
     {
-        m_on_new_block_callback = callback;
+        // Block events are drained by the TypeScript worker after refresh calls.
+        // Calling JS from a wallet callback while Asyncify is unwinding can corrupt
+        // BigInt-returning wasm imports.
+    }
+
+    emscripten::val drain_new_block_events()
+    {
+        auto out = emscripten::val::array();
+        for (size_t i = 0; i < m_new_block_events.size(); ++i)
+        {
+            const auto &event = m_new_block_events[i];
+            auto item = emscripten::val::object();
+            item.set("height", event.height);
+            item.set("timestamp", event.timestamp);
+            out.set(i, item);
+        }
+        m_new_block_events.clear();
+        return out;
     }
 
     struct PaymentDetails
@@ -571,11 +608,72 @@ public:
         std::string note;
     };
 
+    static emscripten::val payment_destinations_to_js_array(const std::string &destinations_str)
+    {
+        auto result = emscripten::val::array();
+        size_t result_index = 0;
+        size_t start = 0;
+        while (start < destinations_str.size())
+        {
+            const size_t end = destinations_str.find(';', start);
+            const std::string part = destinations_str.substr(
+                start,
+                end == std::string::npos ? std::string::npos : end - start);
+            const size_t colon = part.find(':');
+            if (colon != std::string::npos)
+            {
+                auto item = emscripten::val::object();
+                item.set("address", part.substr(0, colon));
+                item.set("amount", std::stoull(part.substr(colon + 1)));
+                result.set(static_cast<uint32_t>(result_index++), item);
+            }
+            if (end == std::string::npos)
+            {
+                break;
+            }
+            start = end + 1;
+        }
+        return result;
+    }
+
+    static emscripten::val payment_to_js_object(const PaymentDetails &payment)
+    {
+        auto item = emscripten::val::object();
+        item.set("payment_id", payment.payment_id);
+        item.set("type", payment.type);
+        item.set("is_unlocked", payment.is_unlocked);
+        item.set("block_height", payment.block_height);
+        item.set("unlock_time", payment.unlock_time);
+        item.set("timestamp", payment.timestamp);
+        item.set("amount", payment.amount);
+        item.set("tx_hash", payment.tx_hash);
+        item.set("fee", payment.fee);
+        item.set("destinationsStr", payment.destinationsStr);
+        item.set("destinations", payment_destinations_to_js_array(payment.destinationsStr));
+        item.set("index_major", payment.index_major);
+        item.set("index_minor", payment.index_minor);
+        item.set("note", payment.note);
+        return item;
+    }
+
+    static emscripten::val payments_to_js_array(const std::vector<PaymentDetails> &payments)
+    {
+        auto result = emscripten::val::array();
+        for (size_t i = 0; i < payments.size(); ++i)
+        {
+            result.set(static_cast<uint32_t>(i), payment_to_js_object(payments[i]));
+        }
+        return result;
+    }
+
     // TODO: Add support for sub-addresses filtering
     auto get_payments(uint64_t min_height, uint64_t max_height)
     {
-        return promise([this, min_height, max_height]()
-                       { return get_payments_impl(min_height, max_height); });
+        return promise(
+            [this, min_height, max_height]()
+            { return get_payments_impl(min_height, max_height); },
+            [](const std::vector<PaymentDetails> &payments) -> emscripten::val
+            { return payments_to_js_array(payments); });
     }
 
     std::vector<PaymentDetails> get_payments_impl(uint64_t min_height, uint64_t max_height)
@@ -715,8 +813,11 @@ public:
 
     auto get_payments_mempool()
     {
-        return promise([this]()
-                       { return get_payments_mempool_impl(); });
+        return promise(
+            [this]()
+            { return get_payments_mempool_impl(); },
+            [](const std::vector<PaymentDetails> &payments) -> emscripten::val
+            { return payments_to_js_array(payments); });
     }
 
     auto get_transfers()
@@ -1632,39 +1733,18 @@ private:
         static_assert(!std::is_void_v<ResultT>, "promise() requires non-void return type");
 
         auto p = makePromise();
-        auto result = std::make_shared<std::optional<ResultT>>();
-        auto error = std::make_shared<std::optional<std::string>>();
-
-        walletQueue.proxyCallback(
-            walletThread,
-            [work = std::forward<WorkFn>(work), result, error]() mutable
-            {
-                try
-                {
-                    result->emplace(work());
-                }
-                catch (const std::exception &e)
-                {
-                    *error = e.what();
-                }
-                catch (...)
-                {
-                    *error = "Unknown error";
-                }
-            },
-            [p, result, error, pack_to_js = std::forward<PackFn>(pack_to_js)]() mutable
-            {
-                if (error->has_value())
-                {
-                    p.reject(jsError(error->value()));
-                    return;
-                }
-                p.resolve(pack_to_js(result->value()));
-            },
-            [p]()
-            {
-                p.reject(jsError("Thread error"));
-            });
+        try
+        {
+            p.resolve(pack_to_js(work()));
+        }
+        catch (const std::exception &e)
+        {
+            p.reject(jsError(e.what()));
+        }
+        catch (...)
+        {
+            p.reject(jsError("Unknown error"));
+        }
 
         return p.promise;
     }
@@ -1683,14 +1763,7 @@ private:
 
     tools::wallet2 m_wallet;
 
-    pthread_t walletThread;
-    emscripten::ProxyingQueue walletQueue;
-
-    // Assuming that constructor is called in the main thread
-    pthread_t mainThread = pthread_self();
-    emscripten::ProxyingQueue mainThreadQueue;
-
-    emscripten::val m_on_new_block_callback = emscripten::val::null();
+    std::vector<NewBlockEvent> m_new_block_events;
 };
 
 EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
@@ -1720,6 +1793,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("add_subaddress", &MoneroWasmWallet::add_subaddress)
         .function("is_synced", &MoneroWasmWallet::is_synced)
         .function("set_on_new_block_callback", &MoneroWasmWallet::set_on_new_block_callback)
+        .function("drain_new_block_events", &MoneroWasmWallet::drain_new_block_events)
         .function("refresh", &MoneroWasmWallet::refresh)
         .function("load", &MoneroWasmWallet::load)
         .function("get_transfers", &MoneroWasmWallet::get_transfers)
@@ -1846,7 +1920,7 @@ int main()
 {
     std::cout << "Initialing module..." << std::endl;
 
-    tools::set_max_concurrency(2);
+    tools::set_max_concurrency(1);
 
     // mlog_set_categories("*:TRACE");
 

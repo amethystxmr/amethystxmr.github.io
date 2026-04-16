@@ -16,7 +16,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(polyseed)
 
 set(monero_wasm_wallet_sources
-    main.cpp
+    monero-wasm-wallet.cpp
     polyseed.cpp
 )
 

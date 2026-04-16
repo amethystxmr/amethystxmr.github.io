@@ -1,4 +1,3 @@
-import crossOriginIsolation from "vite-plugin-cross-origin-isolation";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { execSync } from "node:child_process";
@@ -40,7 +39,7 @@ export default {
     outDir: "../built-web",
     target: "esnext",
   },
-  plugins: [react(), tailwindcss(), crossOriginIsolation(), emitGitHashFile()],
+  plugins: [react(), tailwindcss(), emitGitHashFile()],
   define: {
     "import.meta.env.VITE_BUILD_TIMESTAMP": JSON.stringify(buildTimestamp),
     "import.meta.env.VITE_GIT_HASH": JSON.stringify(gitHashShort),

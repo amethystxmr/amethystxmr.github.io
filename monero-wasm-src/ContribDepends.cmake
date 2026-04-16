@@ -151,8 +151,9 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 set(BOOST_INSTALL_DIR "${CMAKE_SOURCE_DIR}/${BUILD_DEPENDS_FOLDER}/boost-install")
 file(MAKE_DIRECTORY "${BOOST_INSTALL_DIR}")
 if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
-   NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_locale.a" OR
-   NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_regex.a")
+   NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_regex.a" OR
+   NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_thread.a" OR
+   NOT EXISTS "${BOOST_INSTALL_DIR}/.emscripten-thread-compat")
     message(STATUS " =========== Building Boost...")
     set(BOOST_SRC_DIR "${BOOST_EXTRACT_DIR}/${BOOST_WITH_VERSION}")
 
@@ -170,7 +171,7 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
 
     if(EMSCRIPTEN)
         file(WRITE "${BOOST_SRC_DIR}/project-config.jam"
-            "using clang : emscripten : ${CMAKE_CXX_COMPILER} ;
+            "using clang : emscripten : ${CMAKE_CXX_COMPILER} -s USE_PTHREADS=0 ;
     ")
     endif()
 
@@ -194,18 +195,17 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
         COMMAND bash -lc
         "./b2 -j${BOOST_B2_JOBS} \
         toolset=${BOOST_B2_TOOLSET} \
+        threading=single \
         link=static runtime-link=static \
-        cxxflags='-O3' \
+        cxxflags='-O3 -no-pthread' \
         linkflags='-O3' \
         cxxstd=${BOOST_B2_CXXSTD} \
         --with-program_options \
         --with-filesystem \
         --with-chrono \
         --with-system \
-        --with-thread \
         --with-date_time \
         --with-serialization \
-        --with-locale \
         --with-regex \
         --with-atomic \
         --prefix='${BOOST_INSTALL_DIR}' \
@@ -215,6 +215,32 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
     )
     if(NOT BOOST_B2_RC EQUAL 0)
         message(FATAL_ERROR "Boost b2 build/install failed with code ${BOOST_B2_RC}")
+    endif()
+
+    if(EMSCRIPTEN)
+        # Boost 1.69 does not build libboost_thread.a with threading=single,
+        # but Monero still references Boost.Thread ABI from mutex/future headers.
+        # Build only the needed compatibility libraries with Emscripten pthreads disabled.
+        execute_process(
+            COMMAND bash -lc
+            "./b2 -j${BOOST_B2_JOBS} \
+            toolset=${BOOST_B2_TOOLSET} \
+            threading=multi \
+            link=static runtime-link=static \
+            cxxflags='-O3 -no-pthread -DBOOST_HAS_THREADS -DBOOST_HAS_PTHREADS -D_REENTRANT' \
+            linkflags='-O3' \
+            cxxstd=${BOOST_B2_CXXSTD} \
+            --with-thread \
+            --with-regex \
+            --prefix='${BOOST_INSTALL_DIR}' \
+            install"
+            WORKING_DIRECTORY "${BOOST_SRC_DIR}"
+            RESULT_VARIABLE BOOST_THREAD_B2_RC
+        )
+        if(NOT BOOST_THREAD_B2_RC EQUAL 0)
+            message(FATAL_ERROR "Boost.Thread b2 build/install failed with code ${BOOST_THREAD_B2_RC}")
+        endif()
+        file(WRITE "${BOOST_INSTALL_DIR}/.emscripten-thread-compat" "1\n")
     endif()
 
 else()
@@ -230,7 +256,13 @@ message(STATUS "BOOST_ROOT='${BOOST_ROOT}'")
 message(STATUS "Boost_INCLUDE_DIR='${Boost_INCLUDE_DIR}'")
 message(STATUS "Boost_LIBRARY_DIR='${Boost_LIBRARY_DIR}'")
 
-find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono serialization program_options locale regex)
+if(EMSCRIPTEN)
+    find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono serialization program_options regex)
+    set(Boost_LOCALE_LIBRARY "" CACHE FILEPATH "" FORCE)
+    set(Boost_LOCALE_LIBRARY_RELEASE "" CACHE FILEPATH "" FORCE)
+else()
+    find_package(Boost REQUIRED COMPONENTS filesystem thread date_time chrono serialization program_options locale regex)
+endif()
 
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 

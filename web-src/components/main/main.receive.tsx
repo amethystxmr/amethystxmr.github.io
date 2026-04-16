@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   PaymentDetailsTransformed,
   WalletAddress,
-} from "../../../monero-wasm-module/walletApi";
+} from "../../../monero-wasm-module/monero-wasm-wallet-async";
 import {
   balanceToString,
   copyToClipboard,

@@ -2,7 +2,7 @@ import {
   getRecommendedMaxConcurrency,
   NetworkTypes,
   type NetworkType as NetworkTypeValue,
-} from "../../monero-wasm-module/walletApi";
+} from "../../monero-wasm-module/monero-wasm-wallet-async";
 
 type OptionSchema = {
   loadLastWallet: boolean;

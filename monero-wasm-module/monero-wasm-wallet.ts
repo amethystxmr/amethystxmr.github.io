@@ -53,15 +53,16 @@ export declare class MoneroWasmWallet {
   load(fileName: string, password: string): Promise<void>;
   refresh(
     isTrustedWallet: boolean,
-    startHeight: bigint,
+    startHeight: number,
     checkPool: boolean,
     tryIncremental: boolean,
-    maxBlocks: bigint,
+    maxBlocks: number,
   ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
   rewrite(fileName: string, password: string): Promise<void>;
   set_on_new_block_callback: (
     callback: ((height: bigint, timestamp: bigint) => void) | null,
   ) => void;
+  drain_new_block_events(): { height: bigint; timestamp: bigint }[];
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
@@ -97,8 +98,8 @@ export declare class MoneroWasmWallet {
   get_payments(
     minHeight: bigint,
     maxHeight: bigint,
-  ): Promise<EmbindVector<PaymentDetails>>;
-  get_payments_mempool(): Promise<EmbindVector<PaymentDetails>>;
+  ): Promise<PaymentDetails[]>;
+  get_payments_mempool(): Promise<PaymentDetails[]>;
   get_num_subaddresses(index_major: number): Promise<number>;
   get_subaddress_as_str(
     index_major: number,
@@ -108,7 +109,7 @@ export declare class MoneroWasmWallet {
     index_major: number,
     index_minor: number,
   ): Promise<string>;
-  get_wallet_addresses(accountId: number): Promise<EmbindVector<WalletAddress>>;
+  get_wallet_addresses(accountId: number): Promise<WalletAddress[]>;
   get_keys(accountIdx: number): Promise<WalletKeys>;
   add_subaddress(index_major: number, label: string): Promise<void>;
   transfer_prepare(
@@ -200,9 +201,15 @@ export interface PaymentDetails {
   fee: bigint;
   /** <addr>:<amount>;.... */
   destinationsStr: string;
+  destinations: PaymentDestination[];
   index_major: number;
   index_minor: number;
   note: string;
+}
+
+export interface PaymentDestination {
+  address: string;
+  amount: bigint;
 }
 
 export interface WalletAddress {
@@ -245,7 +252,7 @@ export interface KeyImagesImportResult {
   unspent: bigint;
 }
 
-interface ClassHandle {
+export interface ClassHandle {
   delete(): void;
 }
 export interface EmbindVector<T> extends ClassHandle {
@@ -324,21 +331,23 @@ type HttpFetchState =
   | "timeout"
   | "abort";
 
+export type { HttpFetchState };
+
+export interface GlobalHttpConfig {
+  mapUrl: (url: string) => string;
+  onFetch: (
+    url: string,
+    reqId: string,
+    state: HttpFetchState,
+    progressLoaded: number,
+    progressTotal: number,
+  ) => void;
+}
+
 declare global {
-  interface Window {
-    moneroWalletModule: Module;
-    clearFilesystem: typeof clearFilesystem;
-    globalHttpConfig: {
-      mapUrl: (url: string) => string;
-      onFetch: (
-        url: string,
-        reqId: string,
-        state: HttpFetchState,
-        progressLoaded: number,
-        progressTotal: number,
-      ) => void;
-    };
-  }
+  var moneroWalletModule: Module | undefined;
+  var clearFilesystem: (() => Promise<void>) | undefined;
+  var globalHttpConfig: GlobalHttpConfig;
 }
 
 export async function initModule() {
@@ -347,10 +356,10 @@ export async function initModule() {
   }
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
-  setMaxConcurrency(getRecommendedMaxConcurrency());
-  window.moneroWalletModule = module;
+  setMaxConcurrency(1);
+  globalThis.moneroWalletModule = module;
 
-  window.globalHttpConfig = {
+  globalThis.globalHttpConfig ??= {
     mapUrl: () => {
       throw new Error("mapUrl not set");
     },
@@ -364,26 +373,19 @@ export async function initModule() {
 }
 
 export function getMaxConcurrency() {
-  // Note: it always should be the same as in sPTHREAD_POOL_SIZE
-  return navigator.hardwareConcurrency || 2;
+  return 1;
 }
 
 export function getRecommendedMaxConcurrency() {
-  const cpuCount =
-    typeof navigator !== "undefined" &&
-    typeof navigator.hardwareConcurrency === "number"
-      ? navigator.hardwareConcurrency
-      : 2;
-  return Math.max(1, cpuCount - 1);
+  return 1;
 }
 
-export function setMaxConcurrency(threads: number) {
+export function setMaxConcurrency(_threads: number) {
+  void _threads;
   if (!module) {
     throw new Error("Module not initialized");
   }
-  const sanitized = Number.isFinite(threads) ? Math.trunc(threads) : 1;
-  const clamped = Math.min(getMaxConcurrency(), Math.max(1, sanitized));
-  module.set_max_concurrency(clamped);
+  module.set_max_concurrency(1);
 }
 
 export function decodePolyseed(moneroPolyseed: string) {
@@ -442,9 +444,7 @@ export async function clearFilesystem() {
   await saveFilesystem();
 }
 
-if (typeof window !== "undefined") {
-  window.clearFilesystem = clearFilesystem;
-}
+globalThis.clearFilesystem = clearFilesystem;
 
 export function listWalletNames() {
   return module.FS.readdir(".")
@@ -558,56 +558,4 @@ export function saveWalletFilesData(
 
 export const max64 = (1n << 64n) - 1n;
 
-export interface PaymentDetailsTransformed extends PaymentDetails {
-  destinations: { address: string; amount: bigint }[];
-}
-export function transformPayments(
-  payments: EmbindVector<PaymentDetails>,
-): PaymentDetailsTransformed[] {
-  const result: PaymentDetailsTransformed[] = [];
-  for (let i = 0; i < payments.size(); i++) {
-    const p = payments.get(i);
-    const destinations: PaymentDetailsTransformed["destinations"] = [];
-    if (p.destinationsStr) {
-      for (const part of p.destinationsStr.split(";")) {
-        const [address, amountStr] = part.split(":");
-        destinations.push({ address, amount: BigInt(amountStr) });
-      }
-    }
-    result.push({ ...p, destinations });
-  }
-  payments.delete();
-
-  result.sort((a, b) => {
-    // Pending first
-    if (a.type === "pending" && b.type !== "pending") return -1;
-    if (a.type !== "pending" && b.type === "pending") return 1;
-
-    // If both pending → timestamp DESC
-    if (a.type === "pending") {
-      return Number(b.timestamp - a.timestamp);
-    }
-
-    // Confirmed → block_height DESC
-    if (a.block_height !== b.block_height) {
-      return Number(b.block_height - a.block_height);
-    }
-
-    // Same block → timestamp DESC
-    return Number(b.timestamp - a.timestamp);
-  });
-
-  return result;
-}
-
-export function transformWalletAddresses(
-  addresses: EmbindVector<WalletAddress>,
-): WalletAddress[] {
-  const result: WalletAddress[] = [];
-  for (let i = 0; i < addresses.size(); i++) {
-    result.push(addresses.get(i));
-  }
-  addresses.delete();
-  result.sort((a, b) => a.indexMinor - b.indexMinor);
-  return result;
-}
+export type PaymentDetailsTransformed = PaymentDetails;

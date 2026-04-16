@@ -26,6 +26,23 @@ mkdir -p "$BUILD_DEPENDS_DIR"
 
 export EM_CACHE="$(pwd)/$BUILD_EMCACHE_DIR"
 
+git submodule update --init --recursive --force
+
+(
+  cd monero
+  shopt -s nullglob
+  for patch_file in ../patches/monero/*.patch; do
+    if patch --batch --forward --dry-run -F 3 -p1 -i "${patch_file}" >/dev/null 2>&1; then
+      patch --batch --forward -F 3 -p1 -i "${patch_file}"
+    elif patch --batch --reverse --dry-run -F 3 -p1 -i "${patch_file}" >/dev/null 2>&1; then
+      echo "Patch already applied: ${patch_file}"
+    else
+      echo "Failed to apply patch cleanly: ${patch_file}"
+      exit 1
+    fi
+  done
+)
+
 emcmake cmake -B "$BUILD_WASM_DIR" \
     -DNO_AES=1 \
     -DUNBOUND_INCLUDE_DIR=$(pwd)/unbound-stub \
@@ -34,4 +51,4 @@ emcmake cmake -B "$BUILD_WASM_DIR" \
     -DBUILD_DEPENDS_FOLDER="$BUILD_DEPENDS_DIR" \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
     
-emmake make -C "$BUILD_WASM_DIR" VERBOSE=1
+emmake make -C "$BUILD_WASM_DIR" monero-wasm-wallet VERBOSE=1

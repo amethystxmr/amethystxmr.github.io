@@ -4,14 +4,6 @@ import {
   AlertProvider,
   MultisigDataOverlayProvider,
 } from "./components/ui";
-import {
-  CrossOriginIsolationBootstrapResult,
-  isNativeAppRuntime,
-} from "./startup/crossOriginIsolation";
-
-type AppProps = {
-  crossOriginIsolationBootstrap: Promise<CrossOriginIsolationBootstrapResult>;
-};
 
 type BootState =
   | {
@@ -49,7 +41,7 @@ function BootStatusView({ state }: { state: Exclude<BootState, { type: "ready" }
   );
 }
 
-export function App({ crossOriginIsolationBootstrap }: AppProps) {
+export function App() {
   const [bootState, setBootState] = React.useState<BootState>({
     type: "booting",
     title: "Initializing Monero",
@@ -62,60 +54,13 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
   React.useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const isolationResult = await crossOriginIsolationBootstrap;
-      if (cancelled) {
-        return;
-      }
-
-      const hasSharedArrayBuffer = typeof SharedArrayBuffer !== "undefined";
-      const isNativeApp = isNativeAppRuntime();
-      const canUseThreads =
-        hasSharedArrayBuffer && (window.crossOriginIsolated || isNativeApp);
-
-      if (!canUseThreads) {
-        if (isolationResult.type === "error") {
-          const reasonText =
-            isolationResult.reason === "service-worker-registration-failed" &&
-            isolationResult.cause
-              ? ` ${stringifyError(isolationResult.cause)}`
-              : "";
-          setBootState({
-            type: "error",
-            title: "Monero initialization failed",
-            details: `${isolationResult.message}${reasonText}`,
-          });
-          return;
-        }
-
-        if (isNativeApp && !hasSharedArrayBuffer) {
-          setBootState({
-            type: "error",
-            title: "Monero initialization failed",
-            details:
-              "SharedArrayBuffer is unavailable in this native runtime. Cross-origin isolation and worker threads are required for wallet startup.",
-          });
-          return;
-        }
-
-        const waitingHint =
-          isolationResult.type === "waiting-for-service-worker-control"
-            ? "Waiting for service worker activation. The page should reload automatically."
-            : "Waiting for SharedArrayBuffer support.";
-        setBootState({
-          type: "booting",
-          title: "Initializing Monero",
-          hint: waitingHint,
-        });
-        return;
-      }
-
       setBootState({
         type: "booting",
         title: "Initializing Monero",
         hint: "Loading wallet module...",
       });
       try {
-        const { initModule } = await import("../monero-wasm-module/walletApi");
+        const { initModule } = await import("../monero-wasm-module/monero-wasm-wallet-async");
         await initModule();
         if (cancelled) {
           return;
@@ -147,7 +92,7 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
     return () => {
       cancelled = true;
     };
-  }, [crossOriginIsolationBootstrap]);
+  }, []);
 
   const statusViewState: Exclude<BootState, { type: "ready" }> =
     bootState.type === "ready"

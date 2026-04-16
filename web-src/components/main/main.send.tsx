@@ -34,7 +34,7 @@ import {
   TransferInfoItem,
   type FeePriority as FeePriorityValue,
   MultisigTxSetHandle,
-} from "../../../monero-wasm-module/walletApi";
+} from "../../../monero-wasm-module/monero-wasm-wallet-async";
 
 type SendState =
   | { type: "entering" }
@@ -345,7 +345,7 @@ export function SendTab({
               feePriority,
               null,
             );
-      const transferInfo = wallet.get_transfers_info(txHandle);
+      const transferInfo = await wallet.get_transfers_info(txHandle);
       const multisigStatus = await wallet.get_multisig_status();
       if (isUnmountedRef.current) {
         txHandle?.delete();
@@ -423,7 +423,7 @@ export function SendTab({
       });
       (async () => {
         await withFsLock(async () => {
-          wallet.transfer_commit_tx(txHandle);
+          await wallet.transfer_commit_tx(txHandle);
           await wallet.store();
         });
         if (isUnmountedRef.current) {
@@ -461,7 +461,7 @@ export function SendTab({
             const multisigStatus = await wallet.get_multisig_status();
             const signersNeeded = Math.max(
               multisigStatus.threshold -
-                wallet.get_multisig_tx_signers_count(txHandle, true) -
+                (await wallet.get_multisig_tx_signers_count(txHandle, true)) -
                 1,
               0,
             );
@@ -479,7 +479,7 @@ export function SendTab({
             }
             setState({ type: "entering" });
           } else {
-            const txInfos = wallet.get_multisig_tx_set_info(txHandle);
+            const txInfos = await wallet.get_multisig_tx_set_info(txHandle);
             if (isUnmountedRef.current) {
               return;
             }
@@ -587,18 +587,18 @@ export function SendTab({
     let handle: MultisigTxSetHandle | null = null;
     try {
       handle = await wallet.load_multisig_tx(importData, false);
-      const txInfos = wallet.get_multisig_tx_set_info(handle);
+      const txInfos = await wallet.get_multisig_tx_set_info(handle);
       const multisigStatus = await wallet.get_multisig_status();
       if (isUnmountedRef.current) {
         handle.delete();
         return;
       }
 
-      const signersCountWithoutMe = wallet.get_multisig_tx_signers_count(
+      const signersCountWithoutMe = await wallet.get_multisig_tx_signers_count(
         handle,
         true,
       );
-      const signersCountWithMe = wallet.get_multisig_tx_signers_count(
+      const signersCountWithMe = await wallet.get_multisig_tx_signers_count(
         handle,
         false,
       );

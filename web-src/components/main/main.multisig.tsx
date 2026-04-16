@@ -3,7 +3,7 @@ import {
   MoneroWasmWallet,
   MultisigAccountStatus,
   PaymentDetailsTransformed,
-} from "../../../monero-wasm-module/walletApi";
+} from "../../../monero-wasm-module/monero-wasm-wallet-async";
 import {
   Button,
   ButtonRadioRow,

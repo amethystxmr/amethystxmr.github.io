@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { MONEROD_RPC_URL } from "../constants";
-import { NetworkTypes } from "../../monero-wasm-module/walletApi";
+import { NetworkTypes } from "../../monero-wasm-module/monero-wasm-wallet";
 
 const MAINNET_NETWORK_TYPE = NetworkTypes.MAINNET;
 

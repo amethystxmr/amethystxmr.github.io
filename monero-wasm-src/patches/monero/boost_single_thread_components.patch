@@ -1,0 +1,63 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9b922046e..3f7721b36 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1085,7 +1085,11 @@ if(NOT Boost_FOUND)
+ elseif(Boost_FOUND)
+   message(STATUS "Found Boost Version: ${Boost_VERSION_STRING}")
+ 
+-  set(BOOST_COMPONENTS filesystem thread date_time chrono serialization program_options locale)
++  set(BOOST_COMPONENTS filesystem date_time chrono serialization program_options)
++
++  if(NOT EMSCRIPTEN)
++    list(APPEND BOOST_COMPONENTS thread locale)
++  endif()
+ 
+   # Boost System is header-only since 1.69
+   if (Boost_VERSION_STRING VERSION_LESS 1.69.0)
+diff --git a/external/db_drivers/liblmdb/CMakeLists.txt b/external/db_drivers/liblmdb/CMakeLists.txt
+index 562ebb1eb..754eb2bf1 100644
+--- a/external/db_drivers/liblmdb/CMakeLists.txt
++++ b/external/db_drivers/liblmdb/CMakeLists.txt
+@@ -50,6 +50,10 @@ if(${ARCH_WIDTH} EQUAL 32)
+   target_compile_definitions(lmdb
+     PUBLIC -DMDB_VL32)
+ endif()
++if(EMSCRIPTEN)
++  target_compile_definitions(lmdb
++    PUBLIC -DMDB_USE_ROBUST=0)
++endif()
+ 
+ # GUI/libwallet install target
+ if (BUILD_GUI_DEPS)
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 3335d3c21..ed76e8f7b 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -100,11 +100,11 @@ if(NOT IOS)
+   add_subdirectory(serialization)
+ endif()
+ add_subdirectory(wallet)
+-if(NOT IOS)
++if(NOT IOS AND NOT EMSCRIPTEN)
+   add_subdirectory(p2p)
+ endif()
+ add_subdirectory(cryptonote_protocol)
+-if(NOT IOS)
++if(NOT IOS AND NOT EMSCRIPTEN)
+   add_subdirectory(simplewallet)
+   add_subdirectory(gen_multisig)
+   add_subdirectory(gen_ssl_cert)
+diff --git a/src/wallet/CMakeLists.txt b/src/wallet/CMakeLists.txt
+index 6095f99d5..c56990ba3 100644
+--- a/src/wallet/CMakeLists.txt
++++ b/src/wallet/CMakeLists.txt
+@@ -66,7 +66,7 @@ target_link_libraries(wallet
+   PRIVATE
+     ${EXTRA_LIBRARIES})
+ 
+-if(NOT IOS)
++if(NOT IOS AND NOT EMSCRIPTEN)
+   set(wallet_rpc_sources
+     wallet_rpc_server.cpp)
+ 

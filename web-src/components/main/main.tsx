@@ -5,9 +5,9 @@ import {
   MultisigAccountStatus,
   PaymentDetailsTransformed,
   WalletAddress,
-  transformPayments,
-  transformWalletAddresses,
-} from "../../../monero-wasm-module/walletApi";
+  GlobalHttpConfig,
+  setHttpOnFetch,
+} from "../../../monero-wasm-module/monero-wasm-wallet-async";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
@@ -76,8 +76,7 @@ export function WalletMain({
   );
 
   const updateWalletAddresses = React.useCallback(async () => {
-    const addressesVector = await wallet.get_wallet_addresses(0);
-    const nextAddresses = transformWalletAddresses(addressesVector);
+    const nextAddresses = await wallet.get_wallet_addresses(0);
     setAddresses(nextAddresses);
   }, [wallet]);
 
@@ -138,8 +137,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
 
   React.useEffect(() => {
-    const oldOnFetch = window.globalHttpConfig.onFetch;
-    window.globalHttpConfig.onFetch = (
+    const onFetch: GlobalHttpConfig["onFetch"] = (
       url,
       reqId,
       state,
@@ -162,9 +160,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         state satisfies never;
       }
     };
+    void setHttpOnFetch(onFetch);
 
     return () => {
-      window.globalHttpConfig.onFetch = oldOnFetch;
+      void setHttpOnFetch(null);
     };
   }, [wallet]);
 
@@ -218,11 +217,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         return;
       }
 
-      const payments = await wallet.get_payments(0n, max64);
+      const transformedPayments = await wallet.get_payments(0n, max64);
       if (cancelled) {
         return;
       }
-      const transformedPayments = transformPayments(payments);
 
       const daemonHeight = await wallet.get_daemon_blockchain_height();
       if (cancelled) {
@@ -382,15 +380,13 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           console.info("Wallet is synced, fetching mempool...");
           {
             // On non-initial refresh also get mempool payments
-            const mempoolPayments = await wallet
+            const transformedMempoolPayments = await wallet
               .get_payments_mempool()
               .catch(() => null);
             if (cancelled) {
               return;
             }
-            if (mempoolPayments) {
-              const transformedMempoolPayments =
-                transformPayments(mempoolPayments);
+            if (transformedMempoolPayments) {
               console.log("Mempool payments:", transformedMempoolPayments);
               setMempoolPayments(transformedMempoolPayments);
             } else {

@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <emscripten.h>
 #include <emscripten/bind.h>
-#include "emscripten/proxying.h"
 #include <algorithm>
 #include <sodium/core.h>
 #include <sodium/utils.h>

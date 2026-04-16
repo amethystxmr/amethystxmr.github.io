@@ -21,19 +21,21 @@ if(EMSCRIPTEN)
         message(STATUS "======================== Debug build ========================")
         set(EMSCRIPTEN_DEBUG_OPTIONS -g -O0)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER -gseparate-dwarf -gsource-map)
-        set(EMSCRIPTEN_PTHREAD_POOL_SIZE "-sPTHREAD_POOL_SIZE=4")
     else()
         message(STATUS "======================== Release build ========================")
         set(EMSCRIPTEN_DEBUG_OPTIONS -O3)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER)
-        set(EMSCRIPTEN_PTHREAD_POOL_SIZE "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)")
     endif()
 
 
     # TODO: Check, can we remove NO_DISABLE_EXCEPTION_CATCHING?
     add_compile_options(
         ${EMSCRIPTEN_DEBUG_OPTIONS}
-        -sUSE_PTHREADS=1
+        -sUSE_PTHREADS=0
+        -DBOOST_ASIO_DISABLE_THREADS
+        -DBOOST_HAS_THREADS
+        -DBOOST_HAS_PTHREADS
+        -DBOOST_THREAD_POSIX
         -sNO_DISABLE_EXCEPTION_CATCHING
     )
 
@@ -43,12 +45,15 @@ if(EMSCRIPTEN)
         -sNO_DISABLE_EXCEPTION_CATCHING
         -sINITIAL_MEMORY=800MB
         -sSTACK_SIZE=10MB
-        -sUSE_PTHREADS=1
-        # -sPROXY_TO_PTHREAD=1
+        -sUSE_PTHREADS=0
+        -sENVIRONMENT=web
+        -sASYNCIFY=1
+        -sASYNCIFY_STACK_SIZE=1048576
+        "-sASYNCIFY_IMPORTS=['js_http_request']"
         -sWEBSOCKET_URL=ws://localhost:4444
-        "${EMSCRIPTEN_PTHREAD_POOL_SIZE}"
-        -sPTHREAD_POOL_SIZE_STRICT=1
         -sALLOW_MEMORY_GROWTH=1
+        -sSINGLE_FILE=1
+        -sWASM_BIGINT=1
         -sEXPORT_ES6=1
         -sEXPORT_NAME=MoneroWasmWallet
         -Wl,--error-limit=0
@@ -128,8 +133,33 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/monero/external
 )
 
-add_custom_target(generate_translations_header)
-include_directories(${CMAKE_SOURCE_DIR}/monero/translations/build)
+# Monero's upstream translation generator is not available when cross-compiling
+# (it expects IMPORT_EXECUTABLES from a native build). For the wasm wallet we
+# don't need embedded Qt `.qm` assets, but Monero core still includes
+# `translation_files.h`. Provide a minimal stub header so `i18n.cpp` compiles.
+set(TRANSLATIONS_HEADER "${MONERO_GENERATED_HEADERS_DIR}/translation_files.h")
+file(WRITE "${TRANSLATIONS_HEADER}" [==[
+#ifndef TRANSLATION_FILES_H
+#define TRANSLATION_FILES_H
+
+#include <string>
+
+static const struct embedded_file {
+  const std::string *name;
+  const std::string *data;
+} embedded_files[] = {
+  {NULL, NULL}
+};
+
+static bool find_embedded_file(const std::string &name, std::string &data) {
+  (void)name;
+  (void)data;
+  return false;
+}
+
+#endif /* TRANSLATION_FILES_H */
+]==])
+add_custom_target(generate_translations_header DEPENDS "${TRANSLATIONS_HEADER}")
 
 include(${CMAKE_SOURCE_DIR}/monero/cmake/Version.cmake)
 monero_add_library(version SOURCES ${CMAKE_BINARY_DIR}/version.cpp DEPENDS genversion)
@@ -242,3 +272,18 @@ add_subdirectory(
 add_subdirectory(
     ${CMAKE_SOURCE_DIR}/monero-wasm-wallet
 )
+
+# Ensure ExternalProject-built headers/libraries are available before compiling
+# Monero core objects that include them. Otherwise, parallel builds may try to
+# compile sources before the ExternalProject install step finishes.
+if(EMSCRIPTEN)
+    if(TARGET obj_cncrypto AND TARGET libsodium_ep)
+        add_dependencies(obj_cncrypto libsodium_ep)
+    endif()
+    if(TARGET obj_cryptonote_core AND TARGET zeromq_ep)
+        add_dependencies(obj_cryptonote_core zeromq_ep)
+    endif()
+    if(TARGET obj_epee AND TARGET openssl_ep)
+        add_dependencies(obj_epee openssl_ep)
+    endif()
+endif()

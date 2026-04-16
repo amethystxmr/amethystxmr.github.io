@@ -1,7 +1,97 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
-#include "emscripten/proxying.h"
+#include <cstdint>
 #include <limits>
+
+EM_ASYNC_JS(void, js_http_request, (
+    const char *uri_ptr,
+    int uri_size,
+    const char *method_ptr,
+    int method_size,
+    const char *body_ptr,
+    int body_size,
+    int timeout_ms,
+    int response_code_i32_ptr,
+    int response_mime_type_std_string_ptr,
+    int response_body_std_string_ptr), {
+    const uri = UTF8ToString(uri_ptr, uri_size);
+    const method = UTF8ToString(method_ptr, method_size);
+    const body = method !== 'GET' && body_size > 0
+        ? new Uint8Array(HEAPU8.subarray(body_ptr, body_ptr + body_size))
+        : undefined;
+
+    const config = globalThis.globalHttpConfig || {};
+    const mapUrl = typeof config.mapUrl === 'function' ? config.mapUrl : (url) => url;
+    const onFetch = typeof config.onFetch === 'function' ? config.onFetch : () => {};
+    const finalUrl = mapUrl(uri);
+    const reqId = Math.random().toString(16).slice(2);
+    const resizeStdString = Module._resize_std_string;
+
+    await new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(method, finalUrl, true);
+        xhr.responseType = 'arraybuffer';
+        xhr.timeout = timeout_ms > 0 ? timeout_ms : 0;
+        HEAP32[response_code_i32_ptr >> 2] = 0;
+
+        let isFinished = false;
+        const finishOnce = (state) => {
+            if (isFinished) return;
+            isFinished = true;
+            onFetch(uri, reqId, state, 0, 0);
+            resolve();
+        };
+
+        const clearResponse = () => {
+            HEAP32[response_code_i32_ptr >> 2] = 0;
+            resizeStdString(response_mime_type_std_string_ptr, 0);
+            resizeStdString(response_body_std_string_ptr, 0);
+        };
+
+        xhr.onprogress = (event) => {
+            onFetch(uri, reqId, 'progress', event.loaded, event.total);
+        };
+
+        xhr.onload = () => {
+            HEAP32[response_code_i32_ptr >> 2] = xhr.status;
+
+        const mimeType = xhr.getResponseHeader('Content-Type') || "";
+            const mimeTypeBytes = new TextEncoder().encode(mimeType);
+            const mimeTypePtr = resizeStdString(
+                response_mime_type_std_string_ptr,
+                mimeTypeBytes.length,
+            );
+            HEAPU8.set(mimeTypeBytes, mimeTypePtr);
+
+            const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
+            const responseBodyPtr = resizeStdString(
+                response_body_std_string_ptr,
+                rawBody.length,
+            );
+            HEAPU8.set(rawBody, responseBodyPtr);
+
+            finishOnce('end');
+        };
+
+        xhr.onerror = () => {
+            clearResponse();
+            finishOnce('error');
+        };
+
+        xhr.ontimeout = () => {
+            clearResponse();
+            finishOnce('timeout');
+        };
+
+        xhr.onabort = () => {
+            clearResponse();
+            finishOnce('abort');
+        };
+
+        onFetch(uri, reqId, 'start', 0, 0);
+        xhr.send(body);
+    });
+});
 
 class js_http_client : public epee::net_utils::http::abstract_http_client
 {
@@ -69,151 +159,39 @@ public:
     {
         if (m_is_busy)
         {
-            throw std::runtime_error("js_http_client(%i)::invoke called while another request is in progress");
+            throw std::runtime_error("js_http_client::invoke called while another request is in progress");
         }
         m_is_busy = true;
 
         std::string uri_str(uri.data(), uri.size());
-        printf("js_http_client(%i)::invoke called with uri=%s\n", m_my_id,
-               uri_str.c_str());
+        printf("js_http_client(%i)::invoke called with uri=%s\n", m_my_id, uri_str.c_str());
 
         if (ppresponse_info)
         {
             *ppresponse_info = std::addressof(m_response_info);
         }
 
-        int invoke_result = 0;
         const auto timeout_count = timeout.count();
         const auto timeout_max = static_cast<decltype(timeout_count)>(std::numeric_limits<int>::max());
         const int timeout_ms_for_js =
             timeout_count <= 0 ? 0
                                : (timeout_count > timeout_max ? std::numeric_limits<int>::max()
                                                               : static_cast<int>(timeout_count));
-        m_fetchProxyQueue.proxySyncWithCtx(
-            m_fetchingThreadId,
-            [this, &uri, &method, &body, &additional_params, &invoke_result, timeout_ms_for_js](
-                emscripten::ProxyingQueue::ProxyingCtx ctx)
-            {
-                EM_ASM({
-                    const uri = UTF8ToString($0, $1);
-                    const method = UTF8ToString($2, $3);
-                    const bodyPtr = $4;
-                    const bodySize = $5;
-                    const timeoutMs = $6;
 
-                    const ctxPtr = $7;
-
-                    const response_code_i32_ptr = $8;
-                    const response_mime_type_std_string_ptr = $9;
-                    const response_body_std_string_ptr = $10;
-                    const invoke_result_i32_ptr = $11;
-
-                    /** @type {(p: number, newSize: number) => number} */
-                    const resizeStdString = Module._resize_std_string;
-
-                    const fetchOptions = {};
-                    fetchOptions.method = method;
-
-                    const body = method != 'GET' ? new Uint8Array(HEAPU8.buffer, bodyPtr, bodySize) : undefined;
-
-                    // Firefox do not like when we pass a shared buffer to fetch
-                    const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
-
-                    // TODO: Pass it somehow from the factory
-                    const config = window.globalHttpConfig;
-                    const finalUrl = window.globalHttpConfig.mapUrl(uri);
-
-                    const reqId = Math.random().toString(16).slice(2);
-                    // console.info(`[http ${reqId}] Fetching ${finalUrl} with method ${method} and body size ${bodySize}...`);
-
-                    const xhr = new XMLHttpRequest();
-                    xhr.open(method, finalUrl, true);
-                    xhr.responseType = 'arraybuffer';
-                    xhr.timeout = timeoutMs > 0 ? timeoutMs : 0;
-                    HEAP32[invoke_result_i32_ptr >> 2] = 0;
-
-                    let isFinished = false;
-                    const finishOnce = function(fetchState)
-                    {
-                        if (isFinished)
-                        {
-                            return;
-                        }
-                        isFinished = true;
-                        window.globalHttpConfig.onFetch(uri, reqId, fetchState, 0, 0);
-                        Module._emscripten_ctx_proxy_finish(ctxPtr);
-                    };
-
-                    const failRequest = function(fetchState)
-                    {
-                        HEAP32[response_code_i32_ptr >> 2] = 0;
-                        resizeStdString(response_mime_type_std_string_ptr, 0);
-                        resizeStdString(response_body_std_string_ptr, 0);
-                        finishOnce(fetchState);
-                    };
-
-                    xhr.onprogress = function(event)
-                    {
-                        window.globalHttpConfig.onFetch(uri, reqId, 'progress', event.loaded, event.total);
-                        // console.info(`[http ${reqId}] Progress: ${event.loaded} / ${event.total}`);
-                    };
-                    xhr.onload = function()
-                    {
-                        HEAP32[invoke_result_i32_ptr >> 2] = 1;
-                        HEAP32[response_code_i32_ptr >> 2] = xhr.status;
-
-                        const mimeType = xhr.getResponseHeader('Content-Type') || "";
-                        {
-                            const mimeTypeBytes = new TextEncoder().encode(mimeType);
-                            const mimeTypePtr = resizeStdString(response_mime_type_std_string_ptr, mimeTypeBytes.length);
-                            HEAPU8.set(mimeTypeBytes, mimeTypePtr);
-                        }
-
-                        const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
-                        const bodyPtr = resizeStdString(response_body_std_string_ptr, rawBody.length);
-                        HEAPU8.set(rawBody, bodyPtr);
-
-                        finishOnce('end');
-                    };
-
-                    xhr.onerror = function()
-                    {
-                        failRequest('error');
-                    };
-
-                    xhr.ontimeout = function()
-                    {
-                        failRequest('timeout');
-                    };
-
-                    xhr.onabort = function()
-                    {
-                        failRequest('abort');
-                    };
-
-                    window.globalHttpConfig.onFetch(uri, reqId, 'start', 0, 0);
-
-                    xhr.send(bodyCopyNonShared);
-
-                    //
-                }, // 0-5
-                       uri.data(), uri.size(), method.data(), method.size(), body.data(), body.size(),
-                       // 6
-                       timeout_ms_for_js,
-                       // 7
-                       ctx.ctx,
-                       // 8
-                       std::addressof(m_response_info.m_response_code),
-                       // 9
-                       std::addressof(m_response_info.m_mime_tipe),
-                       // 10
-                       std::addressof(m_response_info.m_body),
-                       // 11
-                       std::addressof(invoke_result));
-            });
+        js_http_request(
+            uri.data(),
+            static_cast<int>(uri.size()),
+            method.data(),
+            static_cast<int>(method.size()),
+            body.data(),
+            static_cast<int>(body.size()),
+            timeout_ms_for_js,
+            static_cast<int>(reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_response_code))),
+            static_cast<int>(reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_mime_tipe))),
+            static_cast<int>(reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_body))));
 
         m_is_busy = false;
-        return invoke_result != 0;
+        return m_response_info.m_response_code != 0;
     }
     bool invoke_get(
         const boost::string_ref uri,
@@ -222,7 +200,6 @@ public:
         const epee::net_utils::http::http_response_info **ppresponse_info = nullptr,
         const epee::net_utils::http::fields_list &additional_params = epee::net_utils::http::fields_list())
     {
-        // TODO: What is CRITICAL_REGION_LOCAL
         return invoke(uri, "GET", body, timeout, ppresponse_info, additional_params);
     }
     bool invoke_post(
@@ -236,13 +213,12 @@ public:
     }
     uint64_t get_bytes_sent() const
     {
-        // TODO: Count bytes
-        printf("my-demo: js_http_client(%i)::get_bytes_sent called\n", m_my_id);
+        printf("js_http_client(%i)::get_bytes_sent called\n", m_my_id);
         return 0;
     }
     uint64_t get_bytes_received() const
     {
-        printf("my-demo: js_http_client(%i)::get_bytes_received called\n", m_my_id);
+        printf("js_http_client(%i)::get_bytes_received called\n", m_my_id);
         return 0;
     }
 
@@ -250,8 +226,6 @@ private:
     bool m_is_connected = false;
     epee::net_utils::http::http_response_info m_response_info;
     bool m_is_busy = false;
-    emscripten::ProxyingQueue m_fetchProxyQueue;
-    pthread_t m_fetchingThreadId = pthread_self();
 
     inline static int m_next_id = 1;
     int m_my_id = m_next_id++;
@@ -273,10 +247,5 @@ extern "C"
     {
         str->resize(new_size);
         return str->data();
-    }
-
-    void EMSCRIPTEN_KEEPALIVE emscripten_ctx_proxy_finish(em_proxying_ctx *ctx)
-    {
-        emscripten_proxy_finish(ctx);
     }
 }
