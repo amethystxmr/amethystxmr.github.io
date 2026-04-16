@@ -1,5 +1,5 @@
 import { expose } from "comlink";
-import * as syncApi from "./monero-wasm-wallet.ts";
+import * as syncApi from "./monero-wasm-wallet";
 import type {
   GlobalHttpConfig,
   HttpFetchState,
@@ -9,7 +9,7 @@ import type {
   PaymentDetails,
   PendingTxHandle as SyncPendingTxHandle,
   WalletAddress,
-} from "./monero-wasm-wallet.ts";
+} from "./monero-wasm-wallet";
 
 type StoredHandle =
   | { type: "pendingTx"; value: SyncPendingTxHandle; walletId: number }

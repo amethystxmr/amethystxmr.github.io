@@ -15,7 +15,7 @@ import {
   type TransferItem,
   type WalletAddress,
   type WalletKeys,
-} from "./monero-wasm-wallet.ts";
+} from "./monero-wasm-wallet";
 import type {
   MoneroWasmWalletWorkerApi,
   WorkerHandleRef,
