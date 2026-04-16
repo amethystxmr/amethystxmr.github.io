@@ -46,7 +46,7 @@ if(EMSCRIPTEN)
         -sINITIAL_MEMORY=800MB
         -sSTACK_SIZE=10MB
         -sUSE_PTHREADS=0
-        -sENVIRONMENT=web
+        -sENVIRONMENT=web,worker
         -sASYNCIFY=1
         -sASYNCIFY_STACK_SIZE=1048576
         "-sASYNCIFY_IMPORTS=['js_http_request']"
