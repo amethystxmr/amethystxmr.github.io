@@ -1510,7 +1510,6 @@ function OpenWalletView({
 }
 
 function OptionsView({ onBack }: { onBack: () => void }) {
-  const alert = useAlert();
   const loadLastWallet = options.getValue("loadLastWallet");
   const networkType = options.getValue("networkType");
   const [networkTypeSelectValue, setNetworkTypeSelectValue] =
