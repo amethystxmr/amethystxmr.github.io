@@ -161,8 +161,8 @@ export async function getMoneroVersionFull() {
   return moduleCall<string>("getMoneroVersionFull", []);
 }
 
-export function setHttpBaseUrl(baseUrl: string): void {
-  void enqueue(() => api.setHttpBaseUrl(baseUrl));
+export async function setHttpBaseUrl(baseUrl: string): Promise<void> {
+  await enqueue(() => api.setHttpBaseUrl(baseUrl));
 }
 
 export function setHttpOnFetch(

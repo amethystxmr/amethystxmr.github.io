@@ -41,8 +41,20 @@ let onFetchCallback:
     ) => void)
   | null = null;
 
+function mapHttpUrl(url: string): string {
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+  const base = httpBaseUrl.replace(/\/+$/, "");
+  if (!base) {
+    return url;
+  }
+  const path = url.startsWith("/") ? url : `/${url}`;
+  return `${base}${path}`;
+}
+
 globalThis.globalHttpConfig = {
-  mapUrl: (url: string) => `${httpBaseUrl}${url}`,
+  mapUrl: mapHttpUrl,
   onFetch: (...args) => {
     onFetchCallback?.(...args);
   },

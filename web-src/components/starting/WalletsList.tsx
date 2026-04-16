@@ -247,7 +247,16 @@ export function WalletsList() {
   );
 
   React.useEffect(() => {
-    setHttpBaseUrl(daemonAddress);
+    let cancelled = false;
+    void (async () => {
+      await setHttpBaseUrl(daemonAddress);
+      if (cancelled) {
+        return;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [daemonAddress]);
 
   React.useEffect(() => {
@@ -474,7 +483,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
   const tempWalletName = `${TEMP_DAEMON_TEST_WALLET_PREFIX}-${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 8)}`;
-  setHttpBaseUrl(daemonAddress);
+  await setHttpBaseUrl(daemonAddress);
   try {
     await withFsLock(async () => {
       const tempWallet = await createWalletUsingCurrentOptions();
@@ -489,7 +498,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
       }
     });
   } finally {
-    setHttpBaseUrl(options.getValue("daemonAddress"));
+    await setHttpBaseUrl(options.getValue("daemonAddress"));
   }
 }
 
