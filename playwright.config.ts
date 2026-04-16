@@ -11,6 +11,10 @@ const IS_HEADED = process.argv.includes("--headed");
 export default defineConfig({
   testDir: "./tests",
   timeout: 600_000,
+  // CI sometimes leaves open handles (monerod child process / worker threads),
+  // which can prevent the Playwright process from exiting even after tests finish.
+  // Force the process to end so the workflow can complete deterministically.
+  forceExit: true,
   expect: {
     timeout: 60_000,
   },
