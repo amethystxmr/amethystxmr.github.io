@@ -19,10 +19,8 @@ import {
   type WalletAddress,
   type WalletKeys,
 } from "./monero-wasm-wallet";
-import type {
-  MoneroWasmWalletWorkerApi,
-  WorkerHandleRef,
-} from "./monero-wasm-wallet.worker";
+import type { MoneroWasmWalletWorkerApi } from "./monero-wasm-wallet.worker";
+import { type WorkerHandleRef, isWorkerHandleRef } from "./monero-wasm-wallet-rpc";
 
 export {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
@@ -227,13 +225,20 @@ function toRemoteArgs(args: unknown[]) {
   return args.map((arg) => toRemoteArg(arg));
 }
 
+function adaptWalletRpcResult(value: unknown): unknown {
+  if (isWorkerHandleRef(value)) {
+    return makeHandle(value as WorkerHandleRef & { type: HandleType });
+  }
+  return value;
+}
+
 function createAsyncMoneroWasmWallet(walletIdPromise: Promise<number>): MoneroWasmWallet {
   const walletId = () => walletIdPromise;
 
-  function walletCall<T>(method: string, args: unknown[]): Promise<T> {
+  function walletCall(method: string, args: unknown[]): Promise<unknown> {
     return enqueue(async () =>
       api.walletCall(await walletId(), method, toRemoteArgs(args)),
-    ) as Promise<T>;
+    ).then(adaptWalletRpcResult);
   }
 
   return new Proxy({} as MoneroWasmWallet, {
@@ -259,20 +264,7 @@ function createAsyncMoneroWasmWallet(walletIdPromise: Promise<number>): MoneroWa
         return undefined;
       }
       const method = prop;
-      return (...args: unknown[]) => {
-        const remoteArgs = toRemoteArgs(args);
-        if (method === "transfer_prepare" || method === "transfer_prepare_sweep_all") {
-          return walletCall<WorkerHandleRef & { type: "pendingTx" }>(method, remoteArgs).then(
-            (ref) => makeHandle(ref),
-          );
-        }
-        if (method === "load_multisig_tx") {
-          return walletCall<WorkerHandleRef & { type: "multisigTxSet" }>(method, remoteArgs).then(
-            (ref) => makeHandle(ref),
-          );
-        }
-        return walletCall(method, remoteArgs);
-      };
+      return (...args: unknown[]) => walletCall(method, toRemoteArgs(args));
     },
   }) as MoneroWasmWallet;
 }
