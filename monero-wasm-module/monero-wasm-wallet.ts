@@ -446,6 +446,11 @@ export async function clearFilesystem() {
 globalThis.clearFilesystem = clearFilesystem;
 
 export function listWalletNames() {
+  if (!module) {
+    throw new Error(
+      "listWalletNames() called before initModule(); the WASM module is not loaded yet",
+    );
+  }
   return module.FS.readdir(".")
     .filter((name) => name.endsWith(".keys"))
     .map((name) => name.slice(0, -5));

@@ -23,20 +23,20 @@ export class InitialWalletListPage {
   }
 
   async waitUntilLoaded(): Promise<void> {
-    await expect(this.page.getByTestId("initial-restore-wallet")).toBeVisible({
-      timeout: INITIAL_VIEW_TIMEOUT_MS,
-    });
+    await expect(
+      this.page.getByRole("button", { name: "Restore an existing wallet" }),
+    ).toBeVisible({ timeout: INITIAL_VIEW_TIMEOUT_MS });
   }
 
   async openRestoreWallet(): Promise<void> {
-    await this.page.getByTestId("initial-restore-wallet").click();
+    await this.page.getByRole("button", { name: "Restore an existing wallet" }).click();
     await expect(
       this.page.getByRole("heading", { name: /restore wallet/i }),
     ).toBeVisible();
   }
 
   async openCreateWallet(): Promise<void> {
-    await this.page.getByTestId("initial-new-wallet").click();
+    await this.page.getByRole("button", { name: "Create a new wallet" }).click();
     await expect(
       this.page.getByRole("heading", { name: /create new wallet/i }),
     ).toBeVisible();

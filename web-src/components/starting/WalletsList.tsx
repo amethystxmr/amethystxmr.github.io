@@ -254,21 +254,11 @@ export function WalletsList() {
   React.useEffect(() => {
     let cancelled = false;
     void (async () => {
-      let walletNames: string[];
-      try {
-        walletNames = await wasm.listWalletNames();
-      } catch (e) {
-        console.error("Failed to load wallet list:", e);
-        if (!cancelled) {
-          setView((current) => {
-            if (current.type === "loading-list" || current.type === "list") {
-              return { type: "list", walletNames: [] };
-            }
-            return current;
-          });
-        }
+      await wasm.setHttpBaseUrl(daemonAddress);
+      if (cancelled) {
         return;
       }
+      const walletNames = await wasm.listWalletNames();
       if (cancelled) {
         return;
       }
@@ -318,6 +308,9 @@ export function WalletsList() {
     return () => {
       cancelled = true;
     };
+    // Intentionally once on mount: hash / last-wallet logic must not re-run when
+    // `daemonAddress` changes while a wallet is already open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- daemonAddress read at mount only
   }, []);
 
   if (view.type === "opened") {
@@ -427,7 +420,7 @@ export function WalletsList() {
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 lg:shrink-0">
             <Button
-              data-testid="initial-new-wallet"
+              aria-label="Create a new wallet"
               onClick={async () => {
                 setView({ type: "create-new-wallet" });
               }}
@@ -435,7 +428,7 @@ export function WalletsList() {
               ➕︎ New wallet
             </Button>
             <Button
-              data-testid="initial-restore-wallet"
+              aria-label="Restore an existing wallet"
               onClick={() => setView({ type: "restore" })}
             >
               ↺ Restore
