@@ -182,14 +182,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
   React.useEffect(() => {
     let cancelled = false;
-    wallet.set_on_new_block_callback((height) => {
-      if (cancelled) {
-        return;
-      }
-      setStatus((prev) =>
-        prev === null ? null : { ...prev, walletHeight: height },
-      );
-    });
 
     const getStatus = async () => {
       const walletHeight = await wallet.get_blockchain_current_height();
@@ -320,6 +312,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     };
 
     (async () => {
+      await wallet.set_on_new_block_callback((height) => {
+        if (cancelled) {
+          return;
+        }
+        setStatus((prev) =>
+          prev === null ? null : { ...prev, walletHeight: height },
+        );
+      });
+
       /** Only used for estimations during initial sync.
        *  And it measures whole cycle time, not only refresh time,
        *   so it also includes time for getting statuses and payments
@@ -441,7 +442,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         stopWaitingRef.current();
       }
       stopWaitingRef.current = null;
-      wallet.set_on_new_block_callback(null);
+      void wallet.set_on_new_block_callback(null);
     };
   }, [wallet, setRefreshing, setStatus, updateWalletAddresses]);
 

@@ -1,5 +1,5 @@
 // @ts-expect-error Generated wasm JS module has no TypeScript declarations.
-import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
+import MoneroWasmWalletModuleFactory from "./wasm_wallet.mjs";
 
 export const NetworkTypes = {
   MAINNET: 0,
@@ -59,14 +59,14 @@ export declare class MoneroWasmWallet {
     maxBlocks: bigint,
   ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
   rewrite(fileName: string, password: string): Promise<void>;
-  set_on_new_block_callback: (
+  set_on_new_block_callback(
     callback: ((height: bigint, timestamp: bigint) => void) | null,
-  ) => void;
+  ): Promise<void>;
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
-  get_network_type(): NetworkType;
-  allow_mismatched_daemon_version(allowMismatch: boolean): void;
+  get_network_type(): Promise<NetworkType>;
+  allow_mismatched_daemon_version(allowMismatch: boolean): Promise<void>;
   watch_only(): Promise<boolean>;
   is_deterministic(): Promise<boolean>;
   get_wallet_file(): Promise<string>;
@@ -93,12 +93,12 @@ export declare class MoneroWasmWallet {
     month: number,
     day: number,
   ): Promise<bigint>;
-  words_to_bytes(words: string, language: string): Uint8Array | null;
+  words_to_bytes(words: string, language: string): Promise<Uint8Array | null>;
   get_payments(
     minHeight: bigint,
     maxHeight: bigint,
-  ): Promise<EmbindVector<PaymentDetails>>;
-  get_payments_mempool(): Promise<EmbindVector<PaymentDetails>>;
+  ): Promise<PaymentDetails[]>;
+  get_payments_mempool(): Promise<PaymentDetails[]>;
   get_num_subaddresses(index_major: number): Promise<number>;
   get_subaddress_as_str(
     index_major: number,
@@ -108,7 +108,7 @@ export declare class MoneroWasmWallet {
     index_major: number,
     index_minor: number,
   ): Promise<string>;
-  get_wallet_addresses(accountId: number): Promise<EmbindVector<WalletAddress>>;
+  get_wallet_addresses(accountId: number): Promise<WalletAddress[]>;
   get_keys(accountIdx: number): Promise<WalletKeys>;
   add_subaddress(index_major: number, label: string): Promise<void>;
   transfer_prepare(
@@ -122,18 +122,18 @@ export declare class MoneroWasmWallet {
     priority: FeePriority,
   ): Promise<PendingTxHandle>;
   get_transfers(): Promise<TransferItem[]>;
-  get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
+  get_transfers_info(handle: PendingTxHandle): Promise<TransferInfoItem[]>;
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
   save_multisig_tx_pending_tx(handle: PendingTxHandle): Promise<Uint8Array>;
   load_multisig_tx(
     data: Uint8Array,
     do_accept: boolean,
   ): Promise<MultisigTxSetHandle>;
-  get_multisig_tx_set_info(handle: MultisigTxSetHandle): TransferInfoItem[];
+  get_multisig_tx_set_info(handle: MultisigTxSetHandle): Promise<TransferInfoItem[]>;
   get_multisig_tx_signers_count(
     handle: MultisigTxSetHandle,
     excludeSelf: boolean,
-  ): number;
+  ): Promise<number>;
   sign_multisig_tx(handle: MultisigTxSetHandle): Promise<string[]>;
   save_multisig_tx(handle: MultisigTxSetHandle): Promise<Uint8Array>;
   transfer_commit_tx_multisig(handle: MultisigTxSetHandle): Promise<void>;
@@ -247,10 +247,6 @@ export interface KeyImagesImportResult {
 
 interface ClassHandle {
   delete(): void;
-}
-export interface EmbindVector<T> extends ClassHandle {
-  size(): number;
-  get(index: number): T;
 }
 
 export interface PendingTxHandle extends ClassHandle {
@@ -465,9 +461,11 @@ export function deleteWalletFiles(walletName: string) {
   }
 }
 
-export function createWallet(networkType: NetworkType = NetworkTypes.MAINNET) {
+export async function createWallet(
+  networkType: NetworkType = NetworkTypes.MAINNET,
+) {
   const wallet = new module.MoneroWasmWallet(networkType);
-  const actualNetworkType = wallet.get_network_type();
+  const actualNetworkType = await wallet.get_network_type();
   if (actualNetworkType !== networkType) {
     wallet.delete();
     // This is to verify that enums are used correctly
@@ -562,11 +560,11 @@ export interface PaymentDetailsTransformed extends PaymentDetails {
   destinations: { address: string; amount: bigint }[];
 }
 export function transformPayments(
-  payments: EmbindVector<PaymentDetails>,
+  payments: PaymentDetails[],
 ): PaymentDetailsTransformed[] {
   const result: PaymentDetailsTransformed[] = [];
-  for (let i = 0; i < payments.size(); i++) {
-    const p = payments.get(i);
+  for (let i = 0; i < payments.length; i++) {
+    const p = payments[i];
     const destinations: PaymentDetailsTransformed["destinations"] = [];
     if (p.destinationsStr) {
       for (const part of p.destinationsStr.split(";")) {
@@ -576,7 +574,6 @@ export function transformPayments(
     }
     result.push({ ...p, destinations });
   }
-  payments.delete();
 
   result.sort((a, b) => {
     // Pending first
@@ -601,13 +598,9 @@ export function transformPayments(
 }
 
 export function transformWalletAddresses(
-  addresses: EmbindVector<WalletAddress>,
+  addresses: WalletAddress[],
 ): WalletAddress[] {
-  const result: WalletAddress[] = [];
-  for (let i = 0; i < addresses.size(); i++) {
-    result.push(addresses.get(i));
-  }
-  addresses.delete();
+  const result = addresses.slice();
   result.sort((a, b) => a.indexMinor - b.indexMinor);
   return result;
 }

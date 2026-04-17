@@ -430,10 +430,10 @@ async function closeWallet(wallet: MoneroWasmWallet): Promise<void> {
   }
 }
 
-function createWalletUsingCurrentOptions(): MoneroWasmWallet {
-  const wallet = createWallet(options.getValue("networkType"));
+async function createWalletUsingCurrentOptions(): Promise<MoneroWasmWallet> {
+  const wallet = await createWallet(options.getValue("networkType"));
   if (options.getValue("allowMismatchedDaemonVersion")) {
-    wallet.allow_mismatched_daemon_version(true);
+    await wallet.allow_mismatched_daemon_version(true);
   }
   return wallet;
 }
@@ -447,7 +447,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
 
   try {
     await withFsLock(async () => {
-      const tempWallet = createWalletUsingCurrentOptions();
+      const tempWallet = await createWalletUsingCurrentOptions();
       try {
         await tempWallet.init();
         const secret32 = crypto.getRandomValues(new Uint8Array(32));
@@ -468,7 +468,7 @@ async function getBlockchainHeightByDateUsingTempWallet(
   month: number,
   day: number,
 ): Promise<bigint> {
-  const tempWallet = createWalletUsingCurrentOptions();
+  const tempWallet = await createWalletUsingCurrentOptions();
   try {
     await tempWallet.init();
     return await tempWallet.get_blockchain_height_by_date(year, month, day);
@@ -662,7 +662,7 @@ function RestoreView({
         setStartingHeight(restoreHeight.toString());
       }
 
-      wallet = createWalletUsingCurrentOptions();
+      wallet = await createWalletUsingCurrentOptions();
       await wallet.init();
       await withFsLock(async () => {
         if (!wallet) {
@@ -705,7 +705,7 @@ function RestoreView({
         } else {
           const secret32 =
             seedType === "monero-25"
-              ? wallet.words_to_bytes(moneroSeed, "English")
+              ? await wallet.words_to_bytes(moneroSeed, "English")
               : polyseedPrivateKey;
           if (!secret32 || secret32.length !== 32) {
             throw new Error("Invalid seed phrase provided");
@@ -1053,7 +1053,7 @@ function CreateNewWalletView({
       }
 
       const seed = await withFsLock(async () => {
-        wallet = createWalletUsingCurrentOptions();
+        wallet = await createWalletUsingCurrentOptions();
         await wallet.init();
 
         const generatedSecret32 = await wallet.generate(
@@ -1314,7 +1314,7 @@ function OpenWalletView({
         if (isUnmountedRef.current) {
           return;
         }
-        wallet = createWalletUsingCurrentOptions();
+        wallet = await createWalletUsingCurrentOptions();
         await wallet.init();
         if (isUnmountedRef.current) {
           await closeWallet(wallet);
