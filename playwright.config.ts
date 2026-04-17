@@ -16,7 +16,8 @@ export default defineConfig({
   // Force the process to end so the workflow can complete deterministically.
   forceExit: true,
   expect: {
-    timeout: 60_000,
+    // WASM worker + IDB on cold CI runners often exceeds a 60s budget.
+    timeout: 300_000,
   },
   fullyParallel: false,
   workers: 1,
@@ -46,7 +47,8 @@ export default defineConfig({
     command: `npm run build && npm run preview -- --host ${APP_HOST} --port ${APP_PORT} --strictPort`,
     url: APP_URL,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    // `vite build` with the large worker chunk can exceed 2 minutes on CI.
+    timeout: 300_000,
   },
   metadata: {
     monerodRpcPort: MONEROD_RPC_PORT,

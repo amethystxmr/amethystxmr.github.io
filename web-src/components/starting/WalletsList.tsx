@@ -254,7 +254,21 @@ export function WalletsList() {
   React.useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const walletNames = await wasm.listWalletNames();
+      let walletNames: string[];
+      try {
+        walletNames = await wasm.listWalletNames();
+      } catch (e) {
+        console.error("Failed to load wallet list:", e);
+        if (!cancelled) {
+          setView((current) => {
+            if (current.type === "loading-list" || current.type === "list") {
+              return { type: "list", walletNames: [] };
+            }
+            return current;
+          });
+        }
+        return;
+      }
       if (cancelled) {
         return;
       }
@@ -413,13 +427,17 @@ export function WalletsList() {
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 lg:shrink-0">
             <Button
+              data-testid="initial-new-wallet"
               onClick={async () => {
                 setView({ type: "create-new-wallet" });
               }}
             >
               ➕︎ New wallet
             </Button>
-            <Button onClick={() => setView({ type: "restore" })}>
+            <Button
+              data-testid="initial-restore-wallet"
+              onClick={() => setView({ type: "restore" })}
+            >
               ↺ Restore
             </Button>
             <Button

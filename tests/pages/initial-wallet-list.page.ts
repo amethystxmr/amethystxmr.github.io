@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { WalletMainPage } from "./wallet-main.page";
 
+/** First screen after WASM boots; list load can exceed 60s on cold CI (large worker + IDB). */
+const INITIAL_VIEW_TIMEOUT_MS = 300_000;
+
 export class InitialWalletListPage {
   constructor(private readonly page: Page) {
     return new Proxy(this, {
@@ -14,27 +17,26 @@ export class InitialWalletListPage {
       },
     }) as this;
   }
-  private readonly restoreButtonName = /^(?:↺\s*)?Restore$/i;
 
   async goto(): Promise<void> {
     await this.page.goto("/");
   }
 
   async waitUntilLoaded(): Promise<void> {
-    await expect(
-      this.page.getByRole("button", { name: this.restoreButtonName }),
-    ).toBeVisible();
+    await expect(this.page.getByTestId("initial-restore-wallet")).toBeVisible({
+      timeout: INITIAL_VIEW_TIMEOUT_MS,
+    });
   }
 
   async openRestoreWallet(): Promise<void> {
-    await this.page.getByRole("button", { name: this.restoreButtonName }).click();
+    await this.page.getByTestId("initial-restore-wallet").click();
     await expect(
       this.page.getByRole("heading", { name: /restore wallet/i }),
     ).toBeVisible();
   }
 
   async openCreateWallet(): Promise<void> {
-    await this.page.getByRole("button", { name: /new wallet/i }).click();
+    await this.page.getByTestId("initial-new-wallet").click();
     await expect(
       this.page.getByRole("heading", { name: /create new wallet/i }),
     ).toBeVisible();

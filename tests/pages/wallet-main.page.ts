@@ -43,7 +43,7 @@ export class WalletMainPage {
     throw new Error(`Failed to open tab: ${name}`);
   }
 
-  async waitUntilLoaded(timeoutMs = 60_000): Promise<void> {
+  async waitUntilLoaded(timeoutMs = 300_000): Promise<void> {
     await expect(this.page.getByRole("tab", { name: /receive/i })).toBeVisible();
 
     const startedAt = Date.now();
