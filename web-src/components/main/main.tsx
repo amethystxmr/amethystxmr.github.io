@@ -6,8 +6,8 @@ import {
   PaymentDetailsTransformed,
   WalletAddress,
   GlobalHttpConfig,
-  setHttpOnFetch,
-} from "../../../monero-wasm-module/monero-wasm-wallet-async";
+  wasm,
+} from "../../../monero-wasm-module/monero-wasm-wallet-webworker";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
@@ -160,10 +160,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         state satisfies never;
       }
     };
-    setHttpOnFetch(onFetch);
+    wasm.setHttpOnFetch(onFetch);
 
     return () => {
-      setHttpOnFetch(null);
+      wasm.setHttpOnFetch(null);
     };
   }, [wallet]);
 

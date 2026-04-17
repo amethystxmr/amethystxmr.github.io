@@ -1,7 +1,7 @@
 import {
   NetworkTypes,
   type NetworkType as NetworkTypeValue,
-} from "../../monero-wasm-module/monero-wasm-wallet-async";
+} from "../../monero-wasm-module/monero-wasm-wallet-webworker";
 
 type OptionSchema = {
   loadLastWallet: boolean;

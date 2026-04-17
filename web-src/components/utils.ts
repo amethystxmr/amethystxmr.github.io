@@ -1,7 +1,4 @@
-import {
-  loadFilesystem,
-  saveFilesystem,
-} from "../../monero-wasm-module/monero-wasm-wallet-async";
+import { wasm } from "../../monero-wasm-module/monero-wasm-wallet-webworker";
 
 let didWarnAboutMissingNavigatorLocks = false;
 
@@ -199,9 +196,9 @@ export async function withFsLock<T>(fn: () => Promise<T>): Promise<T> {
     throw new Error("Failed to acquire filesystem lock");
   }
   try {
-    await loadFilesystem();
+    await wasm.loadFilesystem();
     const result = await fn();
-    await saveFilesystem();
+    await wasm.saveFilesystem();
     return result;
   } finally {
     releaseFsLock();

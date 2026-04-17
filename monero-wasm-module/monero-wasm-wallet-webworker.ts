@@ -53,9 +53,6 @@ let operationChain = Promise.resolve();
  * `monero-wasm-wallet.worker.ts`, which serializes sync WASM on the worker). */
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
   const run = operationChain.then(task, task);
-  // Keep the internal queue tail always fulfilled: callers await `run` and still
-  // see rejections there, but we must not leave `operationChain` rejected or later
-  // serial scheduling can inherit a broken chain / unhandled tail rejections.
   operationChain = run.then(
     () => undefined,
     () => undefined,
@@ -66,6 +63,45 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 function moduleCall<T>(method: string, args: unknown[]): Promise<T> {
   return enqueue(() => api.moduleCall(method, args)) as Promise<T>;
 }
+
+type SyncExport = typeof import("./monero-wasm-wallet");
+
+type PromisifyFn<F> = F extends (...args: infer A) => infer R
+  ? (...args: A) => Promise<Awaited<R>>
+  : never;
+
+type KeysOfSyncFunctions = {
+  [K in keyof SyncExport]: SyncExport[K] extends (...args: never[]) => unknown
+    ? K
+    : never;
+}[keyof SyncExport];
+
+/** Every sync module function except the three handled below is forwarded via
+ * `moduleCall` — new exports on `monero-wasm-wallet.ts` pick up automatically. */
+type AutoForwardedWasm = {
+  [K in KeysOfSyncFunctions as K extends
+    | "createWallet"
+    | "setHttpBaseUrl"
+    | "setHttpOnFetch"
+    ? never
+    : K]: PromisifyFn<SyncExport[K]>;
+};
+
+export type WasmModule = AutoForwardedWasm & {
+  createWallet: (networkType?: NetworkType) => MoneroWasmWallet;
+  setHttpBaseUrl: (baseUrl: string) => Promise<void>;
+  setHttpOnFetch: (
+    callback:
+      | ((
+          url: string,
+          reqId: string,
+          state: HttpFetchState,
+          progressLoaded: number,
+          progressTotal: number,
+        ) => void)
+      | null,
+  ) => void;
+};
 
 type HandleType = WorkerHandleRef["type"];
 
@@ -121,105 +157,13 @@ function makeHandle<T extends HandleType>(
   ref: WorkerHandleRef & { type: T },
 ): T extends "pendingTx" ? PendingTxHandle : MultisigTxSetHandle {
   return new WorkerHandle(ref, async (handleRef) => {
-    // Worker keeps the real handle; dropping it is currently GC-by-closeWallet().
-    // We still provide `.delete()` locally for API symmetry.
     void handleRef;
   }) as T extends "pendingTx" ? PendingTxHandle : MultisigTxSetHandle;
 }
 
-export async function initModule() {
-  return enqueue(() => api.initModule());
-}
-
-export async function loadFilesystem() {
-  return moduleCall<void>("loadFilesystem", []);
-}
-
-export async function saveFilesystem() {
-  return moduleCall<void>("saveFilesystem", []);
-}
-
-export async function listWalletNames() {
-  return moduleCall<string[]>("listWalletNames", []);
-}
-
-export async function deleteWalletFiles(walletName: string) {
-  return moduleCall<void>("deleteWalletFiles", [walletName]);
-}
-
-export async function readFile(path: string) {
-  return moduleCall<Uint8Array>("readFile", [path]);
-}
-
-export async function writeFile(path: string, data: Uint8Array) {
-  return moduleCall<void>("writeFile", [path, data]);
-}
-
-export async function unlinkFile(path: string) {
-  return moduleCall<void>("unlinkFile", [path]);
-}
-
-export async function isWalletFileExists(walletName: string) {
-  return moduleCall<boolean>("isWalletFileExists", [walletName]);
-}
-
-export async function renameWallet(oldName: string, newName: string) {
-  return moduleCall<void>("renameWallet", [oldName, newName]);
-}
-
-export async function getWalletFilesData(walletName: string) {
-  return moduleCall<{ name: string; data: Uint8Array }[]>("getWalletFilesData", [
-    walletName,
-  ]);
-}
-
-export async function saveWalletFilesData(
-  walletName: string,
-  keysFileData: Uint8Array,
-  otherFilesData: { name: string; data: Uint8Array }[],
-) {
-  return moduleCall<void>("saveWalletFilesData", [
-    walletName,
-    keysFileData,
-    otherFilesData,
-  ]);
-}
-
-export async function decodePolyseed(moneroPolyseed: string) {
-  return moduleCall<{
-    birthday: bigint;
-    privateKey: Uint8Array;
-    langStr: string;
-  }>("decodePolyseed", [moneroPolyseed]);
-}
-
-export async function getMoneroVersionFull() {
-  return moduleCall<string>("getMoneroVersionFull", []);
-}
-
-export async function setHttpBaseUrl(baseUrl: string): Promise<void> {
-  await enqueue(() => api.setHttpBaseUrl(baseUrl));
-}
-
-export function setHttpOnFetch(
-  callback:
-    | ((
-        url: string,
-        reqId: string,
-        state: HttpFetchState,
-        progressLoaded: number,
-        progressTotal: number,
-      ) => void)
-    | null,
-): void {
-  void enqueue(() => api.setHttpOnFetch(callback ? proxy(callback) : null));
-}
-
-export function createWallet(
+function createWalletImpl(
   networkType: NetworkType = NetworkTypes.MAINNET,
 ): MoneroWasmWallet {
-  // Singleton wallet lives in the worker. This function returns the Comlink proxy
-  // object that dynamically forwards to the sync wallet instance.
   void enqueue(() => api.createWallet(networkType));
   const walletApi = (api as unknown as { walletApi: MoneroWasmWallet }).walletApi;
   return new Proxy(walletApi, {
@@ -241,7 +185,12 @@ export function createWallet(
       return (...args: unknown[]) =>
         value(...args).then((out: unknown) => {
           const maybeRef = out as Partial<WorkerHandleRef>;
-          if (maybeRef && maybeRef.__workerHandle === true && typeof maybeRef.type === "string" && typeof maybeRef.id === "string") {
+          if (
+            maybeRef &&
+            maybeRef.__workerHandle === true &&
+            typeof maybeRef.type === "string" &&
+            typeof maybeRef.id === "string"
+          ) {
             return makeHandle(out as WorkerHandleRef & { type: HandleType });
           }
           return out;
@@ -249,3 +198,42 @@ export function createWallet(
     },
   }) as MoneroWasmWallet;
 }
+
+function createWasmModuleProxy(): WasmModule {
+  return new Proxy({} as WasmModule, {
+    get(_target, prop) {
+      if (prop === "createWallet") {
+        return createWalletImpl;
+      }
+      if (prop === "setHttpBaseUrl") {
+        return (baseUrl: string) => enqueue(() => api.setHttpBaseUrl(baseUrl));
+      }
+      if (prop === "setHttpOnFetch") {
+        return (
+          callback:
+            | ((
+                url: string,
+                reqId: string,
+                state: HttpFetchState,
+                progressLoaded: number,
+                progressTotal: number,
+              ) => void)
+            | null,
+        ) => {
+          void enqueue(() => api.setHttpOnFetch(callback ? proxy(callback) : null));
+        };
+      }
+      if (typeof prop !== "string") {
+        return undefined;
+      }
+      return (...args: unknown[]) => moduleCall(prop, args);
+    },
+  });
+}
+
+/** Promisified sync module API: new functions added to `monero-wasm-wallet.ts`
+ * are callable here without listing them in this file. */
+export const wasm: WasmModule = createWasmModuleProxy();
+
+/** Convenience re-export — same as `wasm.createWallet`. */
+export const createWallet = wasm.createWallet;

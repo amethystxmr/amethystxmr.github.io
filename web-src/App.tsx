@@ -60,8 +60,8 @@ export function App() {
         hint: "Loading wallet module...",
       });
       try {
-        const { initModule } = await import("../monero-wasm-module/monero-wasm-wallet-async");
-        await initModule();
+        const { wasm } = await import("../monero-wasm-module/monero-wasm-wallet-webworker");
+        await wasm.initModule();
         if (cancelled) {
           return;
         }

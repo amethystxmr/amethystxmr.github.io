@@ -34,7 +34,7 @@ import {
   TransferInfoItem,
   type FeePriority as FeePriorityValue,
   MultisigTxSetHandle,
-} from "../../../monero-wasm-module/monero-wasm-wallet-async";
+} from "../../../monero-wasm-module/monero-wasm-wallet-webworker";
 
 type SendState =
   | { type: "entering" }

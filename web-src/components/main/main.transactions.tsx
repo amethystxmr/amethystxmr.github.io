@@ -3,7 +3,7 @@ import {
   MoneroWasmWallet,
   PaymentDetailsTransformed,
   WalletAddress,
-} from "../../../monero-wasm-module/monero-wasm-wallet-async";
+} from "../../../monero-wasm-module/monero-wasm-wallet-webworker";
 import React from "react";
 import {
   balanceToString,
