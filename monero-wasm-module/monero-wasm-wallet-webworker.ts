@@ -18,7 +18,7 @@ import {
   type TransferItem,
   type WalletAddress,
   type WalletKeys,
-} from "./monero-wasm-wallet";
+} from "./monero-wasm-wallet.ts";
 import type { MoneroWasmWalletWorkerApi, WorkerHandleRef } from "./monero-wasm-wallet.worker";
 
 export {
@@ -64,7 +64,7 @@ function moduleCall<T>(method: string, args: unknown[]): Promise<T> {
   return enqueue(() => api.moduleCall(method, args)) as Promise<T>;
 }
 
-type SyncExport = typeof import("./monero-wasm-wallet");
+type SyncExport = typeof import("./monero-wasm-wallet.ts");
 
 type PromisifyFn<F> = F extends (...args: infer A) => infer R
   ? (...args: A) => Promise<Awaited<R>>

@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test";
 import { MONEROD_RPC_URL } from "../constants";
-import { NetworkTypes } from "../../monero-wasm-module/monero-wasm-wallet";
+import { NetworkTypes } from "../../monero-wasm-module/monero-wasm-wallet.ts";
 
 // monerod in tests is started with `--regtest`, which runs a FAKECHAIN core
 // (see cryptonote_core.cpp: regtest forces m_nettype = FAKECHAIN). The wallet
