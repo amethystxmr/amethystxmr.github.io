@@ -19,8 +19,7 @@ import {
   type WalletAddress,
   type WalletKeys,
 } from "./monero-wasm-wallet";
-import type { MoneroWasmWalletWorkerApi } from "./monero-wasm-wallet.worker";
-import { type WorkerHandleRef, isWorkerHandleRef } from "./monero-wasm-wallet-rpc";
+import type { MoneroWasmWalletWorkerApi, WorkerHandleRef } from "./monero-wasm-wallet.worker";
 
 export {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
@@ -121,9 +120,11 @@ export type MoneroWasmWallet = {
 function makeHandle<T extends HandleType>(
   ref: WorkerHandleRef & { type: T },
 ): T extends "pendingTx" ? PendingTxHandle : MultisigTxSetHandle {
-  return new WorkerHandle(ref, (handleRef) =>
-    api.deleteHandle(handleRef),
-  ) as T extends "pendingTx" ? PendingTxHandle : MultisigTxSetHandle;
+  return new WorkerHandle(ref, async (handleRef) => {
+    // Worker keeps the real handle; dropping it is currently GC-by-closeWallet().
+    // We still provide `.delete()` locally for API symmetry.
+    void handleRef;
+  }) as T extends "pendingTx" ? PendingTxHandle : MultisigTxSetHandle;
 }
 
 export async function initModule() {
@@ -214,63 +215,37 @@ export function setHttpOnFetch(
   void enqueue(() => api.setHttpOnFetch(callback ? proxy(callback) : null));
 }
 
-function toRemoteArg(value: unknown): unknown {
-  if (value instanceof WorkerHandle) {
-    return value.ref;
-  }
-  return value;
-}
-
-function toRemoteArgs(args: unknown[]) {
-  return args.map((arg) => toRemoteArg(arg));
-}
-
-function adaptWalletRpcResult(value: unknown): unknown {
-  if (isWorkerHandleRef(value)) {
-    return makeHandle(value as WorkerHandleRef & { type: HandleType });
-  }
-  return value;
-}
-
-function createAsyncMoneroWasmWallet(walletIdPromise: Promise<number>): MoneroWasmWallet {
-  const walletId = () => walletIdPromise;
-
-  function walletCall(method: string, args: unknown[]): Promise<unknown> {
-    return enqueue(async () =>
-      api.walletCall(await walletId(), method, toRemoteArgs(args)),
-    ).then(adaptWalletRpcResult);
-  }
-
-  return new Proxy({} as MoneroWasmWallet, {
-    get(_target, prop): unknown {
-      if (prop === "delete") {
-        return async (): Promise<void> => {
-          await enqueue(async () => api.deleteWallet(await walletId()));
-        };
-      }
-      if (prop === "set_on_new_block_callback") {
-        return async (
-          callback: ((height: bigint, timestamp: bigint) => void) | null,
-        ): Promise<void> => {
-          await enqueue(async () =>
-            api.walletSetNewBlockCallback(
-              await walletId(),
-              callback ? proxy(callback) : null,
-            ),
-          );
-        };
-      }
-      if (typeof prop !== "string") {
-        return undefined;
-      }
-      const method = prop;
-      return (...args: unknown[]) => walletCall(method, toRemoteArgs(args));
-    },
-  }) as MoneroWasmWallet;
-}
-
 export function createWallet(
   networkType: NetworkType = NetworkTypes.MAINNET,
 ): MoneroWasmWallet {
-  return createAsyncMoneroWasmWallet(enqueue(() => api.createWallet(networkType)));
+  // Singleton wallet lives in the worker. This function returns the Comlink proxy
+  // object that dynamically forwards to the sync wallet instance.
+  void enqueue(() => api.createWallet(networkType));
+  const walletApi = (api as unknown as { walletApi: MoneroWasmWallet }).walletApi;
+  return new Proxy(walletApi, {
+    get(target, prop, receiver) {
+      if (prop === "delete") {
+        return async () => {
+          await enqueue(() => api.closeWallet());
+        };
+      }
+      if (prop === "set_on_new_block_callback") {
+        return async (cb: ((height: bigint, timestamp: bigint) => void) | null) => {
+          await enqueue(() => api.set_on_new_block_callback(cb ? proxy(cb) : null));
+        };
+      }
+      const value = Reflect.get(target as object, prop, receiver);
+      if (typeof value !== "function") {
+        return value;
+      }
+      return (...args: unknown[]) =>
+        value(...args).then((out: unknown) => {
+          const maybeRef = out as Partial<WorkerHandleRef>;
+          if (maybeRef && maybeRef.__workerHandle === true && typeof maybeRef.type === "string" && typeof maybeRef.id === "string") {
+            return makeHandle(out as WorkerHandleRef & { type: HandleType });
+          }
+          return out;
+        });
+    },
+  }) as MoneroWasmWallet;
 }

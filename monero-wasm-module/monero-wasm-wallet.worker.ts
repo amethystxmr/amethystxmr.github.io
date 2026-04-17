@@ -6,30 +6,67 @@ import type {
   MoneroWasmWallet as SyncWallet,
   MultisigTxSetHandle as SyncMultisigTxSetHandle,
   NetworkType,
+  PaymentDetails,
   PendingTxHandle as SyncPendingTxHandle,
+  WalletAddress,
 } from "./monero-wasm-wallet";
-import {
-  type WalletHandleStore,
-  type WorkerHandleRef,
-  normalizeWalletRpcArgs,
-  runWalletRpcPostCall,
-  transformWalletRpcResult,
-} from "./monero-wasm-wallet-rpc";
 
-export type { WorkerHandleRef } from "./monero-wasm-wallet-rpc";
+export type WorkerHandleRef = {
+  __workerHandle: true;
+  type: "pendingTx" | "multisigTxSet";
+  id: string;
+};
 
-type StoredHandle =
-  | { type: "pendingTx"; value: SyncPendingTxHandle; walletId: number }
-  | { type: "multisigTxSet"; value: SyncMultisigTxSetHandle; walletId: number };
+function isWorkerHandleRef(value: unknown): value is WorkerHandleRef {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "__workerHandle" in value &&
+    (value as WorkerHandleRef).__workerHandle === true
+  );
+}
 
-let nextWalletId = 1;
-let nextHandleId = 1;
-const wallets = new Map<number, SyncWallet>();
-const handles = new Map<number, StoredHandle>();
-const newBlockCallbacks = new Map<
-  number,
-  (height: bigint, timestamp: bigint) => void
->();
+const PENDING_TX_ARG_METHODS = new Set([
+  "get_transfers_info",
+  "transfer_commit_tx",
+  "save_multisig_tx_pending_tx",
+]);
+const MULTISIG_TX_SET_ARG_METHODS = new Set([
+  "get_multisig_tx_set_info",
+  "get_multisig_tx_signers_count",
+  "sign_multisig_tx",
+  "save_multisig_tx",
+  "transfer_commit_tx_multisig",
+]);
+const RETURNS_PENDING_TX_HANDLE = new Set([
+  "transfer_prepare",
+  "transfer_prepare_sweep_all",
+]);
+const RETURNS_MULTISIG_TX_SET_HANDLE = new Set(["load_multisig_tx"]);
+
+function sortWalletAddresses(addresses: WalletAddress[]) {
+  return [...addresses].sort((a, b) => a.indexMinor - b.indexMinor);
+}
+
+function sortPayments(payments: PaymentDetails[]) {
+  return [...payments].sort((a, b) => {
+    if (a.type === "pending" && b.type !== "pending") return -1;
+    if (a.type !== "pending" && b.type === "pending") return 1;
+    if (a.type === "pending") return Number(b.timestamp - a.timestamp);
+    if (a.block_height !== b.block_height) {
+      return Number(b.block_height - a.block_height);
+    }
+    return Number(b.timestamp - a.timestamp);
+  });
+}
+
+function invokeMethod(target: object, method: string, args: unknown[]) {
+  const candidate = (target as Record<string, unknown>)[method];
+  if (typeof candidate !== "function") {
+    throw new Error(`Unknown method: ${method}`);
+  }
+  return (candidate as (...methodArgs: unknown[]) => unknown)(...args);
+}
 
 let httpBaseUrl = "";
 let onFetchCallback:
@@ -63,15 +100,8 @@ globalThis.globalHttpConfig = {
 
 let operationChain = Promise.resolve();
 
-/** Same serial-queue idea as `enqueue` in `monero-wasm-wallet-async.ts`.
- * Comlink `expose` does not hold the message port until an async handler finishes,
- * so concurrent inbound messages could overlap; our main thread awaits each RPC,
- * but this queue still serializes sync WASM + worker globals as a safety net. */
 function enqueue<T>(task: () => T | Promise<T>): Promise<T> {
   const run = operationChain.then(task, task);
-  // Keep the internal queue tail always fulfilled: callers await `run` and still
-  // see rejections there, but we must not leave `operationChain` rejected or later
-  // serial scheduling can inherit a broken chain / unhandled tail rejections.
   operationChain = run.then(
     () => undefined,
     () => undefined,
@@ -79,88 +109,42 @@ function enqueue<T>(task: () => T | Promise<T>): Promise<T> {
   return run;
 }
 
-function getWallet(walletId: number) {
-  const wallet = wallets.get(walletId);
-  if (!wallet) {
-    throw new Error(`Unknown wallet id ${walletId}`);
-  }
-  return wallet;
-}
+class Api {
+  private wallet: SyncWallet | null = null;
+  private pendingTxHandles = new Map<string, SyncPendingTxHandle>();
+  private multisigTxSetHandles = new Map<string, SyncMultisigTxSetHandle>();
+  private newBlockCallback: ((height: bigint, timestamp: bigint) => void) | null =
+    null;
 
-function storeHandle(
-  handle: SyncPendingTxHandle | SyncMultisigTxSetHandle,
-  type: StoredHandle["type"],
-  walletId: number,
-): WorkerHandleRef {
-  const id = nextHandleId++;
-  handles.set(id, { type, value: handle, walletId } as StoredHandle);
-  return { __workerHandle: true, type, id };
-}
+  /** Dynamic wallet object: method names are resolved at call time. */
+  public readonly walletApi = new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        if (typeof prop !== "string") {
+          return undefined;
+        }
+        const method = prop;
+        return (...args: unknown[]) => this.walletCall(method, args);
+      },
+    },
+  ) as unknown as Record<string, (...args: unknown[]) => unknown>;
 
-function getHandle(ref: WorkerHandleRef, expectedType: "pendingTx"): SyncPendingTxHandle;
-function getHandle(
-  ref: WorkerHandleRef,
-  expectedType: "multisigTxSet",
-): SyncMultisigTxSetHandle;
-function getHandle(
-  ref: WorkerHandleRef,
-  expectedType: StoredHandle["type"],
-): SyncPendingTxHandle | SyncMultisigTxSetHandle {
-  const stored = handles.get(ref.id);
-  if (!stored || stored.type !== expectedType) {
-    throw new Error(`Unknown ${expectedType} handle ${ref.id}`);
-  }
-  return stored.value;
-}
-
-function deleteHandle(ref: WorkerHandleRef) {
-  const stored = handles.get(ref.id);
-  if (!stored) {
-    return;
-  }
-  stored.value.delete();
-  handles.delete(ref.id);
-}
-
-const handleStore: WalletHandleStore = {
-  storePendingTx(walletId, handle) {
-    return storeHandle(handle, "pendingTx", walletId);
-  },
-  storeMultisigTx(walletId, handle) {
-    return storeHandle(handle, "multisigTxSet", walletId);
-  },
-  getPendingTx(ref) {
-    return getHandle(ref, "pendingTx");
-  },
-  getMultisigTx(ref) {
-    return getHandle(ref, "multisigTxSet");
-  },
-};
-
-function invokeMethod(target: object, method: string, args: unknown[]) {
-  const candidate = (target as Record<string, unknown>)[method];
-  if (typeof candidate !== "function") {
-    throw new Error(`Unknown method: ${method}`);
-  }
-  return (candidate as (...methodArgs: unknown[]) => unknown)(...args);
-}
-
-const api = {
-  async initModule() {
+  async initModule(): Promise<void> {
     await enqueue(() => syncApi.initModule());
-  },
+  }
 
-  async moduleCall(method: string, args: unknown[]) {
+  async moduleCall(method: string, args: unknown[]): Promise<unknown> {
     return enqueue(async () => invokeMethod(syncApi, method, args));
-  },
+  }
 
-  setHttpBaseUrl(baseUrl: string) {
-    return enqueue(() => {
+  async setHttpBaseUrl(baseUrl: string): Promise<void> {
+    await enqueue(() => {
       httpBaseUrl = baseUrl;
     });
-  },
+  }
 
-  setHttpOnFetch(
+  async setHttpOnFetch(
     callback:
       | ((
           url: string,
@@ -170,76 +154,127 @@ const api = {
           progressTotal: number,
         ) => void)
       | null,
-  ) {
-    return enqueue(() => {
+  ): Promise<void> {
+    await enqueue(() => {
       onFetchCallback = callback;
     });
-  },
+  }
 
-  async createWallet(networkType: NetworkType = syncApi.NetworkTypes.MAINNET) {
-    return enqueue(async () => {
+  async createWallet(
+    networkType: NetworkType = syncApi.NetworkTypes.MAINNET,
+  ): Promise<void> {
+    await enqueue(async () => {
+      if (this.wallet) {
+        throw new Error("Wallet already exists in worker");
+      }
       await syncApi.initModule();
-      const wallet = syncApi.createWallet(networkType);
-      const id = nextWalletId++;
-      wallets.set(id, wallet);
-      return id;
+      this.wallet = syncApi.createWallet(networkType);
     });
-  },
+  }
 
-  async deleteWallet(walletId: number) {
-    return enqueue(() => {
-      const wallet = getWallet(walletId);
-      wallet.delete();
-      wallets.delete(walletId);
-      newBlockCallbacks.delete(walletId);
-      for (const [handleId, stored] of handles) {
-        if (stored.walletId === walletId) {
-          stored.value.delete();
-          handles.delete(handleId);
+  async closeWallet(): Promise<void> {
+    await enqueue(() => {
+      if (!this.wallet) {
+        return;
+      }
+      try {
+        this.wallet.close_wallet();
+      } catch {
+        // ignore
+      }
+      try {
+        this.wallet.delete();
+      } catch {
+        // ignore
+      }
+      this.wallet = null;
+      this.newBlockCallback = null;
+      for (const h of this.pendingTxHandles.values()) {
+        try {
+          h.delete();
+        } catch {
+          // ignore
         }
       }
-    });
-  },
-
-  async walletCall(walletId: number, method: string, args: unknown[]) {
-    return enqueue(async () => {
-      const wallet = getWallet(walletId);
-      const normalized = normalizeWalletRpcArgs(method, args, handleStore);
-      const result = await invokeMethod(wallet, method, normalized);
-      runWalletRpcPostCall(method, wallet, walletId, (wid, events) => {
-        const callback = newBlockCallbacks.get(wid);
-        if (!callback) {
-          return;
+      for (const h of this.multisigTxSetHandles.values()) {
+        try {
+          h.delete();
+        } catch {
+          // ignore
         }
-        for (const event of events) {
-          void callback(event.height, event.timestamp);
-        }
-      });
-      return transformWalletRpcResult(method, walletId, result, handleStore);
+      }
+      this.pendingTxHandles.clear();
+      this.multisigTxSetHandles.clear();
     });
-  },
+  }
 
-  async walletSetNewBlockCallback(
-    walletId: number,
+  async set_on_new_block_callback(
     callback: ((height: bigint, timestamp: bigint) => void) | null,
-  ) {
-    return enqueue(() => {
-      if (callback) {
-        newBlockCallbacks.set(walletId, callback);
-      } else {
-        newBlockCallbacks.delete(walletId);
+  ): Promise<void> {
+    await enqueue(() => {
+      this.newBlockCallback = callback;
+      // We use drain_new_block_events after refresh to deliver blocks in batches.
+      this.wallet?.set_on_new_block_callback(null);
+    });
+  }
+
+  private normalizeWalletArgs(method: string, args: unknown[]): unknown[] {
+    return args.map((arg) => {
+      if (!isWorkerHandleRef(arg)) {
+        return arg;
       }
-      getWallet(walletId).set_on_new_block_callback(null);
+      if (PENDING_TX_ARG_METHODS.has(method)) {
+        const h = this.pendingTxHandles.get(arg.id);
+        if (!h) throw new Error(`Unknown pendingTx handle ${arg.id}`);
+        return h;
+      }
+      if (MULTISIG_TX_SET_ARG_METHODS.has(method)) {
+        const h = this.multisigTxSetHandles.get(arg.id);
+        if (!h) throw new Error(`Unknown multisigTxSet handle ${arg.id}`);
+        return h;
+      }
+      return arg;
     });
-  },
+  }
 
-  async deleteHandle(handle: WorkerHandleRef) {
-    return enqueue(() => {
-      deleteHandle(handle);
+  private wrapWalletResult(method: string, result: unknown): unknown {
+    if (RETURNS_PENDING_TX_HANDLE.has(method)) {
+      const id = `ptx_${Math.random().toString(16).slice(2)}`;
+      this.pendingTxHandles.set(id, result as SyncPendingTxHandle);
+      return { __workerHandle: true, type: "pendingTx", id } satisfies WorkerHandleRef;
+    }
+    if (RETURNS_MULTISIG_TX_SET_HANDLE.has(method)) {
+      const id = `msig_${Math.random().toString(16).slice(2)}`;
+      this.multisigTxSetHandles.set(id, result as SyncMultisigTxSetHandle);
+      return { __workerHandle: true, type: "multisigTxSet", id } satisfies WorkerHandleRef;
+    }
+    if (method === "get_wallet_addresses") {
+      return sortWalletAddresses(result as WalletAddress[]);
+    }
+    if (method === "get_payments" || method === "get_payments_mempool") {
+      return sortPayments(result as PaymentDetails[]);
+    }
+    return result;
+  }
+
+  async walletCall(method: string, args: unknown[]): Promise<unknown> {
+    return enqueue(async () => {
+      if (!this.wallet) {
+        throw new Error("Wallet is not created");
+      }
+      const normalized = this.normalizeWalletArgs(method, args);
+      const result = await invokeMethod(this.wallet, method, normalized);
+      if (method === "refresh" && this.newBlockCallback) {
+        const events = this.wallet.drain_new_block_events();
+        for (const event of events) {
+          void this.newBlockCallback(event.height, event.timestamp);
+        }
+      }
+      return this.wrapWalletResult(method, result);
     });
-  },
-};
+  }
+}
 
-export type MoneroWasmWalletWorkerApi = typeof api;
+export type MoneroWasmWalletWorkerApi = Api;
 
-expose(api);
+expose(new Api());
