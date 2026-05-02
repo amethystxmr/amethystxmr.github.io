@@ -1,6 +1,7 @@
 #include <iostream>
 #include <memory>
 #include <algorithm>
+#include <array>
 #include <type_traits>
 #include <utility>
 #include <cmath>
@@ -315,18 +316,31 @@ public:
                         std::string language_name)
     {
         return promise(
-            [words = std::move(words), language_name = std::move(language_name)]() -> emscripten::val
+            [words = std::move(words), language_name = std::move(language_name)]() mutable -> std::optional<std::array<std::uint8_t, 32>>
             {
                 crypto::secret_key dst{};
                 auto words_param = epee::wipeable_string(words);
                 const bool r = crypto::ElectrumWords::words_to_bytes(words_param, dst, language_name);
                 if (!r)
                 {
+                    return std::nullopt;
+                }
+                std::array<std::uint8_t, 32> bytes{};
+                std::copy_n(
+                    reinterpret_cast<const std::uint8_t *>(dst.data),
+                    bytes.size(),
+                    bytes.begin());
+                return bytes;
+            },
+            [](const std::optional<std::array<std::uint8_t, 32>> &seed_bytes) -> emscripten::val
+            {
+                if (!seed_bytes.has_value())
+                {
                     return emscripten::val::null();
                 }
                 return MoneroWasmWallet::copy_bytes_to_uint8_array(
-                    reinterpret_cast<const std::uint8_t *>(dst.data),
-                    sizeof(dst.data));
+                    seed_bytes->data(),
+                    seed_bytes->size());
             });
     }
 
@@ -546,6 +560,19 @@ public:
         uint64_t height;
         uint64_t spent;
         uint64_t unspent;
+    };
+
+    struct PendingTxDestinationInfo
+    {
+        std::string dst_address;
+        uint64_t dsp_amount;
+    };
+
+    struct PendingTxInfo
+    {
+        uint64_t fee;
+        uint64_t change_amount;
+        std::vector<PendingTxDestinationInfo> destinations;
     };
 
     auto refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
@@ -905,14 +932,54 @@ public:
 
     auto get_transfers_info(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> ptx_vector)
     {
-        return promise([this, ptx_vector]()
-                       { return get_transfers_info_impl(*ptx_vector); });
+        return promise(
+            [this, ptx_vector]()
+            { return get_transfers_info_impl(*ptx_vector); },
+            [](const std::vector<PendingTxInfo> &transfers_info) -> emscripten::val
+            {
+                return vector_to_js_array(transfers_info, [](const PendingTxInfo &transfer_info)
+                                          {
+                                              auto tx_item = emscripten::val::object();
+                                              tx_item.set("fee", transfer_info.fee);
+                                              tx_item.set("changeAmount", transfer_info.change_amount);
+                                              tx_item.set("destinations", vector_to_js_array(
+                                                                              transfer_info.destinations,
+                                                                              [](const PendingTxDestinationInfo &destination_info)
+                                                                              {
+                                                                                  auto dst_item = emscripten::val::object();
+                                                                                  dst_item.set("dstAddress", destination_info.dst_address);
+                                                                                  dst_item.set("dspAmount", destination_info.dsp_amount);
+                                                                                  return dst_item;
+                                                                              }));
+                                              return tx_item;
+                                          });
+            });
     }
 
     auto get_multisig_tx_set_info(std::shared_ptr<tools::wallet2::multisig_tx_set> multisig_tx_set)
     {
-        return promise([this, multisig_tx_set]()
-                       { return get_transfers_info_impl(multisig_tx_set->m_ptx); });
+        return promise(
+            [this, multisig_tx_set]()
+            { return get_transfers_info_impl(multisig_tx_set->m_ptx); },
+            [](const std::vector<PendingTxInfo> &transfers_info) -> emscripten::val
+            {
+                return vector_to_js_array(transfers_info, [](const PendingTxInfo &transfer_info)
+                                          {
+                                              auto tx_item = emscripten::val::object();
+                                              tx_item.set("fee", transfer_info.fee);
+                                              tx_item.set("changeAmount", transfer_info.change_amount);
+                                              tx_item.set("destinations", vector_to_js_array(
+                                                                              transfer_info.destinations,
+                                                                              [](const PendingTxDestinationInfo &destination_info)
+                                                                              {
+                                                                                  auto dst_item = emscripten::val::object();
+                                                                                  dst_item.set("dstAddress", destination_info.dst_address);
+                                                                                  dst_item.set("dspAmount", destination_info.dsp_amount);
+                                                                                  return dst_item;
+                                                                              }));
+                                              return tx_item;
+                                          });
+            });
     }
 
     auto load_multisig_tx(emscripten::val data_js, bool do_accept)
@@ -1009,28 +1076,27 @@ public:
                            return true; });
     }
 
-    emscripten::val get_transfers_info_impl(const std::vector<tools::wallet2::pending_tx> &ptx_vector)
+    std::vector<PendingTxInfo> get_transfers_info_impl(const std::vector<tools::wallet2::pending_tx> &ptx_vector)
     {
-        auto result = emscripten::val::array();
+        std::vector<PendingTxInfo> result;
+        result.reserve(ptx_vector.size());
 
-        for (size_t tx_index = 0; tx_index < ptx_vector.size(); ++tx_index)
+        for (const auto &ptx : ptx_vector)
         {
-            const auto &ptx = ptx_vector[tx_index];
-            auto tx_item = emscripten::val::object();
-            tx_item.set("fee", ptx.fee);
-            tx_item.set("changeAmount", ptx.change_dts.amount);
+            std::vector<PendingTxDestinationInfo> destinations;
+            destinations.reserve(ptx.dests.size());
 
-            auto destinations = emscripten::val::array();
-            for (size_t dst_index = 0; dst_index < ptx.dests.size(); ++dst_index)
+            for (const auto &dst : ptx.dests)
             {
-                const auto &dst = ptx.dests[dst_index];
-                auto dst_item = emscripten::val::object();
-                dst_item.set("dstAddress", cryptonote::get_account_address_as_str(m_wallet.nettype(), dst.is_subaddress, dst.addr));
-                dst_item.set("dspAmount", dst.amount);
-                destinations.set(static_cast<uint32_t>(dst_index), dst_item);
+                destinations.push_back(PendingTxDestinationInfo{
+                    .dst_address = cryptonote::get_account_address_as_str(m_wallet.nettype(), dst.is_subaddress, dst.addr),
+                    .dsp_amount = dst.amount});
             }
-            tx_item.set("destinations", destinations);
-            result.set(static_cast<uint32_t>(tx_index), tx_item);
+
+            result.push_back(PendingTxInfo{
+                .fee = ptx.fee,
+                .change_amount = ptx.change_dts.amount,
+                .destinations = std::move(destinations)});
         }
         return result;
     }
