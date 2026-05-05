@@ -589,13 +589,8 @@ public:
     auto set_on_new_block_callback(emscripten::val callback)
     {
         auto p = makePromise();
-        mainThreadQueue.proxyAsync(
-            mainThread,
-            [this, callback, p]() mutable
-            {
-                m_on_new_block_callback = callback;
-                p.resolve(emscripten::val::undefined());
-            });
+        m_on_new_block_callback = callback;
+        p.resolve(emscripten::val::undefined());
         return p.promise;
     }
 
