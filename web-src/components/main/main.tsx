@@ -315,10 +315,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           prev === null ? null : { ...prev, walletHeight: height },
         );
       });
-      if (cancelled) {
-        await wallet.set_on_new_block_callback(null);
-        return;
-      }
 
       /** Only used for estimations during initial sync.
        *  And it measures whole cycle time, not only refresh time,
