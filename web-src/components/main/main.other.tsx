@@ -3,7 +3,7 @@ import { refreshXmrPrice } from "./useXmrPrice";
 import {
   MultisigAccountStatus,
   MoneroWasmWallet,
-  PaymentDetailsTransformed,
+  PaymentDetails,
   TransferItem,
   WalletKeys,
   readFile,
@@ -75,7 +75,7 @@ export function OtherTab({
   multisigStatus: MultisigAccountStatus | null;
   hasUnknownKeyImages: boolean | undefined;
   isViewOnly: boolean | undefined;
-  payments: PaymentDetailsTransformed[] | null;
+  payments: PaymentDetails[] | null;
   priceEur: number | null;
   priceSource: string | null;
   priceFetchedAt: number | null;

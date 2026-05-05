@@ -198,8 +198,7 @@ export interface PaymentDetails {
   amount: bigint;
   tx_hash: string;
   fee: bigint;
-  /** <addr>:<amount>;.... */
-  destinationsStr: string;
+  destinations: { address: string; amount: bigint }[];
   index_major: number;
   index_minor: number;
   note: string;
@@ -555,52 +554,3 @@ export function saveWalletFilesData(
 }
 
 export const max64 = (1n << 64n) - 1n;
-
-export interface PaymentDetailsTransformed extends PaymentDetails {
-  destinations: { address: string; amount: bigint }[];
-}
-export function transformPayments(
-  payments: PaymentDetails[],
-): PaymentDetailsTransformed[] {
-  const result: PaymentDetailsTransformed[] = [];
-  for (let i = 0; i < payments.length; i++) {
-    const p = payments[i];
-    const destinations: PaymentDetailsTransformed["destinations"] = [];
-    if (p.destinationsStr) {
-      for (const part of p.destinationsStr.split(";")) {
-        const [address, amountStr] = part.split(":");
-        destinations.push({ address, amount: BigInt(amountStr) });
-      }
-    }
-    result.push({ ...p, destinations });
-  }
-
-  result.sort((a, b) => {
-    // Pending first
-    if (a.type === "pending" && b.type !== "pending") return -1;
-    if (a.type !== "pending" && b.type === "pending") return 1;
-
-    // If both pending → timestamp DESC
-    if (a.type === "pending") {
-      return Number(b.timestamp - a.timestamp);
-    }
-
-    // Confirmed → block_height DESC
-    if (a.block_height !== b.block_height) {
-      return Number(b.block_height - a.block_height);
-    }
-
-    // Same block → timestamp DESC
-    return Number(b.timestamp - a.timestamp);
-  });
-
-  return result;
-}
-
-export function transformWalletAddresses(
-  addresses: WalletAddress[],
-): WalletAddress[] {
-  const result = addresses.slice();
-  result.sort((a, b) => a.indexMinor - b.indexMinor);
-  return result;
-}

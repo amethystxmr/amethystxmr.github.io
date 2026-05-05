@@ -3,10 +3,8 @@ import {
   max64,
   MoneroWasmWallet,
   MultisigAccountStatus,
-  PaymentDetailsTransformed,
+  PaymentDetails,
   WalletAddress,
-  transformPayments,
-  transformWalletAddresses,
 } from "../../../monero-wasm-module/walletApi";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
@@ -57,7 +55,7 @@ export function WalletMain({
     multisigStatus: MultisigAccountStatus;
     hasMultisigPartialKeyImages: boolean;
     hasUnknownKeyImages: boolean;
-    payments: PaymentDetailsTransformed[];
+    payments: PaymentDetails[];
   } | null>(null);
   const [downloadInfo, setDownloadInfo] = React.useState<null | {
     url: string;
@@ -68,7 +66,7 @@ export function WalletMain({
   const [refreshError, setRefreshError] = React.useState<string | null>(null);
 
   const [mempoolPayments, setMempoolPayments] = React.useState<
-    null | PaymentDetailsTransformed[]
+    null | PaymentDetails[]
   >(null);
 
   const [addresses, setAddresses] = React.useState<WalletAddress[] | null>(
@@ -76,8 +74,7 @@ export function WalletMain({
   );
 
   const updateWalletAddresses = React.useCallback(async () => {
-    const addressesVector = await wallet.get_wallet_addresses(0);
-    const nextAddresses = transformWalletAddresses(addressesVector);
+    const nextAddresses = await wallet.get_wallet_addresses(0);
     setAddresses(nextAddresses);
   }, [wallet]);
 
@@ -214,8 +211,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      const transformedPayments = transformPayments(payments);
-
       const daemonHeight = await wallet.get_daemon_blockchain_height();
       if (cancelled) {
         return;
@@ -232,7 +227,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         multisigStatus: newMultisigStatus,
         hasMultisigPartialKeyImages,
         hasUnknownKeyImages,
-        payments: transformedPayments,
+        payments,
       };
 
       return newStatus;
@@ -394,10 +389,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
               return;
             }
             if (mempoolPayments) {
-              const transformedMempoolPayments =
-                transformPayments(mempoolPayments);
-              console.log("Mempool payments:", transformedMempoolPayments);
-              setMempoolPayments(transformedMempoolPayments);
+              console.log("Mempool payments:", mempoolPayments);
+              setMempoolPayments(mempoolPayments);
             } else {
               console.warn("Failed to fetch mempool payments");
               setMempoolPayments(null);

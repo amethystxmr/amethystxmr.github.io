@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
-  PaymentDetailsTransformed,
+  PaymentDetails,
   WalletAddress,
 } from "../../../monero-wasm-module/walletApi";
 import {
@@ -16,8 +16,8 @@ import { Button, Input, SurfaceCard } from "../ui";
 
 type ReceiveAddressesProps = {
   addresses: WalletAddress[] | null;
-  payments: PaymentDetailsTransformed[] | null;
-  mempoolPayments: PaymentDetailsTransformed[] | null;
+  payments: PaymentDetails[] | null;
+  mempoolPayments: PaymentDetails[] | null;
   onAddSubaddressAdd: (newLabel: string) => Promise<void>;
   price: number | null;
 };

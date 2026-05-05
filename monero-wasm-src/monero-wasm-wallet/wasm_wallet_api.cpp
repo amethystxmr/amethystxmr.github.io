@@ -467,6 +467,8 @@ public:
                         indexMinor,
                     });
                 }
+                std::sort(result.begin(), result.end(), [](const WalletAddress &a, const WalletAddress &b)
+                          { return a.indexMinor < b.indexMinor; });
                 return result;
             },
             [](const std::vector<WalletAddress> &addrs) -> emscripten::val
@@ -599,6 +601,12 @@ public:
 
     struct PaymentDetails
     {
+        struct Destination
+        {
+            std::string address;
+            uint64_t amount;
+        };
+
         std::string payment_id;
         std::string type;
         bool is_unlocked;
@@ -608,7 +616,7 @@ public:
         uint64_t amount;
         std::string tx_hash;
         uint64_t fee;
-        std::string destinationsStr;
+        std::vector<Destination> destinations;
         uint32_t index_major;
         uint32_t index_minor;
         std::string note;
@@ -645,7 +653,10 @@ public:
                 const bool unlocked = m_wallet.is_transfer_unlocked(pd.m_unlock_time, pd.m_block_height);
                 uint64_t fee = 0;
 
-                auto destinationsStr = m_wallet.get_subaddress_as_str({pd.m_subaddr_index.major, pd.m_subaddr_index.minor}) + ":" + std::to_string(pd.m_amount);
+                std::vector<PaymentDetails::Destination> destinations{
+                    PaymentDetails::Destination{
+                        m_wallet.get_subaddress_as_str({pd.m_subaddr_index.major, pd.m_subaddr_index.minor}),
+                        pd.m_amount}};
 
                 std::string note = m_wallet.get_tx_note(pd.m_tx_hash);
 
@@ -659,7 +670,7 @@ public:
                     .amount = pd.m_amount,
                     .tx_hash = epee::string_tools::pod_to_hex(pd.m_tx_hash),
                     .fee = fee,
-                    .destinationsStr = destinationsStr,
+                    .destinations = std::move(destinations),
                     .index_major = pd.m_subaddr_index.major,
                     .index_minor = pd.m_subaddr_index.minor,
                     .note = note,
@@ -680,14 +691,13 @@ public:
                 uint64_t change = pd.m_change == (uint64_t)-1 ? 0 : pd.m_change; // change may not be known
                 uint64_t fee = pd.m_amount_in - pd.m_amount_out;
 
-                std::string destinationsStr;
+                std::vector<PaymentDetails::Destination> destinations;
+                destinations.reserve(pd.m_dests.size());
                 for (const auto &d : pd.m_dests)
                 {
-                    if (!destinationsStr.empty())
-                    {
-                        destinationsStr += ";";
-                    };
-                    destinationsStr += d.address(m_wallet.nettype(), pd.m_payment_id) + ":" + std::to_string(d.amount);
+                    destinations.push_back(PaymentDetails::Destination{
+                        d.address(m_wallet.nettype(), pd.m_payment_id),
+                        d.amount});
                 }
 
                 std::string note = m_wallet.get_tx_note(i->first);
@@ -701,7 +711,7 @@ public:
                                   .amount = pd.m_amount_in - change - fee,
                                   .tx_hash = epee::string_tools::pod_to_hex(tx_hash),
                                   .fee = fee,
-                                  .destinationsStr = destinationsStr,
+                                  .destinations = std::move(destinations),
                                   .index_major = pd.m_subaddr_account,
                                   // TODO: For ourgoing it can be multiple sub-addresses
                                   .index_minor = 0xFFFFFFFF,
@@ -723,14 +733,13 @@ public:
                 uint64_t amount = pd.m_amount_in;
                 uint64_t fee = amount - pd.m_amount_out;
 
-                std::string destinationsStr;
+                std::vector<PaymentDetails::Destination> destinations;
+                destinations.reserve(pd.m_dests.size());
                 for (const auto &d : pd.m_dests)
                 {
-                    if (!destinationsStr.empty())
-                    {
-                        destinationsStr += ";";
-                    };
-                    destinationsStr += d.address(m_wallet.nettype(), pd.m_payment_id) + ":" + std::to_string(d.amount);
+                    destinations.push_back(PaymentDetails::Destination{
+                        d.address(m_wallet.nettype(), pd.m_payment_id),
+                        d.amount});
                 }
 
                 std::string payment_id = epee::string_tools::pod_to_hex(i->second.m_payment_id);
@@ -751,7 +760,7 @@ public:
                     .amount = amount - pd.m_change - fee,
                     .tx_hash = epee::string_tools::pod_to_hex(i->first),
                     .fee = fee,
-                    .destinationsStr = destinationsStr,
+                    .destinations = std::move(destinations),
                     .index_major = pd.m_subaddr_account,
                     // TODO: For ourgoing it can be multiple sub-addresses
                     .index_minor = 0xFFFFFFFF,
@@ -759,6 +768,7 @@ public:
                 });
             }
         }
+        sort_payment_details(result);
         return result;
     }
 
@@ -827,7 +837,10 @@ public:
 
             std::string note = m_wallet.get_tx_note(pd.m_tx_hash);
 
-            auto destinationsStr = m_wallet.get_subaddress_as_str({pd.m_subaddr_index.major, pd.m_subaddr_index.minor}) + ":" + std::to_string(pd.m_amount);
+            std::vector<PaymentDetails::Destination> destinations{
+                PaymentDetails::Destination{
+                    m_wallet.get_subaddress_as_str({pd.m_subaddr_index.major, pd.m_subaddr_index.minor}),
+                    pd.m_amount}};
 
             std::string double_spend_note;
             if (i->second.m_double_spend_seen)
@@ -843,13 +856,13 @@ public:
                 .amount = pd.m_amount,
                 .tx_hash = epee::string_tools::pod_to_hex(pd.m_tx_hash),
                 .fee = 0,
-                .destinationsStr = destinationsStr,
+                .destinations = std::move(destinations),
                 .index_major = pd.m_subaddr_index.major,
                 .index_minor = pd.m_subaddr_index.minor,
                 .note = note,
             });
         }
-
+        sort_payment_details(result);
         return result;
     }
 
@@ -1635,11 +1648,39 @@ private:
         o.set("amount", p.amount);
         o.set("tx_hash", p.tx_hash);
         o.set("fee", p.fee);
-        o.set("destinationsStr", p.destinationsStr);
+        o.set("destinations", vector_to_js_array(p.destinations, [](const PaymentDetails::Destination &destination)
+                                                 {
+                                                     auto item = emscripten::val::object();
+                                                     item.set("address", destination.address);
+                                                     item.set("amount", destination.amount);
+                                                     return item;
+                                                 }));
         o.set("index_major", p.index_major);
         o.set("index_minor", p.index_minor);
         o.set("note", p.note);
         return o;
+    }
+
+    static void sort_payment_details(std::vector<PaymentDetails> &payments)
+    {
+        std::sort(payments.begin(), payments.end(), [](const PaymentDetails &a, const PaymentDetails &b)
+                  {
+                      const bool a_pending = a.type == "pending";
+                      const bool b_pending = b.type == "pending";
+                      if (a_pending != b_pending)
+                      {
+                          return a_pending;
+                      }
+                      if (a_pending)
+                      {
+                          return a.timestamp > b.timestamp;
+                      }
+                      if (a.block_height != b.block_height)
+                      {
+                          return a.block_height > b.block_height;
+                      }
+                      return a.timestamp > b.timestamp;
+                  });
     }
 
     static emscripten::val wallet_address_to_val(const WalletAddress &wa)
@@ -1961,7 +2002,6 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
         .field("amount", &MoneroWasmWallet::PaymentDetails::amount)
         .field("tx_hash", &MoneroWasmWallet::PaymentDetails::tx_hash)
         .field("fee", &MoneroWasmWallet::PaymentDetails::fee)
-        .field("destinationsStr", &MoneroWasmWallet::PaymentDetails::destinationsStr)
         .field("index_major", &MoneroWasmWallet::PaymentDetails::index_major)
         .field("index_minor", &MoneroWasmWallet::PaymentDetails::index_minor)
         .field("note", &MoneroWasmWallet::PaymentDetails::note);

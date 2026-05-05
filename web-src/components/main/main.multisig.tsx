@@ -2,7 +2,7 @@ import React from "react";
 import {
   MoneroWasmWallet,
   MultisigAccountStatus,
-  PaymentDetailsTransformed,
+  PaymentDetails,
 } from "../../../monero-wasm-module/walletApi";
 import {
   Button,
@@ -47,8 +47,8 @@ export function MultisigTab({
   wallet: MoneroWasmWallet;
   multisigStatus: MultisigAccountStatus | null;
   onRefresh: () => void;
-  payments: PaymentDetailsTransformed[] | null;
-  mempoolPayments: PaymentDetailsTransformed[] | null;
+  payments: PaymentDetails[] | null;
+  mempoolPayments: PaymentDetails[] | null;
   walletHeight: bigint | null;
   daemonHeight: bigint | null;
   hasMultisigPartialKeyImages: boolean;
