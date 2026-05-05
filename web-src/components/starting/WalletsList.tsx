@@ -432,10 +432,15 @@ async function closeWallet(wallet: MoneroWasmWallet): Promise<void> {
 
 async function createWalletUsingCurrentOptions(): Promise<MoneroWasmWallet> {
   const wallet = await createWallet(options.getValue("networkType"));
-  if (options.getValue("allowMismatchedDaemonVersion")) {
-    await wallet.allow_mismatched_daemon_version(true);
+  try {
+    if (options.getValue("allowMismatchedDaemonVersion")) {
+      await wallet.allow_mismatched_daemon_version(true);
+    }
+    return wallet;
+  } catch (e) {
+    wallet.delete();
+    throw e;
   }
-  return wallet;
 }
 
 async function testDaemonConnection(daemonAddress: string): Promise<void> {

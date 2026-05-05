@@ -464,13 +464,17 @@ export async function createWallet(
   networkType: NetworkType = NetworkTypes.MAINNET,
 ) {
   const wallet = new module.MoneroWasmWallet(networkType);
-  const actualNetworkType = await wallet.get_network_type();
-  if (actualNetworkType !== networkType) {
+  try {
+    const actualNetworkType = await wallet.get_network_type();
+    if (actualNetworkType !== networkType) {
+      // This is to verify that enums are used correctly
+      throw new Error("Internal error: Wallet network type mismatch");
+    }
+    return wallet;
+  } catch (e) {
     wallet.delete();
-    // This is to verify that enums are used correctly
-    throw new Error("Internal error: Wallet network type mismatch");
+    throw e;
   }
-  return wallet;
 }
 
 export function readFile(path: string): Uint8Array {
