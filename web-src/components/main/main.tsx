@@ -307,6 +307,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     };
 
     (async () => {
+      if (cancelled) {
+        return;
+      }
       await wallet.set_on_new_block_callback((height) => {
         if (cancelled) {
           return;
