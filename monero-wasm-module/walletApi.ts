@@ -117,6 +117,10 @@ export declare class MoneroWasmWallet {
     priority: FeePriority,
     subtractFeeFromIndex: number | null,
   ): Promise<PendingTxHandle>;
+  transfer_prepare_sweep_all(
+    destination: string,
+    priority: FeePriority,
+  ): Promise<PendingTxHandle>;
   get_transfers(): Promise<TransferItem[]>;
   get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
   transfer_commit_tx(handle: PendingTxHandle): Promise<void>;

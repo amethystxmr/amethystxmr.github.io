@@ -92,6 +92,17 @@ export class WalletMainPage {
     await this.page.getByRole("button", { name: /send another/i }).click();
   }
 
+  async sweepAllXmr(destinationAddress: string): Promise<void> {
+    await this.openTab("send");
+    await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
+    await this.page.getByRole("button", { name: /^All$/i }).click();
+
+    await this.page.getByRole("button", { name: /review transaction/i }).click();
+    await this.page.getByRole("button", { name: /confirm.*send/i }).click();
+    await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
+    await this.page.getByRole("button", { name: /send another/i }).click();
+  }
+
   async waitForMultisigInProgress(threshold: number, total: number, timeoutMs = 180_000): Promise<void> {
     const startedAt = Date.now();
     const setupHeader = this.page.getByText(
