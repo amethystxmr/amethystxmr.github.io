@@ -20,22 +20,12 @@ import {
   useIsUnmountedRef,
 } from "../ui";
 import {
-  createWallet,
-  decodePolyseed,
-  deleteWalletFiles,
   getMaxConcurrency,
-  getMoneroVersionFull,
   NetworkTypes,
   type NetworkType as NetworkTypeValue,
-  getWalletFilesData,
   getRecommendedMaxConcurrency,
-  isWalletFileExists,
-  listWalletNames,
   MoneroWasmWallet,
-  renameWallet,
-  saveWalletFilesData,
-  setDaemonAddress,
-  setMaxConcurrency,
+  walletApi,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
@@ -150,11 +140,11 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
   React.useEffect(() => {
-    void setDaemonAddress(daemonAddress);
+    void walletApi.setDaemonAddress(daemonAddress);
   }, [daemonAddress]);
 
   const buildListView = React.useCallback(() => {
-    return { type: "list" as const, walletNames: listWalletNames() };
+    return { type: "list" as const, walletNames: walletApi.listWalletNames() };
   }, []);
   const cpuThreads = options.getValue("cpuThreads");
 
@@ -249,11 +239,11 @@ export function WalletsList() {
   );
 
   React.useEffect(() => {
-    void setMaxConcurrency(cpuThreads);
+    void walletApi.setMaxConcurrency(cpuThreads);
   }, [cpuThreads]);
 
   React.useEffect(() => {
-    const walletNames = listWalletNames();
+    const walletNames = walletApi.listWalletNames();
     const walletNameFromHash = getWalletNameFromHash();
     if (walletNameFromHash) {
       if (!walletNames.includes(walletNameFromHash)) {
@@ -434,7 +424,7 @@ async function closeWallet(wallet: MoneroWasmWallet): Promise<void> {
 }
 
 async function createWalletUsingCurrentOptions(): Promise<MoneroWasmWallet> {
-  const wallet = await createWallet(options.getValue("networkType"));
+  const wallet = await walletApi.createWallet(options.getValue("networkType"));
   try {
     if (options.getValue("allowMismatchedDaemonVersion")) {
       await wallet.allow_mismatched_daemon_version(true);
@@ -451,7 +441,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
     .toString(36)
     .slice(2, 8)}`;
   const previousDaemonAddress = options.getValue("daemonAddress");
-  await setDaemonAddress(daemonAddress);
+  await walletApi.setDaemonAddress(daemonAddress);
 
   try {
     await withFsLock(async () => {
@@ -463,11 +453,11 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
         await tempWallet.get_daemon_blockchain_height();
       } finally {
         await closeWallet(tempWallet);
-        await deleteWalletFiles(tempWalletName);
+        await walletApi.deleteWalletFiles(tempWalletName);
       }
     });
   } finally {
-    await setDaemonAddress(previousDaemonAddress);
+    await walletApi.setDaemonAddress(previousDaemonAddress);
   }
 }
 
@@ -572,7 +562,7 @@ function RestoreView({
       void alert("Please enter wallet name");
       return;
     }
-    if (listWalletNames().includes(fileName)) {
+    if (walletApi.listWalletNames().includes(fileName)) {
       void alert(`Wallet with name ${fileName} already exists`);
       return;
     }
@@ -640,7 +630,7 @@ function RestoreView({
           throw new Error("Invalid starting height");
         }
       } else {
-        const decoded = await decodePolyseed(cakeSeed);
+        const decoded = await walletApi.decodePolyseed(cakeSeed);
         if (!decoded.privateKey || decoded.privateKey.length !== 32) {
           throw new Error("Invalid Cake seed: decoded private key is invalid");
         }
@@ -1039,7 +1029,7 @@ function CreateNewWalletView({
       void alert("Please enter wallet name");
       return;
     }
-    if (listWalletNames().includes(fileName)) {
+    if (walletApi.listWalletNames().includes(fileName)) {
       void alert(`Wallet with name ${fileName} already exists`);
       return;
     }
@@ -1528,7 +1518,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   }, []);
   const moneroVersionText = React.useMemo(() => {
     try {
-      return `Monero ${getMoneroVersionFull()}`;
+      return `Monero ${walletApi.getMoneroVersionFull()}`;
     } catch {
       return "Monero unknown";
     }
@@ -1577,7 +1567,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
               onAction={async () => {
                 const next = recommendedCpuThreads;
                 options.setValue("cpuThreads", next);
-                void setMaxConcurrency(next);
+                void walletApi.setMaxConcurrency(next);
                 setCpuThreadsInput(String(next));
                 refresh((x) => x + 1);
                 await alert(`CPU threads set to recommended value: ${next}`);
@@ -1600,7 +1590,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                   Math.max(1, Math.trunc(parsed)),
                 );
                 options.setValue("cpuThreads", clamped);
-                void setMaxConcurrency(clamped);
+                void walletApi.setMaxConcurrency(clamped);
                 refresh((x) => x + 1);
               }}
               onBlur={() => {
@@ -1743,7 +1733,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
   const alert = useAlert();
   const importInputRef = React.useRef<HTMLInputElement | null>(null);
   const [walletNames, setWalletNames] = React.useState<string[]>(() =>
-    listWalletNames(),
+    walletApi.listWalletNames(),
   );
   const [removeState, setRemoveState] = React.useState<
     | { type: "idle" }
@@ -1780,12 +1770,12 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         return;
       }
       await withFsLock(async () => {
-        await deleteWalletFiles(removeState.walletName);
+        await walletApi.deleteWalletFiles(removeState.walletName);
       });
       if (options.getValue("lastWalletName") === removeState.walletName) {
         options.setValue("lastWalletName", null);
       }
-      setWalletNames(listWalletNames());
+      setWalletNames(walletApi.listWalletNames());
       setRemoveState({ type: "idle" });
     } catch (e) {
       console.error("Failed to remove wallet:", e);
@@ -1802,7 +1792,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
     async (walletName: string) => {
       try {
         await withFsLock(async () => {
-          const files = await getWalletFilesData(walletName);
+          const files = await walletApi.getWalletFilesData(walletName);
           const zip = new JSZip();
           for (const file of files) {
             zip.file(file.name, file.data);
@@ -1855,7 +1845,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
             if (!walletName) {
               continue;
             }
-            if (await isWalletFileExists(walletName)) {
+            if (await walletApi.isWalletFileExists(walletName)) {
               skippedExisting.push(walletName);
               continue;
             }
@@ -1897,7 +1887,11 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
             }
 
             try {
-              await saveWalletFilesData(walletName, keysFileData, otherFiles);
+              await walletApi.saveWalletFilesData(
+                walletName,
+                keysFileData,
+                otherFiles,
+              );
               imported.push(walletName);
             } catch (e) {
               console.error("Failed to save wallet files:", e);
@@ -1908,7 +1902,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
           return { imported, skippedExisting };
         });
 
-        setWalletNames(listWalletNames());
+        setWalletNames(walletApi.listWalletNames());
 
         const formatWalletSection = (
           title: string,
@@ -1973,12 +1967,12 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         );
       }
       await withFsLock(async () => {
-        await renameWallet(oldName, newName);
+        await walletApi.renameWallet(oldName, newName);
       });
       if (options.getValue("lastWalletName") === oldName) {
         options.setValue("lastWalletName", newName);
       }
-      setWalletNames(listWalletNames());
+      setWalletNames(walletApi.listWalletNames());
       setRenameState({ type: "idle" });
     } catch (e) {
       console.error("Failed to rename wallet:", e);

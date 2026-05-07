@@ -6,9 +6,7 @@ import {
   PaymentDetails,
   TransferItem,
   WalletKeys,
-  readFile,
-  unlinkFile,
-  writeFile,
+  walletApi,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import { options } from "../options";
 import {
@@ -347,7 +345,7 @@ export function OtherTab({
 
   const unlinkIfExists = React.useCallback(async (fileName: string) => {
     try {
-      await unlinkFile(fileName);
+      await walletApi.unlinkFile(fileName);
     } catch {
       // File may already be removed.
     }
@@ -365,7 +363,7 @@ export function OtherTab({
         const [data, walletFile] = await withFsLock(async () => {
           try {
             await wallet.export_key_images(tmpFile, all);
-            const readData = await readFile(tmpFile);
+            const readData = await walletApi.readFile(tmpFile);
             const copied = new Uint8Array(readData.length);
             copied.set(readData);
             const walletFileLocal = await wallet.get_wallet_file();
@@ -429,7 +427,7 @@ export function OtherTab({
     try {
       const result = await withFsLock(async () => {
         try {
-          await writeFile(tmpFile, importedData);
+          await walletApi.writeFile(tmpFile, importedData);
           const importResult = await wallet.import_key_images(tmpFile, true);
           await wallet.store();
           return importResult;

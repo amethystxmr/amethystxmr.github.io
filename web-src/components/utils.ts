@@ -1,6 +1,5 @@
 import {
-  loadFilesystem,
-  saveFilesystem,
+  walletApi,
 } from "../../monero-wasm-module/walletApi.workerClient";
 
 let didWarnAboutMissingNavigatorLocks = false;
@@ -199,9 +198,9 @@ export async function withFsLock<T>(fn: () => Promise<T>): Promise<T> {
     throw new Error("Failed to acquire filesystem lock");
   }
   try {
-    await loadFilesystem();
+    await walletApi.loadFilesystem();
     const result = await fn();
-    await saveFilesystem();
+    await walletApi.saveFilesystem();
     return result;
   } finally {
     releaseFsLock();

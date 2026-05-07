@@ -10,33 +10,10 @@ async function createWallet(networkType?: walletApi.NetworkType) {
   return Comlink.proxy(wallet);
 }
 
-async function setHttpFetchCallback(
-  callback: walletApi.HttpFetchCallback | null,
-) {
-  walletApi.setHttpFetchCallback(callback);
-}
-
 export const exposedApi = {
+  ...walletApi,
   initModule,
   createWallet,
-  setDaemonAddress: walletApi.setDaemonAddress,
-  setHttpFetchCallback,
-  setMaxConcurrency: walletApi.setMaxConcurrency,
-  decodePolyseed: walletApi.decodePolyseed,
-  getMoneroVersionFull: walletApi.getMoneroVersionFull,
-  loadFilesystem: walletApi.loadFilesystem,
-  saveFilesystem: walletApi.saveFilesystem,
-  clearFilesystem: walletApi.clearFilesystem,
-  setWalletNewBlockCallback: walletApi.setWalletNewBlockCallback,
-  listWalletNames: walletApi.listWalletNames,
-  deleteWalletFiles: walletApi.deleteWalletFiles,
-  readFile: walletApi.readFile,
-  writeFile: walletApi.writeFile,
-  unlinkFile: walletApi.unlinkFile,
-  isWalletFileExists: walletApi.isWalletFileExists,
-  renameWallet: walletApi.renameWallet,
-  getWalletFilesData: walletApi.getWalletFilesData,
-  saveWalletFilesData: walletApi.saveWalletFilesData,
 };
 
 Comlink.expose(exposedApi);

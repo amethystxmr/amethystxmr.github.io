@@ -115,10 +115,10 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
         hint: "Loading wallet module...",
       });
       try {
-        const { initModule } = await import(
+        const { walletApi } = await import(
           "../monero-wasm-module/walletApi.workerClient"
         );
-        await initModule();
+        await walletApi.initModule();
         if (cancelled) {
           return;
         }

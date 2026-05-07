@@ -74,33 +74,7 @@ function getRemoteApi(): RemoteApi {
   return remoteApi;
 }
 
-function wrapWallet(remoteWallet: RemoteWallet): MoneroWasmWallet {
-  const wrappedWallet = new Proxy(remoteWallet, {
-    get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
-
-      if (typeof prop !== "string" || typeof value !== "function") {
-        return value;
-      }
-
-      if (prop === "delete") {
-        return async (...args: unknown[]) => {
-          try {
-            return await value.apply(target, args);
-          } finally {
-            target[Comlink.releaseProxy]();
-          }
-        };
-      }
-
-      return value;
-    },
-  }) as unknown as MoneroWasmWallet;
-  remoteWallets.set(wrappedWallet, remoteWallet);
-  return wrappedWallet;
-}
-
-export async function initModule(): Promise<void> {
+async function initModule(): Promise<void> {
   await getRemoteApi().initModule();
   const [walletNames, moneroVersionFull] = await Promise.all([
     getRemoteApi().listWalletNames(),
@@ -110,25 +84,15 @@ export async function initModule(): Promise<void> {
   moneroVersionFullCache = moneroVersionFull;
 }
 
-export async function createWallet(
+async function createWallet(
   networkType: NetworkType = NetworkTypes.MAINNET,
 ): Promise<MoneroWasmWallet> {
   const remoteWallet = (await getRemoteApi().createWallet(
     networkType,
   )) as unknown as RemoteWallet;
-  return wrapWallet(remoteWallet);
-}
-
-export async function setDaemonAddress(daemonAddress: string): Promise<void> {
-  await getRemoteApi().setDaemonAddress(daemonAddress);
-}
-
-export async function setHttpFetchCallback(
-  callback: HttpFetchCallback | null,
-): Promise<void> {
-  await getRemoteApi().setHttpFetchCallback(
-    callback ? Comlink.proxy(callback) : null,
-  );
+  const wallet = remoteWallet as unknown as MoneroWasmWallet;
+  remoteWallets.set(wallet, remoteWallet);
+  return wallet;
 }
 
 export async function setWalletNewBlockCallback(
@@ -144,85 +108,88 @@ export async function setWalletNewBlockCallback(
   );
 }
 
-export async function setMaxConcurrency(threads: number): Promise<void> {
-  await getRemoteApi().setMaxConcurrency(threads);
-}
-
-export async function decodePolyseed(moneroPolyseed: string) {
-  return await getRemoteApi().decodePolyseed(moneroPolyseed);
-}
-
-export function getMoneroVersionFull() {
-  return moneroVersionFullCache;
-}
-
-export async function loadFilesystem(): Promise<void> {
-  await getRemoteApi().loadFilesystem();
-}
-
-export async function saveFilesystem(): Promise<void> {
-  await getRemoteApi().saveFilesystem();
-}
-
-export async function clearFilesystem(): Promise<void> {
-  await getRemoteApi().clearFilesystem();
-}
-
 async function refreshWalletNames(): Promise<string[]> {
   walletNamesCache = await getRemoteApi().listWalletNames();
   return walletNamesCache;
 }
 
-export function listWalletNames(): string[] {
-  return walletNamesCache;
-}
+type WorkerApiClient = Omit<
+  RemoteApi,
+  | "initModule"
+  | "createWallet"
+  | "setHttpFetchCallback"
+  | "listWalletNames"
+  | "getMoneroVersionFull"
+  | "deleteWalletFiles"
+  | "renameWallet"
+  | "saveWalletFilesData"
+> & {
+  initModule: typeof initModule;
+  createWallet: typeof createWallet;
+  setHttpFetchCallback(callback: HttpFetchCallback | null): Promise<void>;
+  listWalletNames(): string[];
+  getMoneroVersionFull(): string;
+  deleteWalletFiles(walletName: string): Promise<void>;
+  renameWallet(oldName: string, newName: string): Promise<void>;
+  saveWalletFilesData(
+    walletName: string,
+    keysFileData: Uint8Array,
+    otherFilesData: { name: string; data: Uint8Array }[],
+  ): Promise<void>;
+};
 
-export async function deleteWalletFiles(walletName: string): Promise<void> {
-  await getRemoteApi().deleteWalletFiles(walletName);
-  await refreshWalletNames();
-}
+export const walletApi = new Proxy({} as WorkerApiClient, {
+  get(_target, prop, receiver) {
+    if (prop === "initModule") {
+      return initModule;
+    }
+    if (prop === "createWallet") {
+      return createWallet;
+    }
+    if (prop === "setHttpFetchCallback") {
+      return async (callback: HttpFetchCallback | null) => {
+        await getRemoteApi().setHttpFetchCallback(
+          callback ? Comlink.proxy(callback) : null,
+        );
+      };
+    }
+    if (prop === "listWalletNames") {
+      return () => walletNamesCache;
+    }
+    if (prop === "getMoneroVersionFull") {
+      return () => moneroVersionFullCache;
+    }
+    if (prop === "deleteWalletFiles") {
+      return async (walletName: string) => {
+        await getRemoteApi().deleteWalletFiles(walletName);
+        await refreshWalletNames();
+      };
+    }
+    if (prop === "renameWallet") {
+      return async (oldName: string, newName: string) => {
+        await getRemoteApi().renameWallet(oldName, newName);
+        await refreshWalletNames();
+      };
+    }
+    if (prop === "saveWalletFilesData") {
+      return async (
+        walletName: string,
+        keysFileData: Uint8Array,
+        otherFilesData: { name: string; data: Uint8Array }[],
+      ) => {
+        await getRemoteApi().saveWalletFilesData(
+          walletName,
+          keysFileData,
+          otherFilesData,
+        );
+        await refreshWalletNames();
+      };
+    }
 
-export async function readFile(path: string): Promise<Uint8Array> {
-  return await getRemoteApi().readFile(path);
-}
-
-export async function writeFile(
-  path: string,
-  data: Uint8Array,
-): Promise<void> {
-  await getRemoteApi().writeFile(path, data);
-}
-
-export async function unlinkFile(path: string): Promise<void> {
-  await getRemoteApi().unlinkFile(path);
-}
-
-export async function isWalletFileExists(walletName: string): Promise<boolean> {
-  return await getRemoteApi().isWalletFileExists(walletName);
-}
-
-export async function renameWallet(
-  oldName: string,
-  newName: string,
-): Promise<void> {
-  await getRemoteApi().renameWallet(oldName, newName);
-  await refreshWalletNames();
-}
-
-export async function getWalletFilesData(walletName: string) {
-  return await getRemoteApi().getWalletFilesData(walletName);
-}
-
-export async function saveWalletFilesData(
-  walletName: string,
-  keysFileData: Uint8Array,
-  otherFilesData: { name: string; data: Uint8Array }[],
-): Promise<void> {
-  await getRemoteApi().saveWalletFilesData(
-    walletName,
-    keysFileData,
-    otherFilesData,
-  );
-  await refreshWalletNames();
-}
-
+    const value = Reflect.get(getRemoteApi(), prop, receiver);
+    if (typeof value !== "function") {
+      return value;
+    }
+    return (...args: unknown[]) => value(...args);
+  },
+});
