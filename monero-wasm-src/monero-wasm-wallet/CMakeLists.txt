@@ -16,7 +16,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(polyseed)
 
 set(monero_wasm_wallet_sources
-    main.cpp
+    wasm_wallet_api.cpp
     polyseed.cpp
 )
 
@@ -66,5 +66,6 @@ target_link_libraries(monero-wasm-wallet
 install(TARGETS monero-wasm-wallet DESTINATION bin)
 
 set_target_properties(monero-wasm-wallet PROPERTIES
+    OUTPUT_NAME wasm_wallet
     SUFFIX ".mjs"
 )

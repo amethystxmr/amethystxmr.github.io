@@ -46,7 +46,7 @@ fi
 echo ""
 echo ""
 
-cp -v "$BUILD_WASM_DIR"/bin/monero-wasm-wallet.* ../monero-wasm-module/
+cp -v "$BUILD_WASM_DIR"/bin/wasm_wallet.* ../monero-wasm-module/
 
 echo ""
 echo ""

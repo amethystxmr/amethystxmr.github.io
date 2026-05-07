@@ -19,6 +19,7 @@
     "native:dist": "npm run build && electron-builder --publish never",
     "native:dist:ci": "electron-builder --publish never",
     "logo-gen": "./scripts/generate-pwa-icons.sh",
+    "ide:install-clangd": "./scripts/install-clangd.sh",
     "preview": "vite preview",
     "lint": "eslint web-src monero-wasm-module vite.config.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"

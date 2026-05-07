@@ -1,7 +1,7 @@
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   MoneroWasmWallet,
-  PaymentDetailsTransformed,
+  PaymentDetails,
   WalletAddress,
 } from "../../../monero-wasm-module/walletApi";
 import React from "react";
@@ -50,8 +50,8 @@ export function TransactionsTab({
   isMultisigWallet,
 }: {
   wallet: MoneroWasmWallet;
-  mempoolPayments: PaymentDetailsTransformed[] | null;
-  payments: PaymentDetailsTransformed[] | null;
+  mempoolPayments: PaymentDetails[] | null;
+  payments: PaymentDetails[] | null;
   addresses: WalletAddress[] | null;
   price: number | null;
   daemonLastBlockHeight: bigint | null;
@@ -523,7 +523,7 @@ export function TransactionsTab({
 }
 
 function getConfirmationsText(
-  p: PaymentDetailsTransformed,
+  p: PaymentDetails,
   daemonLastBlockHeight: bigint | null,
 ): string {
   if (p.type === "pending" || p.type === "mempool") {
@@ -544,7 +544,7 @@ function getConfirmationsText(
 }
 
 function getLockStateText(
-  p: PaymentDetailsTransformed,
+  p: PaymentDetails,
   daemonLastBlockHeight: bigint | null,
 ): string {
   if (p.type === "pending" || p.type === "mempool") {
@@ -573,7 +573,7 @@ function getLockStateText(
   return `0/${CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE}`;
 }
 
-function getTypeLabel(type: PaymentDetailsTransformed["type"]): string {
+function getTypeLabel(type: PaymentDetails["type"]): string {
   if (type === "in") return "Incoming";
   if (type === "out") return "Outgoing";
   if (type === "pending") return "Pending";
@@ -583,7 +583,7 @@ function getTypeLabel(type: PaymentDetailsTransformed["type"]): string {
   return type;
 }
 
-function getTypeToneClass(type: PaymentDetailsTransformed["type"]): string {
+function getTypeToneClass(type: PaymentDetails["type"]): string {
   if (type === "in" || type === "mempool" || type === "block") {
     return "bg-emerald-500/10 text-emerald-200 ring-emerald-300/20";
   }
@@ -596,7 +596,7 @@ function getTypeToneClass(type: PaymentDetailsTransformed["type"]): string {
   return "bg-white/10 text-white/80 ring-white/20";
 }
 
-function getAmountToneClass(type: PaymentDetailsTransformed["type"]): string {
+function getAmountToneClass(type: PaymentDetails["type"]): string {
   if (type === "in" || type === "mempool" || type === "block")
     return "text-emerald-300";
   if (type === "failed") return "text-red-300";
