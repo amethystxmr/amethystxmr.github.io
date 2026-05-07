@@ -316,7 +316,7 @@ public:
                         std::string language_name)
     {
         return promise(
-            [words = std::move(words), language_name = std::move(language_name)]() mutable -> std::optional<std::array<std::uint8_t, 32>>
+            [words = std::move(words), language_name = std::move(language_name)]() -> std::optional<std::array<std::uint8_t, 32>>
             {
                 crypto::secret_key dst{};
                 auto words_param = epee::wipeable_string(words);
@@ -1792,7 +1792,7 @@ private:
 
         walletQueue.proxyCallback(
             walletThread,
-            [work = std::forward<WorkFn>(work), result, error]() mutable
+            [work = std::forward<WorkFn>(work), result, error]()
             {
                 try
                 {
@@ -1807,7 +1807,7 @@ private:
                     *error = "Unknown error";
                 }
             },
-            [p, result, error, pack_to_js = std::forward<PackFn>(pack_to_js)]() mutable
+            [p, result, error, pack_to_js = std::forward<PackFn>(pack_to_js)]()
             {
                 if (error->has_value())
                 {
@@ -1844,7 +1844,7 @@ private:
 
         walletQueue.proxyCallback(
             walletThread,
-            [work = std::forward<WorkFn>(work), error]() mutable
+            [work = std::forward<WorkFn>(work), error]()
             {
                 try
                 {
@@ -1859,7 +1859,7 @@ private:
                     *error = "Unknown error";
                 }
             },
-            [p, error]() mutable
+            [p, error]()
             {
                 if (error->has_value())
                 {
