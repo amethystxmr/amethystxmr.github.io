@@ -1,9 +1,6 @@
 import React from "react";
-import {
-  MoneroWasmWallet,
-  MultisigAccountStatus,
-  PaymentDetails,
-} from "../../../monero-wasm-module/walletApi.workerClient";
+import  { api, MultisigAccountStatus, PaymentDetails, MoneroWasmWallet } from "../../../monero-wasm-module/walletApi.workerClient";
+
 import {
   Button,
   ButtonRadioRow,
@@ -93,7 +90,7 @@ export function MultisigTab({
   const isPrepareBlockedByPayments = hasAnyPayments;
   const isPrepareBlockedBySync = isWalletSyncing && !allowPrepareWhileSyncing;
 
-  const requestValidWalletPassword = React.useCallback(async () => {
+  const requestValidWalletPassword = React.useCallback(async () => {    
     if (await wallet.verify_password("")) {
       return "";
     }

@@ -4,8 +4,7 @@ import {
   MoneroWasmWallet,
   MultisigAccountStatus,
   PaymentDetails,
-  setWalletNewBlockCallback,
-  walletApi,
+  api,  
   WalletAddress,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import { ProgressBar } from "../ui";
@@ -137,7 +136,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
 
   React.useEffect(() => {
-    void walletApi.setHttpFetchCallback((
+    void api.setHttpFetchCallback((
       url,
       reqId,
       state,
@@ -162,7 +161,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     });
 
     return () => {
-      void walletApi.setHttpFetchCallback(null);
+      void api.setHttpFetchCallback(null);
     };
   }, [wallet]);
 
@@ -311,7 +310,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      await setWalletNewBlockCallback(wallet, (height) => {
+      await api.setWalletNewBlockCallback(wallet, (height) => {
         if (cancelled) {
           return;
         }
@@ -439,7 +438,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         stopWaitingRef.current();
       }
       stopWaitingRef.current = null;
-      void setWalletNewBlockCallback(wallet, null);
+      void api.setWalletNewBlockCallback(wallet, null);
     };
   }, [wallet, setRefreshing, setStatus, updateWalletAddresses]);
 

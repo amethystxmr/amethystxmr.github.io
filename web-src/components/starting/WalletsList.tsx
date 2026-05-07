@@ -25,7 +25,7 @@ import {
   type NetworkType as NetworkTypeValue,
   getRecommendedMaxConcurrency,
   MoneroWasmWallet,
-  walletApi,
+  api as walletApi,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
@@ -138,33 +138,21 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
 }
 
 export function WalletsList() {
-  const daemonAddress = options.getValue("daemonAddress");
-  const [isDaemonConfigured, setIsDaemonConfigured] = React.useState(false);
-  React.useEffect(() => {
-    let cancelled = false;
-    setIsDaemonConfigured(false);
-    void walletApi.setDaemonAddress(daemonAddress).then(() => {
-      if (!cancelled) {
-        setIsDaemonConfigured(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [daemonAddress]);
-
-  const buildListView = React.useCallback(() => {
-    return { type: "list" as const, walletNames: walletApi.listWalletNames() };
-  }, []);
   const cpuThreads = options.getValue("cpuThreads");
 
   const [view, setView] = React.useState<
     | {
+        type: "initial loading";
+        doAutoOpen: boolean;
+      }
+    | {
         type: "list";
         walletNames: string[];
+        doAutoOpen: boolean;
       }
     | {
         type: "restore";
+        walletNames: string[];
       }
     | {
         type: "opening";
@@ -177,6 +165,7 @@ export function WalletsList() {
       }
     | {
         type: "manage-wallets";
+        walletNames: string[];
       }
     | {
         type: "options";
@@ -184,11 +173,53 @@ export function WalletsList() {
     | {
         type: "create-new-wallet";
       }
-  >(buildListView);
+  >({
+    type: "initial loading",
+    doAutoOpen: true,
+  });
   const backToList = React.useCallback(
-    () => setView(buildListView()),
-    [buildListView],
+    () =>
+      setView({
+        type: "initial loading",
+        doAutoOpen: false,
+      }),
+    [],
   );
+  React.useEffect(() => {
+    if (view.type !== "initial loading") {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const daemonAddress = options.getValue("daemonAddress");
+      await walletApi.setDaemonAddress(daemonAddress);
+      const walletNames = await walletApi.listWalletNames();
+      if (cancelled) {
+        return;
+      }
+      setView({
+        type: "list",
+        walletNames,
+        doAutoOpen: view.doAutoOpen,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view]);
+
+  const onReloadWalletNames = React.useCallback(async () => {
+    if (view.type !== "manage-wallets") {
+      throw new Error("Invalid view type");
+    }
+    const walletNames = await walletApi.listWalletNames();
+    setView({
+      type: "manage-wallets",
+      walletNames,
+    });
+  }, [view]);
+
   const handleRestoreDone = React.useCallback(
     (openedWallet: OpenedWallet | null) => {
       if (openedWallet) {
@@ -253,13 +284,15 @@ export function WalletsList() {
   }, [cpuThreads]);
 
   React.useEffect(() => {
-    if (!isDaemonConfigured) {
+    if (view.type !== "list") {
       return;
     }
-    const walletNames = walletApi.listWalletNames();
+    if (!view.doAutoOpen) {
+      return;
+    }
     const walletNameFromHash = getWalletNameFromHash();
     if (walletNameFromHash) {
-      if (!walletNames.includes(walletNameFromHash)) {
+      if (!view.walletNames.includes(walletNameFromHash)) {
         console.warn(
           `Wallet "${walletNameFromHash}" from hash is not found in wallet list`,
         );
@@ -280,7 +313,7 @@ export function WalletsList() {
     if (!lastWalletName) {
       return;
     }
-    if (!walletNames.includes(lastWalletName)) {
+    if (!view.walletNames.includes(lastWalletName)) {
       console.warn(
         `Option "loadLastWallet" is set but last wallet "${lastWalletName}" not found in wallet list`,
       );
@@ -293,20 +326,18 @@ export function WalletsList() {
       fileName: lastWalletName,
       isStartupAutoOpen: true,
     });
-  }, [buildListView, isDaemonConfigured]);
+  }, [view]);
 
-  if (!isDaemonConfigured) {
+  if (view.type === "initial loading") {
     return (
       <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
         <Header>Amethyst XMR Wallet</Header>
         <SectionPanel>
-          <div className="text-sm text-white/70">Configuring daemon...</div>
+          <div className="text-sm text-white/70">Loading wallets...</div>
         </SectionPanel>
       </div>
     );
-  }
-
-  if (view.type === "opened") {
+  } else if (view.type === "opened") {
     return (
       <WalletMain
         wallet={view.openedWallet.wallet}
@@ -320,7 +351,9 @@ export function WalletsList() {
       />
     );
   } else if (view.type === "restore") {
-    return <RestoreView onDone={handleRestoreDone} />;
+    return (
+      <RestoreView onDone={handleRestoreDone} walletNames={view.walletNames} />
+    );
   } else if (view.type === "create-new-wallet") {
     return <CreateNewWalletView onDone={handleCreateDone} />;
   } else if (view.type === "opening") {
@@ -403,12 +436,19 @@ export function WalletsList() {
             >
               ➕︎ New wallet
             </Button>
-            <Button onClick={() => setView({ type: "restore" })}>
+            <Button
+              onClick={() =>
+                setView({ type: "restore", walletNames: view.walletNames })
+              }
+            >
               ↺ Restore
             </Button>
             <Button
               onClick={() => {
-                setView({ type: "manage-wallets" });
+                setView({
+                  type: "manage-wallets",
+                  walletNames: view.walletNames,
+                });
               }}
             >
               ☰ Manage wallets
@@ -425,7 +465,13 @@ export function WalletsList() {
       </div>
     );
   } else if (view.type === "manage-wallets") {
-    return <ManageWalletsView onBack={backToList} />;
+    return (
+      <ManageWalletsView
+        onBack={backToList}
+        walletNames={view.walletNames}
+        onReloadWalletNames={onReloadWalletNames}
+      />
+    );
   } else if (view.type === "options") {
     return <OptionsView onBack={backToList} />;
   } else {
@@ -556,8 +602,10 @@ function DoublePasswordInput({
 
 function RestoreView({
   onDone,
+  walletNames,
 }: {
   onDone: (openedWallet: OpenedWallet | null) => void;
+  walletNames: string[];
 }) {
   const isUnmountedRef = useIsUnmountedRef();
   const alert = useAlert();
@@ -586,7 +634,7 @@ function RestoreView({
       void alert("Please enter wallet name");
       return;
     }
-    if (walletApi.listWalletNames().includes(fileName)) {
+    if (walletNames.includes(fileName)) {
       void alert(`Wallet with name ${fileName} already exists`);
       return;
     }
@@ -1053,10 +1101,7 @@ function CreateNewWalletView({
       void alert("Please enter wallet name");
       return;
     }
-    if (walletApi.listWalletNames().includes(fileName)) {
-      void alert(`Wallet with name ${fileName} already exists`);
-      return;
-    }
+
     if (password !== passwordConfirm) {
       void alert("Password confirmation does not match");
       return;
@@ -1515,8 +1560,9 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       ? navigator.hardwareConcurrency
       : null;
   const networkType = options.getValue("networkType");
-  const [networkTypeSelectValue, setNetworkTypeSelectValue] =
-    React.useState(() => getNetworkTypeSelectValue(networkType));
+  const [networkTypeSelectValue, setNetworkTypeSelectValue] = React.useState(
+    () => getNetworkTypeSelectValue(networkType),
+  );
   const daemonAddress = options.getValue("daemonAddress");
   const [daemonSelectValue, setDaemonSelectValue] = React.useState(() =>
     getDaemonSelectValue(daemonAddress),
@@ -1753,12 +1799,17 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   );
 }
 
-function ManageWalletsView({ onBack }: { onBack: () => void }) {
+function ManageWalletsView({
+  onBack,
+  onReloadWalletNames,
+  walletNames,
+}: {
+  onBack: () => void;
+  onReloadWalletNames: () => Promise<void>;
+  walletNames: string[];
+}) {
   const alert = useAlert();
   const importInputRef = React.useRef<HTMLInputElement | null>(null);
-  const [walletNames, setWalletNames] = React.useState<string[]>(() =>
-    walletApi.listWalletNames(),
-  );
   const [removeState, setRemoveState] = React.useState<
     | { type: "idle" }
     | {
@@ -1799,7 +1850,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
       if (options.getValue("lastWalletName") === removeState.walletName) {
         options.setValue("lastWalletName", null);
       }
-      setWalletNames(walletApi.listWalletNames());
+      await onReloadWalletNames();
       setRemoveState({ type: "idle" });
     } catch (e) {
       console.error("Failed to remove wallet:", e);
@@ -1926,8 +1977,6 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
           return { imported, skippedExisting };
         });
 
-        setWalletNames(walletApi.listWalletNames());
-
         const formatWalletSection = (
           title: string,
           wallets: string[],
@@ -1950,6 +1999,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
           importSummary.skippedExisting,
           "No wallets were skipped.",
         );
+        await onReloadWalletNames();
         await alert(`Import completed.\n\n${importedText}\n\n${skippedText}`);
       } catch (e) {
         console.error("Failed to import wallets:", e);
@@ -1996,7 +2046,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
       if (options.getValue("lastWalletName") === oldName) {
         options.setValue("lastWalletName", newName);
       }
-      setWalletNames(walletApi.listWalletNames());
+      await onReloadWalletNames();
       setRenameState({ type: "idle" });
     } catch (e) {
       console.error("Failed to rename wallet:", e);
@@ -2007,7 +2057,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
     } finally {
       releaseWalletOpenLock?.();
     }
-  }, [alert, renameState]);
+  }, [alert, renameState, onReloadWalletNames]);
 
   return (
     <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">

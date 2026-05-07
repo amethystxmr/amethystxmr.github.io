@@ -1,6 +1,4 @@
-import {
-  walletApi,
-} from "../../monero-wasm-module/walletApi.workerClient";
+import { api as walletApi } from "../../monero-wasm-module/walletApi.workerClient";
 
 let didWarnAboutMissingNavigatorLocks = false;
 
