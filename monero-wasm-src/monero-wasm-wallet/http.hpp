@@ -120,8 +120,8 @@ public:
                     const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
 
                     // TODO: Pass it somehow from the factory
-                    const config = window.globalHttpConfig;
-                    const finalUrl = window.globalHttpConfig.mapUrl(uri);
+                    const config = globalThis.globalHttpConfig;
+                    const finalUrl = globalThis.globalHttpConfig.mapUrl(uri);
 
                     const reqId = Math.random().toString(16).slice(2);
                     // console.info(`[http ${reqId}] Fetching ${finalUrl} with method ${method} and body size ${bodySize}...`);
@@ -140,7 +140,7 @@ public:
                             return;
                         }
                         isFinished = true;
-                        window.globalHttpConfig.onFetch(uri, reqId, fetchState, 0, 0);
+                        globalThis.globalHttpConfig.onFetch(uri, reqId, fetchState, 0, 0);
                         Module._emscripten_ctx_proxy_finish(ctxPtr);
                     };
 
@@ -154,7 +154,7 @@ public:
 
                     xhr.onprogress = function(event)
                     {
-                        window.globalHttpConfig.onFetch(uri, reqId, 'progress', event.loaded, event.total);
+                        globalThis.globalHttpConfig.onFetch(uri, reqId, 'progress', event.loaded, event.total);
                         // console.info(`[http ${reqId}] Progress: ${event.loaded} / ${event.total}`);
                     };
                     xhr.onload = function()
@@ -191,7 +191,7 @@ public:
                         failRequest('abort');
                     };
 
-                    window.globalHttpConfig.onFetch(uri, reqId, 'start', 0, 0);
+                    globalThis.globalHttpConfig.onFetch(uri, reqId, 'start', 0, 0);
 
                     xhr.send(bodyCopyNonShared);
 

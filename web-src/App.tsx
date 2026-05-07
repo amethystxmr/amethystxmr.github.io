@@ -9,7 +9,6 @@ import {
   isNativeAppRuntime,
 } from "./startup/crossOriginIsolation";
 
-
 type AppProps = {
   crossOriginIsolationBootstrap: Promise<CrossOriginIsolationBootstrapResult>;
 };
@@ -36,7 +35,11 @@ function stringifyError(error: unknown) {
   return String(error);
 }
 
-function BootStatusView({ state }: { state: Exclude<BootState, { type: "ready" }> }) {
+function BootStatusView({
+  state,
+}: {
+  state: Exclude<BootState, { type: "ready" }>;
+}) {
   return (
     <div className="mx-auto max-w-xl space-y-3 px-4 py-12 text-center">
       <h2 className="text-base font-semibold text-white/90">{state.title}</h2>
@@ -56,9 +59,8 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
     title: "Initializing Monero",
     hint: "Preparing wallet module...",
   });
-  const [WalletsListComponent, setWalletsListComponent] = React.useState<
-    React.ComponentType | null
-  >(null);
+  const [WalletsListComponent, setWalletsListComponent] =
+    React.useState<React.ComponentType | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -116,7 +118,8 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
         hint: "Loading wallet module...",
       });
       try {
-        const { api } = await import("../monero-wasm-module/walletApi.workerClient");
+        const { api } =
+          await import("../monero-wasm-module/walletApi.workerClient");
         await api.initModule();
         if (cancelled) {
           return;
@@ -138,6 +141,7 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
         if (cancelled) {
           return;
         }
+        console.error("error", error);
         setBootState({
           type: "error",
           title: "Monero initialization failed",

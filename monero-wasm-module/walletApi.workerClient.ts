@@ -54,17 +54,14 @@ const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
   name: "monero-wallet-api",
   type: "module",
 });
-const remoteApi = Comlink.wrap<typeof exposedApi>(worker);
+export const api = Comlink.wrap<typeof exposedApi>(worker);
 
-export const api = {
-  ...remoteApi,
-  setWalletNewBlockCallback: async (
-    wallet: MoneroWasmWallet,
-    callback: WalletNewBlockCallback,
-  ) => {
-    await remoteApi.setWalletNewBlockCallback(
-      wallet,
-      callback ? Comlink.proxy(callback) : null,
-    );
-  },
-};
+export async function setWalletNewBlockCallback(
+  wallet: MoneroWasmWallet,
+  callback: WalletNewBlockCallback,
+) {
+  await api.setWalletNewBlockCallback(
+    wallet,
+    callback ? Comlink.proxy(callback) : null,
+  );
+}

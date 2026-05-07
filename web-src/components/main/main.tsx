@@ -4,8 +4,9 @@ import {
   MoneroWasmWallet,
   MultisigAccountStatus,
   PaymentDetails,
-  api,  
+  api,
   WalletAddress,
+  setWalletNewBlockCallback,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
@@ -136,29 +137,25 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
 
   React.useEffect(() => {
-    void api.setHttpFetchCallback((
-      url,
-      reqId,
-      state,
-      progressLoaded,
-      progressTotal,
-    ) => {
-      console.info(
-        `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
-      );
-      if (
-        state === "end" ||
-        state === "error" ||
-        state === "timeout" ||
-        state === "abort"
-      ) {
-        setDownloadInfo(null);
-      } else if (state === "start" || state === "progress") {
-        setDownloadInfo({ url, progressLoaded, progressTotal });
-      } else {
-        state satisfies never;
-      }
-    });
+    void api.setHttpFetchCallback(
+      (url, reqId, state, progressLoaded, progressTotal) => {
+        console.info(
+          `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
+        );
+        if (
+          state === "end" ||
+          state === "error" ||
+          state === "timeout" ||
+          state === "abort"
+        ) {
+          setDownloadInfo(null);
+        } else if (state === "start" || state === "progress") {
+          setDownloadInfo({ url, progressLoaded, progressTotal });
+        } else {
+          state satisfies never;
+        }
+      },
+    );
 
     return () => {
       void api.setHttpFetchCallback(null);
@@ -310,7 +307,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      await api.setWalletNewBlockCallback(wallet, (height) => {
+      await setWalletNewBlockCallback(wallet, (height) => {
         if (cancelled) {
           return;
         }
@@ -438,7 +435,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         stopWaitingRef.current();
       }
       stopWaitingRef.current = null;
-      void api.setWalletNewBlockCallback(wallet, null);
+      void setWalletNewBlockCallback(wallet, null);
     };
   }, [wallet, setRefreshing, setStatus, updateWalletAddresses]);
 

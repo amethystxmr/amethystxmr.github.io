@@ -347,15 +347,13 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
 
 export async function initModule() {
   if (module) {
-    return module;
+    return;
   }
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
   setMaxConcurrency(getRecommendedMaxConcurrency());
   getWalletRuntimeGlobal().moneroWalletModule = module;
   ensureGlobalHttpConfig();
-
-  return module;
 }
 
 export function setDaemonAddress(daemonAddress: string) {
