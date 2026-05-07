@@ -5,6 +5,7 @@ import {
   MultisigAccountStatus,
   PaymentDetails,
   setHttpFetchCallback,
+  setWalletNewBlockCallback,
   WalletAddress,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import { ProgressBar } from "../ui";
@@ -310,7 +311,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      await wallet.set_on_new_block_callback((height) => {
+      await setWalletNewBlockCallback(wallet, (height) => {
         if (cancelled) {
           return;
         }
@@ -438,7 +439,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         stopWaitingRef.current();
       }
       stopWaitingRef.current = null;
-      void wallet.set_on_new_block_callback(null);
+      void setWalletNewBlockCallback(wallet, null);
     };
   }, [wallet, setRefreshing, setStatus, updateWalletAddresses]);
 

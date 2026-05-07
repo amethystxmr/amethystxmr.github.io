@@ -29,11 +29,9 @@ import {
 import {
   FeePriority,
   MoneroWasmWallet,
-  PendingTxHandle,
   TransferItem,
   TransferInfoItem,
   type FeePriority as FeePriorityValue,
-  MultisigTxSetHandle,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 
 type SendState =
@@ -45,11 +43,9 @@ type SendState =
       kind:
         | {
             type: "non-multisig";
-            txHandle: PendingTxHandle;
           }
         | {
             type: "new-multisig";
-            txHandle: PendingTxHandle;
           }
         | {
             type: "continue-multisig";
@@ -331,29 +327,23 @@ export function SendTab({
     }
 
     setState({ type: "building-transaction" });
-    let txHandle: PendingTxHandle | null = null;
     try {
-      txHandle =
-        allRecipientIndex >= 0
-          ? await wallet.transfer_prepare_sweep_all(
-              destinations[allRecipientIndex],
-              feePriority,
-            )
-          : await wallet.transfer_prepare(
-              destinations,
-              amounts,
-              feePriority,
-              null,
-            );
-      const transferInfo = await wallet.get_transfers_info(txHandle);
+      if (allRecipientIndex >= 0) {
+        await wallet.transfer_prepare_sweep_all(
+          destinations[allRecipientIndex],
+          feePriority,
+        );
+      } else {
+        await wallet.transfer_prepare(destinations, amounts, feePriority, null);
+      }
+      const transferInfo = await wallet.get_transfers_info();
       const multisigStatus = await wallet.get_multisig_status();
       if (isUnmountedRef.current) {
-        txHandle?.delete();
+        await wallet.destroyTxHandle();
         return;
       }
       if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
-        txHandle.delete();
-        txHandle = null;
+        await wallet.destroyTxHandle();
         setState({ type: "entering" });
         await alert("Multisig wallet is enabled but not ready.");
         return;
@@ -365,12 +355,11 @@ export function SendTab({
           type: multisigStatus.multisig_is_active
             ? "new-multisig"
             : "non-multisig",
-          txHandle,
         },
         info: transferInfo,
       });
     } catch (e) {
-      txHandle?.delete();
+      await wallet.destroyTxHandle();
       if (isUnmountedRef.current) {
         return;
       }
@@ -387,10 +376,9 @@ export function SendTab({
     }
 
     if (state.kind.type === "new-multisig") {
-      const txHandle = state.kind.txHandle;
       try {
         setState({ type: "multisig-exporting" });
-        const data = await wallet.save_multisig_tx_pending_tx(txHandle);
+        const data = await wallet.save_multisig_tx_pending_tx();
         const dataCopy = new Uint8Array(data.length);
         dataCopy.set(data);
         const walletName = await wallet.get_wallet_file();
@@ -399,13 +387,13 @@ export function SendTab({
           header: "Partially signed transaction",
           fileName: `partially-signed-multisig-tx-${walletName}`,
         });
-        txHandle.delete();
+        await wallet.destroyTxHandle();
         if (isUnmountedRef.current) {
           return;
         }
         setState({ type: "entering" });
       } catch (e) {
-        txHandle.delete();
+        await wallet.destroyTxHandle();
         if (isUnmountedRef.current) {
           return;
         }
@@ -415,15 +403,13 @@ export function SendTab({
         });
       }
     } else if (state.kind.type === "non-multisig") {
-      const txHandle = state.kind.txHandle;
-
       setState({
         type: "sending",
         info: state.info,
       });
       (async () => {
         await withFsLock(async () => {
-          await wallet.transfer_commit_tx(txHandle);
+          await wallet.transfer_commit_tx();
           await wallet.store();
         });
         if (isUnmountedRef.current) {
@@ -442,18 +428,17 @@ export function SendTab({
           });
         })
         .finally(() => {
-          txHandle.delete();
+          void wallet.destroyTxHandle();
         });
     } else if (state.kind.type === "continue-multisig") {
       const importData = state.kind.importData;
       const info = state.info;
       setState({ type: "multisig-signing", importData, info });
       (async () => {
-        let txHandle: MultisigTxSetHandle | null = null;
         try {
-          txHandle = await wallet.load_multisig_tx(importData, true);
-          const signTxIds = await wallet.sign_multisig_tx(txHandle);
-          const signedData = await wallet.save_multisig_tx(txHandle);
+          await wallet.load_multisig_tx(importData, true);
+          const signTxIds = await wallet.sign_multisig_tx();
+          const signedData = await wallet.save_multisig_tx();
           const signedDataCopy = new Uint8Array(signedData.length);
           signedDataCopy.set(signedData);
 
@@ -461,13 +446,12 @@ export function SendTab({
             const multisigStatus = await wallet.get_multisig_status();
             const signersNeeded = Math.max(
               multisigStatus.threshold -
-                (await wallet.get_multisig_tx_signers_count(txHandle, true)) -
+                (await wallet.get_multisig_tx_signers_count(true)) -
                 1,
               0,
             );
 
-            txHandle.delete();
-            txHandle = null;
+            await wallet.destroyTxHandle();
 
             await multisigExportOverlay({
               data: signedDataCopy,
@@ -479,7 +463,7 @@ export function SendTab({
             }
             setState({ type: "entering" });
           } else {
-            const txInfos = await wallet.get_multisig_tx_set_info(txHandle);
+            const txInfos = await wallet.get_multisig_tx_set_info();
             if (isUnmountedRef.current) {
               return;
             }
@@ -488,14 +472,10 @@ export function SendTab({
               info: txInfos,
             });
             await withFsLock(async () => {
-              if (!txHandle) {
-                throw new Error("Multisig transaction handle is not available");
-              }
-              await wallet.transfer_commit_tx_multisig(txHandle);
+              await wallet.transfer_commit_tx_multisig();
               await wallet.store();
             });
-            txHandle.delete();
-            txHandle = null;
+            await wallet.destroyTxHandle();
             if (isUnmountedRef.current) {
               return;
             }
@@ -506,9 +486,7 @@ export function SendTab({
             scheduleRefresh();
           }
         } catch (e) {
-          if (txHandle) {
-            txHandle.delete();
-          }
+          await wallet.destroyTxHandle();
           if (isUnmountedRef.current) {
             return;
           }
@@ -584,22 +562,19 @@ export function SendTab({
     importData.set(imported);
 
     setState({ type: "multisig-info-loading" });
-    let handle: MultisigTxSetHandle | null = null;
     try {
-      handle = await wallet.load_multisig_tx(importData, false);
-      const txInfos = await wallet.get_multisig_tx_set_info(handle);
+      await wallet.load_multisig_tx(importData, false);
+      const txInfos = await wallet.get_multisig_tx_set_info();
       const multisigStatus = await wallet.get_multisig_status();
       if (isUnmountedRef.current) {
-        handle.delete();
+        await wallet.destroyTxHandle();
         return;
       }
 
       const signersCountWithoutMe = await wallet.get_multisig_tx_signers_count(
-        handle,
         true,
       );
       const signersCountWithMe = await wallet.get_multisig_tx_signers_count(
-        handle,
         false,
       );
       const signersNeeded = Math.max(
@@ -607,8 +582,7 @@ export function SendTab({
         0,
       );
 
-      handle.delete();
-      handle = null;
+      await wallet.destroyTxHandle();
 
       if (signersCountWithoutMe !== signersCountWithMe) {
         throw new Error("This wallet already signed this transaction");
@@ -624,9 +598,7 @@ export function SendTab({
         },
       });
     } catch (e) {
-      if (handle) {
-        handle.delete();
-      }
+      await wallet.destroyTxHandle();
       if (isUnmountedRef.current) {
         return;
       }
@@ -654,7 +626,7 @@ export function SendTab({
       state.kind.type === "non-multisig" ||
       state.kind.type === "new-multisig"
     ) {
-      state.kind.txHandle.delete();
+      void wallet.destroyTxHandle();
     } else if (state.kind.type === "continue-multisig") {
       // No handles to clean up in this
     } else {

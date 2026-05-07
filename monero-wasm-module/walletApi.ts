@@ -12,6 +12,10 @@ export type NetworkType = (typeof NetworkTypes)[keyof typeof NetworkTypes];
 
 type IDBFS = unknown & { readonly __nominal: unique symbol };
 
+export type WalletNewBlockCallback =
+  | ((height: bigint, timestamp: bigint) => void)
+  | null;
+
 export declare class MoneroWasmWallet {
   constructor(networkType: NetworkType);
   init(): Promise<boolean>;
@@ -59,9 +63,6 @@ export declare class MoneroWasmWallet {
     maxBlocks: bigint,
   ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
   rewrite(fileName: string, password: string): Promise<void>;
-  set_on_new_block_callback(
-    callback: ((height: bigint, timestamp: bigint) => void) | null,
-  ): Promise<void>;
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_multisig_seed(seedPassword: string): Promise<string>;
   get_address(): Promise<string>;
@@ -116,27 +117,23 @@ export declare class MoneroWasmWallet {
     amounts: bigint[],
     priority: FeePriority,
     subtractFeeFromIndex: number | null,
-  ): Promise<PendingTxHandle>;
+  ): Promise<void>;
   transfer_prepare_sweep_all(
     destination: string,
     priority: FeePriority,
-  ): Promise<PendingTxHandle>;
+  ): Promise<void>;
   get_transfers(): Promise<TransferItem[]>;
-  get_transfers_info(handle: PendingTxHandle): Promise<TransferInfoItem[]>;
-  transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
-  save_multisig_tx_pending_tx(handle: PendingTxHandle): Promise<Uint8Array>;
-  load_multisig_tx(
-    data: Uint8Array,
-    do_accept: boolean,
-  ): Promise<MultisigTxSetHandle>;
-  get_multisig_tx_set_info(handle: MultisigTxSetHandle): Promise<TransferInfoItem[]>;
-  get_multisig_tx_signers_count(
-    handle: MultisigTxSetHandle,
-    excludeSelf: boolean,
-  ): Promise<number>;
-  sign_multisig_tx(handle: MultisigTxSetHandle): Promise<string[]>;
-  save_multisig_tx(handle: MultisigTxSetHandle): Promise<Uint8Array>;
-  transfer_commit_tx_multisig(handle: MultisigTxSetHandle): Promise<void>;
+  get_transfers_info(): Promise<TransferInfoItem[]>;
+  transfer_commit_tx(): Promise<void>;
+  save_multisig_tx_pending_tx(): Promise<Uint8Array>;
+  load_multisig_tx(data: Uint8Array, do_accept: boolean): Promise<void>;
+  get_multisig_tx_set_info(): Promise<TransferInfoItem[]>;
+  get_multisig_tx_signers_count(excludeSelf: boolean): Promise<number>;
+  sign_multisig_tx(): Promise<string[]>;
+  save_multisig_tx(): Promise<Uint8Array>;
+  transfer_commit_tx_multisig(): Promise<void>;
+  destroyTxHandle(): Promise<void>;
+  destoryTxHandle(): Promise<void>;
 
   get_multisig_status(): Promise<MultisigAccountStatus>;
   has_multisig_partial_key_images(): Promise<boolean>;
@@ -244,18 +241,6 @@ export interface KeyImagesImportResult {
   unspent: bigint;
 }
 
-interface ClassHandle {
-  delete(): void;
-}
-
-export interface PendingTxHandle extends ClassHandle {
-  readonly __nominal: unique symbol;
-}
-
-export interface MultisigTxSetHandle extends ClassHandle {
-  readonly __nominal: unique symbol;
-}
-
 export interface TransferInfoItem {
   fee: bigint;
   changeAmount: bigint;
@@ -334,29 +319,30 @@ type GlobalHttpConfig = {
   onFetch: HttpFetchCallback;
 };
 
-type GlobalObjectWithWindow = typeof globalThis & {
-  window: typeof globalThis & {
+type WalletRuntimeGlobal = typeof globalThis & {
+  moneroWalletModule?: Module;
+  clearFilesystem?: typeof clearFilesystem;
+  globalHttpConfig?: GlobalHttpConfig;
+};
+
+function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
+  const runtimeGlobal = globalThis as WalletRuntimeGlobal;
+  const windowHolder = globalThis as unknown as { window?: unknown };
+  windowHolder.window ??= runtimeGlobal;
+  return windowHolder.window as WalletRuntimeGlobal;
+}
+
+declare global {
+  interface Window {
     moneroWalletModule?: Module;
     clearFilesystem?: typeof clearFilesystem;
     globalHttpConfig?: GlobalHttpConfig;
-  };
-};
-
-function getGlobalObjectWithWindow(): GlobalObjectWithWindow {
-  const globalObject = globalThis as typeof globalThis & {
-    window?: typeof globalThis & {
-      moneroWalletModule?: Module;
-      clearFilesystem?: typeof clearFilesystem;
-      globalHttpConfig?: GlobalHttpConfig;
-    };
-  };
-  globalObject.window ??= globalObject as GlobalObjectWithWindow["window"];
-  return globalObject as GlobalObjectWithWindow;
+  }
 }
 
 function ensureGlobalHttpConfig(): GlobalHttpConfig {
-  const globalObject = getGlobalObjectWithWindow();
-  globalObject.window.globalHttpConfig ??= {
+  const runtimeGlobal = getWalletRuntimeGlobal();
+  runtimeGlobal.globalHttpConfig ??= {
     mapUrl: () => {
       throw new Error("mapUrl not set");
     },
@@ -365,15 +351,7 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
       console.log("onFetch", ...args);
     },
   };
-  return globalObject.window.globalHttpConfig;
-}
-
-declare global {
-  interface Window {
-    moneroWalletModule: Module;
-    clearFilesystem: typeof clearFilesystem;
-    globalHttpConfig: GlobalHttpConfig;
-  }
+  return runtimeGlobal.globalHttpConfig;
 }
 
 export async function initModule() {
@@ -383,8 +361,7 @@ export async function initModule() {
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
   setMaxConcurrency(getRecommendedMaxConcurrency());
-  const globalObject = getGlobalObjectWithWindow();
-  globalObject.window.moneroWalletModule = module;
+  getWalletRuntimeGlobal().moneroWalletModule = module;
   ensureGlobalHttpConfig();
 
   return module;
@@ -400,6 +377,17 @@ export function setHttpFetchCallback(callback: HttpFetchCallback | null) {
     ((...args) => {
       console.log("onFetch", ...args);
     });
+}
+
+export function setWalletNewBlockCallback(
+  wallet: MoneroWasmWallet,
+  callback: WalletNewBlockCallback,
+) {
+  return (
+    wallet as MoneroWasmWallet & {
+      set_on_new_block_callback(callback: WalletNewBlockCallback): Promise<void>;
+    }
+  ).set_on_new_block_callback(callback);
 }
 
 export function getMaxConcurrency() {
@@ -481,7 +469,7 @@ export async function clearFilesystem() {
   await saveFilesystem();
 }
 
-getGlobalObjectWithWindow().window.clearFilesystem = clearFilesystem;
+getWalletRuntimeGlobal().clearFilesystem = clearFilesystem;
 
 export function listWalletNames() {
   return module.FS.readdir(".")

@@ -12,14 +12,13 @@ import {
   type KeyImagesImportResult,
   type MoneroWasmWallet as BaseMoneroWasmWallet,
   type MultisigAccountStatus,
-  type MultisigTxSetHandle,
   type NetworkType,
   type PaymentDetails,
-  type PendingTxHandle,
   type TransferInfoItem,
   type TransferItem,
   type WalletAddress,
   type WalletKeys,
+  type WalletNewBlockCallback,
 } from "./walletApi";
 
 const FeePriority = FeePriorityConst;
@@ -48,50 +47,19 @@ export type {
 
 type RemoteApi = Comlink.Remote<typeof exposedApi>;
 
-type WalletHandleKind = "pending-tx" | "multisig-tx-set";
-
-type WalletHandleRef = {
-  __remoteHandleId: string;
-  __remoteHandleKind: WalletHandleKind;
-};
-
-type LocalWalletHandle = WalletHandleRef & {
-  delete(): Promise<void>;
-};
-
-type RemoteWallet = Comlink.Remote<BaseMoneroWasmWallet> & {
-  delete_remote_handle(id: string): Promise<void>;
-};
-
 export type MoneroWasmWallet = BaseMoneroWasmWallet;
 
-const callbackMethods = new Set(["set_on_new_block_callback"]);
-
-type NewBlockCallback = Parameters<
-  BaseMoneroWasmWallet["set_on_new_block_callback"]
->[0];
-
-const handleReturningMethods = new Set([
-  "transfer_prepare",
-  "transfer_prepare_sweep_all",
-  "load_multisig_tx",
-]);
-
-const handleArgumentMethods = new Set([
-  "get_transfers_info",
-  "transfer_commit_tx",
-  "save_multisig_tx_pending_tx",
-  "get_multisig_tx_set_info",
-  "get_multisig_tx_signers_count",
-  "sign_multisig_tx",
-  "save_multisig_tx",
-  "transfer_commit_tx_multisig",
-]);
+type RemoteWallet = Comlink.Remote<
+  BaseMoneroWasmWallet & {
+    set_on_new_block_callback(callback: WalletNewBlockCallback): Promise<void>;
+  }
+>;
 
 let worker: Worker | null = null;
 let remoteApi: RemoteApi | null = null;
 let walletNamesCache: string[] = [];
 let moneroVersionFullCache = "unknown";
+const remoteWallets = new WeakMap<MoneroWasmWallet, RemoteWallet>();
 
 function getRemoteApi(): RemoteApi {
   if (!remoteApi) {
@@ -104,74 +72,13 @@ function getRemoteApi(): RemoteApi {
   return remoteApi;
 }
 
-function isWalletHandleRef(value: unknown): value is WalletHandleRef {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "__remoteHandleId" in value &&
-    typeof (value as WalletHandleRef).__remoteHandleId === "string"
-  );
-}
-
-function serializeHandleArg(value: unknown) {
-  if (!isWalletHandleRef(value)) {
-    return value;
-  }
-  return {
-    __remoteHandleId: value.__remoteHandleId,
-    __remoteHandleKind: value.__remoteHandleKind,
-  };
-}
-
-function createLocalHandle(
-  remoteWallet: RemoteWallet,
-  ref: WalletHandleRef,
-): LocalWalletHandle {
-  let released = false;
-  return {
-    ...ref,
-    async delete() {
-      if (released) {
-        return;
-      }
-      released = true;
-      await remoteWallet.delete_remote_handle(ref.__remoteHandleId);
-    },
-  };
-}
-
 function wrapWallet(remoteWallet: RemoteWallet): MoneroWasmWallet {
-  return new Proxy(remoteWallet, {
+  const wrappedWallet = new Proxy(remoteWallet, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
 
       if (typeof prop !== "string" || typeof value !== "function") {
         return value;
-      }
-
-      if (callbackMethods.has(prop)) {
-        return async (callback: NewBlockCallback) => {
-          return await value.call(
-            target,
-            callback ? Comlink.proxy(callback) : null,
-          );
-        };
-      }
-
-      if (handleReturningMethods.has(prop)) {
-        return async (...args: unknown[]) => {
-          const ref = (await value.apply(
-            target,
-            args.map(serializeHandleArg),
-          )) as WalletHandleRef;
-          return createLocalHandle(target, ref);
-        };
-      }
-
-      if (handleArgumentMethods.has(prop)) {
-        return async (...args: unknown[]) => {
-          return await value.apply(target, args.map(serializeHandleArg));
-        };
       }
 
       if (prop === "delete") {
@@ -187,6 +94,8 @@ function wrapWallet(remoteWallet: RemoteWallet): MoneroWasmWallet {
       return value;
     },
   }) as unknown as MoneroWasmWallet;
+  remoteWallets.set(wrappedWallet, remoteWallet);
+  return wrappedWallet;
 }
 
 export async function initModule(): Promise<void> {
@@ -216,6 +125,19 @@ export async function setHttpFetchCallback(
   callback: HttpFetchCallback | null,
 ): Promise<void> {
   await getRemoteApi().setHttpFetchCallback(
+    callback ? Comlink.proxy(callback) : null,
+  );
+}
+
+export async function setWalletNewBlockCallback(
+  wallet: MoneroWasmWallet,
+  callback: WalletNewBlockCallback,
+): Promise<void> {
+  const remoteWallet = remoteWallets.get(wallet);
+  if (!remoteWallet) {
+    throw new Error("Unknown worker wallet instance");
+  }
+  await remoteWallet.set_on_new_block_callback(
     callback ? Comlink.proxy(callback) : null,
   );
 }
@@ -302,4 +224,3 @@ export async function saveWalletFilesData(
   await refreshWalletNames();
 }
 
-export type { MultisigTxSetHandle, PendingTxHandle };
