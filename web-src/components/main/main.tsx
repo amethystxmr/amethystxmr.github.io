@@ -4,8 +4,9 @@ import {
   MoneroWasmWallet,
   MultisigAccountStatus,
   PaymentDetails,
+  setHttpFetchCallback,
   WalletAddress,
-} from "../../../monero-wasm-module/walletApi";
+} from "../../../monero-wasm-module/walletApi.workerClient";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
@@ -135,8 +136,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
 
   React.useEffect(() => {
-    const oldOnFetch = window.globalHttpConfig.onFetch;
-    window.globalHttpConfig.onFetch = (
+    void setHttpFetchCallback((
       url,
       reqId,
       state,
@@ -158,10 +158,10 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       } else {
         state satisfies never;
       }
-    };
+    });
 
     return () => {
-      window.globalHttpConfig.onFetch = oldOnFetch;
+      void setHttpFetchCallback(null);
     };
   }, [wallet]);
 

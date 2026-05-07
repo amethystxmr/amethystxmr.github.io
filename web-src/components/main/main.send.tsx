@@ -34,7 +34,7 @@ import {
   TransferInfoItem,
   type FeePriority as FeePriorityValue,
   MultisigTxSetHandle,
-} from "../../../monero-wasm-module/walletApi";
+} from "../../../monero-wasm-module/walletApi.workerClient";
 
 type SendState =
   | { type: "entering" }
@@ -423,7 +423,7 @@ export function SendTab({
       });
       (async () => {
         await withFsLock(async () => {
-          wallet.transfer_commit_tx(txHandle);
+          await wallet.transfer_commit_tx(txHandle);
           await wallet.store();
         });
         if (isUnmountedRef.current) {

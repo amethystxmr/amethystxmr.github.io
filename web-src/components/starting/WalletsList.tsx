@@ -34,8 +34,9 @@ import {
   MoneroWasmWallet,
   renameWallet,
   saveWalletFilesData,
+  setDaemonAddress,
   setMaxConcurrency,
-} from "../../../monero-wasm-module/walletApi";
+} from "../../../monero-wasm-module/walletApi.workerClient";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { DAEMON_PRESET_OPTIONS, options } from "../options";
@@ -148,7 +149,9 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
-  window.globalHttpConfig.mapUrl = (url) => daemonAddress + url;
+  React.useEffect(() => {
+    void setDaemonAddress(daemonAddress);
+  }, [daemonAddress]);
 
   const buildListView = React.useCallback(() => {
     return { type: "list" as const, walletNames: listWalletNames() };
@@ -246,7 +249,7 @@ export function WalletsList() {
   );
 
   React.useEffect(() => {
-    setMaxConcurrency(cpuThreads);
+    void setMaxConcurrency(cpuThreads);
   }, [cpuThreads]);
 
   React.useEffect(() => {
@@ -447,8 +450,8 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
   const tempWalletName = `${TEMP_DAEMON_TEST_WALLET_PREFIX}-${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 8)}`;
-  const previousMapUrl = window.globalHttpConfig.mapUrl;
-  window.globalHttpConfig.mapUrl = (url) => daemonAddress + url;
+  const previousDaemonAddress = options.getValue("daemonAddress");
+  await setDaemonAddress(daemonAddress);
 
   try {
     await withFsLock(async () => {
@@ -460,11 +463,11 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
         await tempWallet.get_daemon_blockchain_height();
       } finally {
         await closeWallet(tempWallet);
-        deleteWalletFiles(tempWalletName);
+        await deleteWalletFiles(tempWalletName);
       }
     });
   } finally {
-    window.globalHttpConfig.mapUrl = previousMapUrl;
+    await setDaemonAddress(previousDaemonAddress);
   }
 }
 
@@ -637,7 +640,7 @@ function RestoreView({
           throw new Error("Invalid starting height");
         }
       } else {
-        const decoded = decodePolyseed(cakeSeed);
+        const decoded = await decodePolyseed(cakeSeed);
         if (!decoded.privateKey || decoded.privateKey.length !== 32) {
           throw new Error("Invalid Cake seed: decoded private key is invalid");
         }
@@ -1574,7 +1577,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
               onAction={async () => {
                 const next = recommendedCpuThreads;
                 options.setValue("cpuThreads", next);
-                setMaxConcurrency(next);
+                void setMaxConcurrency(next);
                 setCpuThreadsInput(String(next));
                 refresh((x) => x + 1);
                 await alert(`CPU threads set to recommended value: ${next}`);
@@ -1597,7 +1600,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                   Math.max(1, Math.trunc(parsed)),
                 );
                 options.setValue("cpuThreads", clamped);
-                setMaxConcurrency(clamped);
+                void setMaxConcurrency(clamped);
                 refresh((x) => x + 1);
               }}
               onBlur={() => {
@@ -1777,7 +1780,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         return;
       }
       await withFsLock(async () => {
-        deleteWalletFiles(removeState.walletName);
+        await deleteWalletFiles(removeState.walletName);
       });
       if (options.getValue("lastWalletName") === removeState.walletName) {
         options.setValue("lastWalletName", null);
@@ -1799,7 +1802,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
     async (walletName: string) => {
       try {
         await withFsLock(async () => {
-          const files = getWalletFilesData(walletName);
+          const files = await getWalletFilesData(walletName);
           const zip = new JSZip();
           for (const file of files) {
             zip.file(file.name, file.data);
@@ -1852,7 +1855,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
             if (!walletName) {
               continue;
             }
-            if (isWalletFileExists(walletName)) {
+            if (await isWalletFileExists(walletName)) {
               skippedExisting.push(walletName);
               continue;
             }
@@ -1894,7 +1897,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
             }
 
             try {
-              saveWalletFilesData(walletName, keysFileData, otherFiles);
+              await saveWalletFilesData(walletName, keysFileData, otherFiles);
               imported.push(walletName);
             } catch (e) {
               console.error("Failed to save wallet files:", e);
@@ -1970,7 +1973,7 @@ function ManageWalletsView({ onBack }: { onBack: () => void }) {
         );
       }
       await withFsLock(async () => {
-        renameWallet(oldName, newName);
+        await renameWallet(oldName, newName);
       });
       if (options.getValue("lastWalletName") === oldName) {
         options.setValue("lastWalletName", newName);

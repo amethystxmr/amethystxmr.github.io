@@ -1,7 +1,7 @@
 import {
   loadFilesystem,
   saveFilesystem,
-} from "../../monero-wasm-module/walletApi";
+} from "../../monero-wasm-module/walletApi.workerClient";
 
 let didWarnAboutMissingNavigatorLocks = false;
 

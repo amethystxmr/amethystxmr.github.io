@@ -319,20 +319,60 @@ type HttpFetchState =
   | "timeout"
   | "abort";
 
+export type { HttpFetchState };
+
+export type HttpFetchCallback = (
+  url: string,
+  reqId: string,
+  state: HttpFetchState,
+  progressLoaded: number,
+  progressTotal: number,
+) => void;
+
+type GlobalHttpConfig = {
+  mapUrl: (url: string) => string;
+  onFetch: HttpFetchCallback;
+};
+
+type GlobalObjectWithWindow = typeof globalThis & {
+  window: typeof globalThis & {
+    moneroWalletModule?: Module;
+    clearFilesystem?: typeof clearFilesystem;
+    globalHttpConfig?: GlobalHttpConfig;
+  };
+};
+
+function getGlobalObjectWithWindow(): GlobalObjectWithWindow {
+  const globalObject = globalThis as typeof globalThis & {
+    window?: typeof globalThis & {
+      moneroWalletModule?: Module;
+      clearFilesystem?: typeof clearFilesystem;
+      globalHttpConfig?: GlobalHttpConfig;
+    };
+  };
+  globalObject.window ??= globalObject as GlobalObjectWithWindow["window"];
+  return globalObject as GlobalObjectWithWindow;
+}
+
+function ensureGlobalHttpConfig(): GlobalHttpConfig {
+  const globalObject = getGlobalObjectWithWindow();
+  globalObject.window.globalHttpConfig ??= {
+    mapUrl: () => {
+      throw new Error("mapUrl not set");
+    },
+    // mapUrl: (url) => "https://xmr-node.cakewallet.com:18081" + url,
+    onFetch: (...args) => {
+      console.log("onFetch", ...args);
+    },
+  };
+  return globalObject.window.globalHttpConfig;
+}
+
 declare global {
   interface Window {
     moneroWalletModule: Module;
     clearFilesystem: typeof clearFilesystem;
-    globalHttpConfig: {
-      mapUrl: (url: string) => string;
-      onFetch: (
-        url: string,
-        reqId: string,
-        state: HttpFetchState,
-        progressLoaded: number,
-        progressTotal: number,
-      ) => void;
-    };
+    globalHttpConfig: GlobalHttpConfig;
   }
 }
 
@@ -343,19 +383,23 @@ export async function initModule() {
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
   setMaxConcurrency(getRecommendedMaxConcurrency());
-  window.moneroWalletModule = module;
-
-  window.globalHttpConfig = {
-    mapUrl: () => {
-      throw new Error("mapUrl not set");
-    },
-    // mapUrl: (url) => "https://xmr-node.cakewallet.com:18081" + url,
-    onFetch: (...args) => {
-      console.log("onFetch", ...args);
-    },
-  };
+  const globalObject = getGlobalObjectWithWindow();
+  globalObject.window.moneroWalletModule = module;
+  ensureGlobalHttpConfig();
 
   return module;
+}
+
+export function setDaemonAddress(daemonAddress: string) {
+  ensureGlobalHttpConfig().mapUrl = (url) => daemonAddress + url;
+}
+
+export function setHttpFetchCallback(callback: HttpFetchCallback | null) {
+  ensureGlobalHttpConfig().onFetch =
+    callback ??
+    ((...args) => {
+      console.log("onFetch", ...args);
+    });
 }
 
 export function getMaxConcurrency() {
@@ -437,9 +481,7 @@ export async function clearFilesystem() {
   await saveFilesystem();
 }
 
-if (typeof window !== "undefined") {
-  window.clearFilesystem = clearFilesystem;
-}
+getGlobalObjectWithWindow().window.clearFilesystem = clearFilesystem;
 
 export function listWalletNames() {
   return module.FS.readdir(".")

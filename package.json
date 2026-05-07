@@ -60,6 +60,7 @@
     "@types/react-dom": "^19.2.3",
     "@zxing/browser": "^0.1.5",
     "clsx": "^2.1.1",
+    "comlink": "^4.4.2",
     "install": "^0.13.0",
     "jszip": "^3.10.1",
     "qrcode.react": "^4.2.0",
