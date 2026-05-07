@@ -11,6 +11,8 @@
 #include "version.h"
 #include "mnemonics/electrum-words.h"
 #include <thread>
+#include <map>
+#include <set>
 #include "memwipe.h"
 
 #include <emscripten.h>
@@ -32,6 +34,7 @@
 
 using WalletNetworkTypeBacking = std::underlying_type_t<cryptonote::network_type>;
 using WalletPriorityBacking = std::underlying_type_t<Monero::PendingTransaction::Priority>;
+using WalletTxHandle = std::uint32_t;
 
 static_assert(std::is_same_v<WalletNetworkTypeBacking, std::uint8_t>,
               "cryptonote::network_type backing type must be uint8_t");
@@ -91,7 +94,7 @@ public:
     }
     ~MoneroWasmWallet()
     {
-        destroy_tx_handle_impl();
+        destroy_all_tx_handles_impl();
         pthread_cancel(walletThread);
         // pthread_join(walletThread, NULL);
         m_wallet.stop();
@@ -922,10 +925,8 @@ public:
             }
         }
 
-        return promise_void([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority, subtract_fee_from_index]()
-                            {
-                                destroy_tx_handle_impl();
-                                m_pending_tx_handle = transfer_impl(dst_addresses, amounts, priority, subtract_fee_from_index); });
+        return promise([this, dst_addresses = std::move(dst_addresses), amounts = std::move(amounts), priority, subtract_fee_from_index]()
+                       { return register_pending_tx_handle(transfer_impl(dst_addresses, amounts, priority, subtract_fee_from_index)); });
     }
 
     auto transfer_prepare_sweep_all(
@@ -937,17 +938,15 @@ public:
             throw std::runtime_error("Destination address is empty");
         }
 
-        return promise_void([this, dst_address, priority]()
-                            {
-                                destroy_tx_handle_impl();
-                                m_pending_tx_handle = transfer_sweep_all_impl(dst_address, priority); });
+        return promise([this, dst_address, priority]()
+                       { return register_pending_tx_handle(transfer_sweep_all_impl(dst_address, priority)); });
     }
 
-    auto get_transfers_info()
+    auto get_transfers_info(WalletTxHandle handle)
     {
         return promise(
-            [this]()
-            { return get_transfers_info_impl(*require_pending_tx_handle()); },
+            [this, handle]()
+            { return get_transfers_info_impl(*require_pending_tx_handle(handle)); },
             [](const std::vector<PendingTxInfo> &transfers_info) -> emscripten::val
             {
                 return vector_to_js_array(transfers_info, [](const PendingTxInfo &transfer_info)
@@ -969,11 +968,11 @@ public:
             });
     }
 
-    auto get_multisig_tx_set_info()
+    auto get_multisig_tx_set_info(WalletTxHandle handle)
     {
         return promise(
-            [this]()
-            { return get_transfers_info_impl(require_multisig_tx_handle()->m_ptx); },
+            [this, handle]()
+            { return get_transfers_info_impl(require_multisig_tx_handle(handle)->m_ptx); },
             [](const std::vector<PendingTxInfo> &transfers_info) -> emscripten::val
             {
                 return vector_to_js_array(transfers_info, [](const PendingTxInfo &transfer_info)
@@ -999,8 +998,8 @@ public:
     {
         auto data = parse_js_uint8_array(data_js);
         cryptonote::blobdata blob(reinterpret_cast<const char *>(data.data()), data.size());
-        return promise_void([this, blob = std::move(blob), do_accept]()
-                            {
+        return promise([this, blob = std::move(blob), do_accept]()
+                       {
                                 auto txs = std::make_shared<tools::wallet2::multisig_tx_set>();
                                 if (do_accept)
                                 {
@@ -1026,16 +1025,15 @@ public:
                                         throw std::runtime_error("failed to read transaction");
                                     }
                                 }
-                                destroy_tx_handle_impl();
-                                m_multisig_tx_handle = txs; });
+                                return register_multisig_tx_handle(txs); });
     }
 
-    auto sign_multisig_tx()
+    auto sign_multisig_tx(WalletTxHandle handle)
     {
         return promise(
-            [this]()
+            [this, handle]()
             {
-                auto multisig_tx_set = require_multisig_tx_handle();
+                auto multisig_tx_set = require_multisig_tx_handle(handle);
                 std::vector<crypto::hash> txids_hashes;
                 bool ok = m_wallet.sign_multisig_tx(*multisig_tx_set, txids_hashes);
                 if (!ok)
@@ -1057,11 +1055,11 @@ public:
             });
     }
 
-    auto save_multisig_tx()
+    auto save_multisig_tx(WalletTxHandle handle)
     {
         return promise(
-            [this]()
-            { return m_wallet.save_multisig_tx(*require_multisig_tx_handle()); },
+            [this, handle]()
+            { return m_wallet.save_multisig_tx(*require_multisig_tx_handle(handle)); },
             [](const std::string &ciphertext) -> emscripten::val
             {
                 auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
@@ -1069,12 +1067,12 @@ public:
             });
     }
 
-    auto get_multisig_tx_signers_count(bool exclude_self)
+    auto get_multisig_tx_signers_count(WalletTxHandle handle, bool exclude_self)
     {
         return promise(
-            [this, exclude_self]()
+            [this, handle, exclude_self]()
             {
-                auto multisig_tx_set = require_multisig_tx_handle();
+                auto multisig_tx_set = require_multisig_tx_handle(handle);
                 if (exclude_self &&
                     multisig_tx_set->m_signers.find(m_wallet.get_multisig_signer_public_key()) != multisig_tx_set->m_signers.end())
                 {
@@ -1084,12 +1082,11 @@ public:
             });
     }
 
-    auto transfer_commit_tx_multisig()
+    auto transfer_commit_tx_multisig(WalletTxHandle handle)
     {
-        return promise_void([this]()
+        return promise_void([this, handle]()
                             {
-                                m_wallet.commit_tx(require_multisig_tx_handle()->m_ptx);
-                                destroy_tx_handle_impl(); });
+                                m_wallet.commit_tx(require_multisig_tx_handle(handle)->m_ptx); });
     }
 
     std::vector<PendingTxInfo> get_transfers_info_impl(const std::vector<tools::wallet2::pending_tx> &ptx_vector)
@@ -1117,18 +1114,17 @@ public:
         return result;
     }
 
-    auto transfer_commit_tx()
+    auto transfer_commit_tx(WalletTxHandle handle)
     {
-        return promise_void([this]()
+        return promise_void([this, handle]()
                             {
-                                m_wallet.commit_tx(*require_pending_tx_handle());
-                                destroy_tx_handle_impl(); });
+                                m_wallet.commit_tx(*require_pending_tx_handle(handle)); });
     }
 
-    auto save_multisig_tx_pending_tx()
+    auto save_multisig_tx_pending_tx(WalletTxHandle handle)
     {
         return promise(
-            [this]()
+            [this, handle]()
             {
                 auto status = get_multisig_status_compat();
                 if (!status.multisig_is_active)
@@ -1139,7 +1135,7 @@ public:
                 {
                     throw std::runtime_error("Multisig wallet is not ready");
                 }
-                return m_wallet.save_multisig_tx(*require_pending_tx_handle());
+                return m_wallet.save_multisig_tx(*require_pending_tx_handle(handle));
             },
             [](const std::string &ciphertext) -> emscripten::val
             {
@@ -1148,39 +1144,69 @@ public:
             });
     }
 
-    auto destroyTxHandle()
+    auto destroyTxHandle(WalletTxHandle handle)
     {
-        return promise_void([this]()
-                            { destroy_tx_handle_impl(); });
+        return promise_void([this, handle]()
+                            { destroy_tx_handle_impl(handle); });
     }
 
-    auto destoryTxHandle()
+    WalletTxHandle register_pending_tx_handle(std::shared_ptr<std::vector<tools::wallet2::pending_tx>> tx_handle)
     {
-        return destroyTxHandle();
+        const auto handle = allocate_tx_handle();
+        m_pending_tx_handles.emplace(handle, std::move(tx_handle));
+        return handle;
     }
 
-    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> require_pending_tx_handle()
+    WalletTxHandle register_multisig_tx_handle(std::shared_ptr<tools::wallet2::multisig_tx_set> tx_handle)
     {
-        if (!m_pending_tx_handle)
+        const auto handle = allocate_tx_handle();
+        m_multisig_tx_handles.emplace(handle, std::move(tx_handle));
+        return handle;
+    }
+
+    WalletTxHandle allocate_tx_handle()
+    {
+        while (m_tx_handles.count(m_next_tx_handle) > 0 || m_next_tx_handle == 0)
         {
-            throw std::runtime_error("No active pending transaction handle");
+            ++m_next_tx_handle;
         }
-        return m_pending_tx_handle;
+        const auto handle = m_next_tx_handle++;
+        m_tx_handles.insert(handle);
+        return handle;
     }
 
-    std::shared_ptr<tools::wallet2::multisig_tx_set> require_multisig_tx_handle()
+    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> require_pending_tx_handle(WalletTxHandle handle)
     {
-        if (!m_multisig_tx_handle)
+        const auto it = m_pending_tx_handles.find(handle);
+        if (it == m_pending_tx_handles.end())
         {
-            throw std::runtime_error("No active multisig transaction handle");
+            throw std::runtime_error("Pending transaction handle is not available");
         }
-        return m_multisig_tx_handle;
+        return it->second;
     }
 
-    void destroy_tx_handle_impl()
+    std::shared_ptr<tools::wallet2::multisig_tx_set> require_multisig_tx_handle(WalletTxHandle handle)
     {
-        m_pending_tx_handle.reset();
-        m_multisig_tx_handle.reset();
+        const auto it = m_multisig_tx_handles.find(handle);
+        if (it == m_multisig_tx_handles.end())
+        {
+            throw std::runtime_error("Multisig transaction handle is not available");
+        }
+        return it->second;
+    }
+
+    void destroy_tx_handle_impl(WalletTxHandle handle)
+    {
+        m_tx_handles.erase(handle);
+        m_pending_tx_handles.erase(handle);
+        m_multisig_tx_handles.erase(handle);
+    }
+
+    void destroy_all_tx_handles_impl()
+    {
+        m_tx_handles.clear();
+        m_pending_tx_handles.clear();
+        m_multisig_tx_handles.clear();
     }
 
     std::shared_ptr<std::vector<tools::wallet2::pending_tx>> transfer_impl(
@@ -1920,8 +1946,10 @@ private:
     }
 
     tools::wallet2 m_wallet;
-    std::shared_ptr<std::vector<tools::wallet2::pending_tx>> m_pending_tx_handle;
-    std::shared_ptr<tools::wallet2::multisig_tx_set> m_multisig_tx_handle;
+    WalletTxHandle m_next_tx_handle = 1;
+    std::set<WalletTxHandle> m_tx_handles;
+    std::map<WalletTxHandle, std::shared_ptr<std::vector<tools::wallet2::pending_tx>>> m_pending_tx_handles;
+    std::map<WalletTxHandle, std::shared_ptr<tools::wallet2::multisig_tx_set>> m_multisig_tx_handles;
 
     pthread_t walletThread;
     emscripten::ProxyingQueue walletQueue;
@@ -2006,7 +2034,6 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .function("verify_password", &MoneroWasmWallet::verify_password)
         .function("rescan_blockchain", &MoneroWasmWallet::rescan_blockchain)
         .function("destroyTxHandle", &MoneroWasmWallet::destroyTxHandle)
-        .function("destoryTxHandle", &MoneroWasmWallet::destoryTxHandle)
         .constructor<WalletNetworkTypeBacking>();
 
     emscripten::value_object<MoneroWasmWallet::MultisigStatus>("MultisigAccountStatus")

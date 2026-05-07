@@ -19,6 +19,7 @@ import {
   type WalletAddress,
   type WalletKeys,
   type WalletNewBlockCallback,
+  type WalletTxHandle,
 } from "./walletApi";
 
 const FeePriority = FeePriorityConst;
@@ -43,6 +44,7 @@ export type {
   TransferItem,
   WalletAddress,
   WalletKeys,
+  WalletTxHandle,
 };
 
 type RemoteApi = Comlink.Remote<typeof exposedApi>;

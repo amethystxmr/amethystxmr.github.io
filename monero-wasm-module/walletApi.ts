@@ -15,6 +15,7 @@ type IDBFS = unknown & { readonly __nominal: unique symbol };
 export type WalletNewBlockCallback =
   | ((height: bigint, timestamp: bigint) => void)
   | null;
+export type WalletTxHandle = number;
 
 export declare class MoneroWasmWallet {
   constructor(networkType: NetworkType);
@@ -117,23 +118,28 @@ export declare class MoneroWasmWallet {
     amounts: bigint[],
     priority: FeePriority,
     subtractFeeFromIndex: number | null,
-  ): Promise<void>;
+  ): Promise<WalletTxHandle>;
   transfer_prepare_sweep_all(
     destination: string,
     priority: FeePriority,
-  ): Promise<void>;
+  ): Promise<WalletTxHandle>;
   get_transfers(): Promise<TransferItem[]>;
-  get_transfers_info(): Promise<TransferInfoItem[]>;
-  transfer_commit_tx(): Promise<void>;
-  save_multisig_tx_pending_tx(): Promise<Uint8Array>;
-  load_multisig_tx(data: Uint8Array, do_accept: boolean): Promise<void>;
-  get_multisig_tx_set_info(): Promise<TransferInfoItem[]>;
-  get_multisig_tx_signers_count(excludeSelf: boolean): Promise<number>;
-  sign_multisig_tx(): Promise<string[]>;
-  save_multisig_tx(): Promise<Uint8Array>;
-  transfer_commit_tx_multisig(): Promise<void>;
-  destroyTxHandle(): Promise<void>;
-  destoryTxHandle(): Promise<void>;
+  get_transfers_info(handle: WalletTxHandle): Promise<TransferInfoItem[]>;
+  transfer_commit_tx(handle: WalletTxHandle): Promise<void>;
+  save_multisig_tx_pending_tx(handle: WalletTxHandle): Promise<Uint8Array>;
+  load_multisig_tx(
+    data: Uint8Array,
+    do_accept: boolean,
+  ): Promise<WalletTxHandle>;
+  get_multisig_tx_set_info(handle: WalletTxHandle): Promise<TransferInfoItem[]>;
+  get_multisig_tx_signers_count(
+    handle: WalletTxHandle,
+    excludeSelf: boolean,
+  ): Promise<number>;
+  sign_multisig_tx(handle: WalletTxHandle): Promise<string[]>;
+  save_multisig_tx(handle: WalletTxHandle): Promise<Uint8Array>;
+  transfer_commit_tx_multisig(handle: WalletTxHandle): Promise<void>;
+  destroyTxHandle(handle: WalletTxHandle): Promise<void>;
 
   get_multisig_status(): Promise<MultisigAccountStatus>;
   has_multisig_partial_key_images(): Promise<boolean>;
