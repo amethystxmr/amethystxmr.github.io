@@ -139,8 +139,18 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
 
 export function WalletsList() {
   const daemonAddress = options.getValue("daemonAddress");
+  const [isDaemonConfigured, setIsDaemonConfigured] = React.useState(false);
   React.useEffect(() => {
-    void walletApi.setDaemonAddress(daemonAddress);
+    let cancelled = false;
+    setIsDaemonConfigured(false);
+    void walletApi.setDaemonAddress(daemonAddress).then(() => {
+      if (!cancelled) {
+        setIsDaemonConfigured(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [daemonAddress]);
 
   const buildListView = React.useCallback(() => {
@@ -243,6 +253,9 @@ export function WalletsList() {
   }, [cpuThreads]);
 
   React.useEffect(() => {
+    if (!isDaemonConfigured) {
+      return;
+    }
     const walletNames = walletApi.listWalletNames();
     const walletNameFromHash = getWalletNameFromHash();
     if (walletNameFromHash) {
@@ -280,7 +293,18 @@ export function WalletsList() {
       fileName: lastWalletName,
       isStartupAutoOpen: true,
     });
-  }, [buildListView]);
+  }, [buildListView, isDaemonConfigured]);
+
+  if (!isDaemonConfigured) {
+    return (
+      <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
+        <Header>Amethyst XMR Wallet</Header>
+        <SectionPanel>
+          <div className="text-sm text-white/70">Configuring daemon...</div>
+        </SectionPanel>
+      </div>
+    );
+  }
 
   if (view.type === "opened") {
     return (
