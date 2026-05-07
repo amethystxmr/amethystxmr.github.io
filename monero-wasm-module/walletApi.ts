@@ -96,10 +96,7 @@ export declare class MoneroWasmWallet {
     day: number,
   ): Promise<bigint>;
   words_to_bytes(words: string, language: string): Promise<Uint8Array | null>;
-  get_payments(
-    minHeight: bigint,
-    maxHeight: bigint,
-  ): Promise<PaymentDetails[]>;
+  get_payments(minHeight: bigint, maxHeight: bigint): Promise<PaymentDetails[]>;
   get_payments_mempool(): Promise<PaymentDetails[]>;
   get_num_subaddresses(index_major: number): Promise<number>;
   get_subaddress_as_str(
@@ -176,7 +173,6 @@ export const FeePriority = {
 } as const;
 
 export type FeePriority = (typeof FeePriority)[keyof typeof FeePriority];
-
 
 export const CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 10n;
 
@@ -333,17 +329,7 @@ type WalletRuntimeGlobal = typeof globalThis & {
 
 function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
   const runtimeGlobal = globalThis as WalletRuntimeGlobal;
-  const windowHolder = globalThis as unknown as { window?: unknown };
-  windowHolder.window ??= runtimeGlobal;
-  return windowHolder.window as WalletRuntimeGlobal;
-}
-
-declare global {
-  interface Window {
-    moneroWalletModule?: Module;
-    clearFilesystem?: typeof clearFilesystem;
-    globalHttpConfig?: GlobalHttpConfig;
-  }
+  return runtimeGlobal;
 }
 
 function ensureGlobalHttpConfig(): GlobalHttpConfig {
@@ -352,7 +338,6 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
     mapUrl: () => {
       throw new Error("mapUrl not set");
     },
-    // mapUrl: (url) => "https://xmr-node.cakewallet.com:18081" + url,
     onFetch: (...args) => {
       console.log("onFetch", ...args);
     },
@@ -391,7 +376,9 @@ export function setWalletNewBlockCallback(
 ) {
   return (
     wallet as MoneroWasmWallet & {
-      set_on_new_block_callback(callback: WalletNewBlockCallback): Promise<void>;
+      set_on_new_block_callback(
+        callback: WalletNewBlockCallback,
+      ): Promise<void>;
     }
   ).set_on_new_block_callback(callback);
 }
