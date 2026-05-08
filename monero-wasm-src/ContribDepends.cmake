@@ -194,7 +194,6 @@ if(NOT EXISTS "${BOOST_INSTALL_DIR}/lib/libboost_program_options.a" OR
         COMMAND bash -lc
         "./b2 -j${BOOST_B2_JOBS} \
         toolset=${BOOST_B2_TOOLSET} \
-        threading=single \
         link=static runtime-link=static \
         cxxflags='-O3' \
         linkflags='-O3' \
