@@ -53,6 +53,8 @@ export declare class MoneroWasmWallet {
   ): Promise<boolean>;
   is_synced(): Promise<boolean>;
   store(): Promise<void>;
+  /** Install callback for wallet sync progress (height/timestamp); pass `null` to clear. */
+  set_on_new_block_callback(callback: WalletNewBlockCallback): Promise<void>;
   set_attribute(key: string, value: string): Promise<boolean>;
   get_attribute(key: string): Promise<string>;
   load(fileName: string, password: string): Promise<void>;
@@ -372,13 +374,7 @@ export function setWalletNewBlockCallback(
   wallet: MoneroWasmWallet,
   callback: WalletNewBlockCallback,
 ) {
-  return (
-    wallet as MoneroWasmWallet & {
-      set_on_new_block_callback(
-        callback: WalletNewBlockCallback,
-      ): Promise<void>;
-    }
-  ).set_on_new_block_callback(callback);
+  return wallet.set_on_new_block_callback(callback);
 }
 
 export function getMaxConcurrency() {

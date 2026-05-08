@@ -1586,12 +1586,20 @@ function OptionsView({ onBack }: { onBack: () => void }) {
         : ts || "unknown time";
     return `Built ${prettyTs}, git ${hash}`;
   }, []);
-  const moneroVersionText = React.useMemo(() => {
-    try {
-      return `Monero ${walletApi.getMoneroVersionFull()}`;
-    } catch {
-      return "Monero unknown";
-    }
+
+  const [moneroVersionText, setMoneroVersionText] = React.useState("");
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const version = await walletApi.getMoneroVersionFull();
+      if (cancelled) {
+        return;
+      }
+      setMoneroVersionText(`Monero ${version}`);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const refresh = React.useState(0)[1];

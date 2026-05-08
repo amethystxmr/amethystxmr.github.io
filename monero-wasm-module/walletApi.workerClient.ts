@@ -60,8 +60,12 @@ export async function setWalletNewBlockCallback(
   wallet: MoneroWasmWallet,
   callback: WalletNewBlockCallback,
 ) {
-  await api.setWalletNewBlockCallback(
-    wallet,
-    callback ? Comlink.proxy(callback) : null,
-  );
+  const proxyCallback = callback ? Comlink.proxy(callback) : null;
+  // Avoid passing wallet into root `api.*`: Comlink emits it as RAW and clone fails on the remote Proxy internal target function.
+  await wallet.set_on_new_block_callback(proxyCallback);
 }
+
+export const setHttpFetchCallback: typeof exposedApi.setHttpFetchCallback =
+  async (callback) => {
+    await api.setHttpFetchCallback(callback ? Comlink.proxy(callback) : null);
+  };
