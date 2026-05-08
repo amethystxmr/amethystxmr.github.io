@@ -39,6 +39,7 @@ if(EMSCRIPTEN)
     add_link_options(
         ${EMSCRIPTEN_DEBUG_OPTIONS}
         ${EMSCRIPTEN_DEBUG_OPTIONS_LINKER}
+        -pthread
         -sNO_DISABLE_EXCEPTION_CATCHING
         -sINITIAL_MEMORY=800MB
         -sSTACK_SIZE=10MB
