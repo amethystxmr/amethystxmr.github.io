@@ -21,19 +21,18 @@ if(EMSCRIPTEN)
         message(STATUS "======================== Debug build ========================")
         set(EMSCRIPTEN_DEBUG_OPTIONS -g -O0)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER -gseparate-dwarf -gsource-map)
-        set(EMSCRIPTEN_PTHREAD_POOL_SIZE "-sPTHREAD_POOL_SIZE=4")
     else()
         message(STATUS "======================== Release build ========================")
         set(EMSCRIPTEN_DEBUG_OPTIONS -O3)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER)
-        set(EMSCRIPTEN_PTHREAD_POOL_SIZE "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)")
     endif()
 
 
-    # TODO: Check, can we remove NO_DISABLE_EXCEPTION_CATCHING?
+    # pthread API is required for Boost.Asio / threadpool headers even in a
+    # single-threaded WASM link (no -sUSE_PTHREADS).
     add_compile_options(
         ${EMSCRIPTEN_DEBUG_OPTIONS}
-        -sUSE_PTHREADS=1
+        -pthread
         -sNO_DISABLE_EXCEPTION_CATCHING
     )
 
@@ -43,12 +42,11 @@ if(EMSCRIPTEN)
         -sNO_DISABLE_EXCEPTION_CATCHING
         -sINITIAL_MEMORY=800MB
         -sSTACK_SIZE=10MB
-        -sUSE_PTHREADS=1
-        # -sPROXY_TO_PTHREAD=1
+        -sASYNCIFY=1
+        -sASYNCIFY_STACK_SIZE=131072
         -sWEBSOCKET_URL=ws://localhost:4444
-        "${EMSCRIPTEN_PTHREAD_POOL_SIZE}"
-        -sPTHREAD_POOL_SIZE_STRICT=1
         -sALLOW_MEMORY_GROWTH=1
+        -sENVIRONMENT=worker
         -sEXPORT_ES6=1
         -sEXPORT_NAME=MoneroWasmWallet
         -Wl,--error-limit=0
