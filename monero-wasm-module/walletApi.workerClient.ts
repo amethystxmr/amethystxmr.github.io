@@ -8,7 +8,6 @@ import {
   max64,
   NetworkTypes,
   type FeePriority as FeePriorityType,
-  type HttpFetchCallback,
   type KeyImagesImportResult,
   type MoneroWasmWallet,
   type MultisigAccountStatus,

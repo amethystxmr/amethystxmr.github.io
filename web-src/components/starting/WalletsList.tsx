@@ -1869,7 +1869,7 @@ function ManageWalletsView({
     } finally {
       releaseWalletOpenLock?.();
     }
-  }, [alert, removeState]);
+  }, [alert, removeState, onReloadWalletNames]);
 
   const doExportWallet = React.useCallback(
     async (walletName: string) => {
@@ -2016,7 +2016,7 @@ function ManageWalletsView({
         );
       }
     },
-    [alert],
+    [alert, onReloadWalletNames],
   );
 
   const doRenameWallet = React.useCallback(async () => {

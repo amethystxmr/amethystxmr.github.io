@@ -1,5 +1,9 @@
 import React from "react";
-import  { api, MultisigAccountStatus, PaymentDetails, MoneroWasmWallet } from "../../../monero-wasm-module/walletApi.workerClient";
+import {
+  MultisigAccountStatus,
+  PaymentDetails,
+  MoneroWasmWallet,
+} from "../../../monero-wasm-module/walletApi.workerClient";
 
 import {
   Button,
