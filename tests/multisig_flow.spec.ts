@@ -1,5 +1,6 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { MONERO_MINING_ADDRESS } from "./constants";
+import { assertNonSharedWasmBaseline } from "./helpers/assertNonSharedWasmMemory";
 import { generateBlocks } from "./helpers/moneroRpc";
 import { startMonerod } from "./helpers/monerod";
 import { initializeAppTestSettings } from "./helpers/testSettings";
@@ -21,6 +22,7 @@ const CASES = [
 test.describe("multisig flow", () => {
   test.beforeEach(async ({ page }) => {
     await startMonerod();
+    await assertNonSharedWasmBaseline(page);
     await initializeAppTestSettings(page);
   });
 

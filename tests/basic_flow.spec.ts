@@ -3,6 +3,7 @@ import {
   MONERO_MINING_ADDRESS,
   MONERO_RESTORE_SEED,
 } from "./constants";
+import { assertNonSharedWasmBaseline } from "./helpers/assertNonSharedWasmMemory";
 import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
@@ -16,6 +17,7 @@ const INITIAL_MINED_BLOCKS = 140;
 const POST_SEND_MINED_BLOCKS = 70;
 
 test.beforeEach(async ({ page }) => {
+  await assertNonSharedWasmBaseline(page);
   await initializeAppTestSettings(page);
   if (process.env.PW_BROWSER_CONSOLE) {
     page.on("console", (msg) => {
