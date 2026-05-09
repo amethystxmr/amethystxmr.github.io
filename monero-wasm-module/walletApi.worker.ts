@@ -25,7 +25,9 @@ function ensureSequential<T extends object>(
       }
       return (...args: unknown[]) => {
         const run = queue.then(() =>
-          Promise.resolve(value.apply(obj, args as never[])),
+          Promise.resolve(value.apply(obj, args as never[])).catch((e) => {
+            throw walletApi.wasmThrownValueToError(e);
+          }),
         );
         queue = run.catch(() => {});
         return run;
@@ -43,8 +45,12 @@ async function initModule() {
 */
 
 async function createWallet(networkType?: walletApi.NetworkType) {
-  const wallet = await walletApi.createWallet(networkType);
-  return Comlink.proxy(ensureSequential(wallet));
+  try {
+    const wallet = await walletApi.createWallet(networkType);
+    return Comlink.proxy(ensureSequential(wallet));
+  } catch (e) {
+    throw walletApi.wasmThrownValueToError(e);
+  }
 }
 export const exposedApi = {
   ...walletApi,
