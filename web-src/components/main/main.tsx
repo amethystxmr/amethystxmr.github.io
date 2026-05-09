@@ -240,15 +240,12 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         if (cancelled) {
           return;
         }
-        const refreshStatus = await wallet.refresh(
-          false,
-          0n,
-          true,
-          true,
-          2000n,
-        );
-        await withFsLock(async () => {
+        const refreshStatus = await withFsLock(async () => {
+          // Refresh probably does not need the same lock as store for FS/IDB; only store
+          // writes. Keep both under withFsLock anyway to serialize with other tab activity.
+          const r = await wallet.refresh(false, 0n, true, true, 2000n);
           await wallet.store();
+          return r;
         });
         console.info("Refresh status:", refreshStatus);
         if (cancelled) {
@@ -267,7 +264,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
         console.error("Error during refresh:", e);
-        setRefreshError((e as Error).message || "Unknown error");
+        const message =
+          e instanceof Error
+            ? e.message
+            : typeof e === "number" || typeof e === "bigint"
+              ? `Wallet refresh failed (${String(e)}). Opening several wallets in the same browser shares one storage bucket and can corrupt the cache — close extra tabs or use another profile/context.`
+              : typeof e === "string"
+                ? e
+                : "Unknown error";
+        setRefreshError(message || "Unknown error");
         setRefreshing(false);
       }
     };
