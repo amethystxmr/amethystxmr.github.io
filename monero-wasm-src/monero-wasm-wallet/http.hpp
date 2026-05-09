@@ -5,8 +5,10 @@
 
 namespace {
 
-/** XHR over Asyncify (single-threaded WASM); yields until the response completes. */
-EM_ASYNC_JS(int, js_http_xhr_invoke, (
+/** Synchronous XHR in the wallet worker (ENVIRONMENT=worker). Avoids Asyncify
+ * unwind/rewind around RPC which was yielding RuntimeError: unreachable in
+ * current Emscripten Embind stacks. Workers still allow synchronous XHR. */
+EM_JS(int, js_http_xhr_invoke, (
     const char *uri_ptr, int uri_len,
     const char *method_ptr, int method_len,
     const char *body_ptr, int body_len,
@@ -14,91 +16,91 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
     int response_code_i32_ptr,
     intptr_t mime_std_string_ptr,
     intptr_t body_std_string_ptr,
-    int invoke_result_i32_ptr), {
-  return Asyncify.handleSleep((wakeUp) => {
+    int invoke_result_i32_ptr),
+{
     const uri = UTF8ToString(uri_ptr, uri_len);
     const method = UTF8ToString(method_ptr, method_len);
     const resizeStdString = Module['_resize_std_string'];
-    const HEAPU8 = Module['HEAPU8'];
-    const HEAP32 = Module['HEAP32'];
+    const heapU8 = () => {
+      if (typeof growMemViews === 'function')
+        growMemViews();
+      return HEAPU8;
+    };
+    const heap32 = () => {
+      if (typeof growMemViews === 'function')
+        growMemViews();
+      return HEAP32;
+    };
 
     const config = globalThis.globalHttpConfig;
+    const reqId = Math.random().toString(16).slice(2);
+
+    heap32()[invoke_result_i32_ptr >> 2] = 0;
 
     const body =
       method !== 'GET' && body_len > 0
-        ? new Uint8Array(HEAPU8.buffer, body_ptr, body_len)
+        ? new Uint8Array(heapU8().buffer, body_ptr, body_len)
         : undefined;
     const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
 
     const finalUrl = config.mapUrl(uri);
-    const reqId = Math.random().toString(16).slice(2);
+    config.onFetch(uri, reqId, 'start', 0, 0);
 
-    const xhr = new XMLHttpRequest();
-    xhr.open(method, finalUrl, true);
-    xhr.responseType = 'arraybuffer';
-    xhr.timeout = timeout_ms > 0 ? timeout_ms : 0;
-    HEAP32[invoke_result_i32_ptr >> 2] = 0;
-
-    let isFinished = false;
-    const finishOnce = function(fetchState)
-    {
-      if (isFinished)
-      {
-        return;
-      }
-      isFinished = true;
-      config.onFetch(uri, reqId, fetchState, 0, 0);
-      wakeUp(HEAP32[invoke_result_i32_ptr >> 2] !== 0 ? 1 : 0);
-    };
-
-    const failRequest = function(fetchState)
-    {
-      HEAP32[response_code_i32_ptr >> 2] = 0;
+    const failWith = (state) => {
+      heap32()[response_code_i32_ptr >> 2] = 0;
       resizeStdString(mime_std_string_ptr, 0);
       resizeStdString(body_std_string_ptr, 0);
-      finishOnce(fetchState);
+      heap32()[invoke_result_i32_ptr >> 2] = 0;
+      config.onFetch(uri, reqId, state, 0, 0);
+      return 0;
     };
 
-    xhr.onprogress = function(event)
+    const xhr = new XMLHttpRequest();
+    xhr.responseType = 'arraybuffer';
+    if (timeout_ms > 0)
+      xhr.timeout = timeout_ms;
+
+    try
     {
-      config.onFetch(uri, reqId, 'progress', event.loaded, event.total);
-    };
-
-    xhr.onload = function()
+      xhr.open(method, finalUrl, false);
+    }
+    catch (e)
     {
-      HEAP32[invoke_result_i32_ptr >> 2] = 1;
-      HEAP32[response_code_i32_ptr >> 2] = xhr.status;
+      return failWith('error');
+    }
 
-      const mimeType = xhr.getResponseHeader('Content-Type') || "";
-      const mimeTypeBytes = new TextEncoder().encode(mimeType);
-      const mimeTypePtr = resizeStdString(mime_std_string_ptr, mimeTypeBytes.length);
-      HEAPU8.set(mimeTypeBytes, mimeTypePtr);
-
-      const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
-      const outBodyPtr = resizeStdString(body_std_string_ptr, rawBody.length);
-      HEAPU8.set(rawBody, outBodyPtr);
-
-      finishOnce('end');
-    };
-
-    xhr.onerror = function()
+    try
     {
-      failRequest('error');
-    };
-
-    xhr.ontimeout = function()
+      xhr.send(bodyCopyNonShared);
+    }
+    catch (e)
     {
-      failRequest('timeout');
-    };
+      return failWith('error');
+    }
 
-    xhr.onabort = function()
-    {
-      failRequest('abort');
-    };
+    if (xhr.readyState !== 4)
+      return failWith('error');
 
-    config.onFetch(uri, reqId, 'start', 0, 0);
-    xhr.send(bodyCopyNonShared);
-  });
+    if (xhr.status === 0)
+      return failWith('error');
+
+    // Match previous async path: any completed load with a status line counts as invoke ok.
+    heap32()[invoke_result_i32_ptr >> 2] = 1;
+    heap32()[response_code_i32_ptr >> 2] = xhr.status;
+
+    const mimeType = xhr.getResponseHeader('Content-Type') || "";
+    const mimeTypeBytes = new TextEncoder().encode(mimeType);
+    const mimeTypePtr = resizeStdString(mime_std_string_ptr, mimeTypeBytes.length);
+    heapU8().set(mimeTypeBytes, mimeTypePtr);
+
+    const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
+    const outBodyPtr = resizeStdString(body_std_string_ptr, rawBody.length);
+    heapU8().set(rawBody, outBodyPtr);
+
+    const total = rawBody.length;
+    config.onFetch(uri, reqId, 'progress', total, total);
+    config.onFetch(uri, reqId, 'end', 0, 0);
+    return 1;
 });
 
 } // namespace

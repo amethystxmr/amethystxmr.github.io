@@ -19,11 +19,15 @@ message(STATUS "CMAKE_TOOLCHAIN_FILE='${CMAKE_TOOLCHAIN_FILE}'")
 if(EMSCRIPTEN)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         message(STATUS "======================== Debug build ========================")
-        set(EMSCRIPTEN_DEBUG_OPTIONS -g -O0)
+        set(EMSCRIPTEN_COMPILE_OPTIONS -g -O0)
+        set(EMSCRIPTEN_LINK_OPTIONS -g -O0)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER -gseparate-dwarf -gsource-map)
     else()
         message(STATUS "======================== Release build ========================")
-        set(EMSCRIPTEN_DEBUG_OPTIONS -O3)
+        # Fast generated code, but link for size: large wasm parse/compile cost was
+        # hurting the browser; monero-ts uses -Oz similarly.
+        set(EMSCRIPTEN_COMPILE_OPTIONS -O3)
+        set(EMSCRIPTEN_LINK_OPTIONS -Oz)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER)
     endif()
 
@@ -31,22 +35,26 @@ if(EMSCRIPTEN)
     # pthread API is required for Boost.Asio / threadpool headers even in a
     # single-threaded WASM link (no -sUSE_PTHREADS).
     add_compile_options(
-        ${EMSCRIPTEN_DEBUG_OPTIONS}
+        ${EMSCRIPTEN_COMPILE_OPTIONS}
         -pthread
         -sNO_DISABLE_EXCEPTION_CATCHING
     )
 
     add_link_options(
-        ${EMSCRIPTEN_DEBUG_OPTIONS}
+        ${EMSCRIPTEN_LINK_OPTIONS}
         ${EMSCRIPTEN_DEBUG_OPTIONS_LINKER}
         -pthread
         -sNO_DISABLE_EXCEPTION_CATCHING
-        -sINITIAL_MEMORY=800MB
-        -sSTACK_SIZE=10MB
-        -sASYNCIFY=1
-        -sASYNCIFY_STACK_SIZE=131072
+        # Do NOT set a huge INITIAL_MEMORY: reserving hundreds of MB at
+        # instantiation OOMs/crashes Chrome tabs. Grow from a small heap instead
+        # (monero-ts relies on ALLOW_MEMORY_GROWTH without multi-hundred-MB starts).
+        # HTTP uses synchronous XHR in the wallet worker (see http.hpp): no Asyncify
+        # on the RPC path, so we omit -sASYNCIFY (avoids unwind/rewind "unreachable").
+        -sINITIAL_MEMORY=64MB
+        -sSTACK_SIZE=5MB
         -sWEBSOCKET_URL=ws://localhost:4444
         -sALLOW_MEMORY_GROWTH=1
+        -sWASM_BIGINT=1
         -sENVIRONMENT=worker
         -sEXPORT_ES6=1
         -sEXPORT_NAME=MoneroWasmWallet
