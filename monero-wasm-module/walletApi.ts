@@ -360,7 +360,7 @@ type HttpFetchState =
 
 export type { HttpFetchState };
 
-/** Daemon RPC progress from the wallet worker. `progressTotal < 0` on `start` means size unknown yet; async XHR may follow with `progress` when `lengthComputable`. */
+/** Daemon RPC progress from the wallet worker. When `progressTotal` is 0, the UI treats the request as indeterminate until a `progress` event with `lengthComputable`. */
 export type HttpFetchCallback = (
   url: string,
   reqId: string,

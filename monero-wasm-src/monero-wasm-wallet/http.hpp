@@ -41,7 +41,7 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
     const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
 
     const finalUrl = config.mapUrl(uri);
-    config.onFetch(uri, reqId, 'start', 0, -1);
+    config.onFetch(uri, reqId, 'start', 0, 0);
 
     /** Do not invoke WASM imports (resize_std_string, HEAP*) from xhr.* handlers:
      *  while awaiting the Promise, WASM is paused in Asyncify and re-entry corrupts RPC.
