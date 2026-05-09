@@ -3,8 +3,6 @@ import type { exposedApi } from "./walletApi.worker";
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority as FeePriorityConst,
-  getMaxConcurrency,
-  getRecommendedMaxConcurrency,
   max64,
   NetworkTypes,
   type FeePriority as FeePriorityType,
@@ -26,8 +24,6 @@ const FeePriority = FeePriorityConst;
 export {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority,
-  getMaxConcurrency,
-  getRecommendedMaxConcurrency,
   max64,
   NetworkTypes,
 };
