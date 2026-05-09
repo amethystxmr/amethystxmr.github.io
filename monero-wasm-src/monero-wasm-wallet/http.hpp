@@ -5,18 +5,17 @@
 
 namespace {
 
-/** Synchronous XHR in the wallet worker (ENVIRONMENT=worker). Avoids Asyncify
- * unwind/rewind around RPC which was yielding RuntimeError: unreachable in
- * current Emscripten Embind stacks. Workers still allow synchronous XHR. */
-EM_JS(int, js_http_xhr_invoke, (
+/** Async XHR plus Asyncify lets the wallet worker pump events during RPC, so progress
+ * events can reach `globalHttpConfig.onFetch`. Linked with `-sASYNCIFY` (see root CMakeLists).
+ */
+EM_ASYNC_JS(int, js_http_xhr_invoke, (
     const char *uri_ptr, int uri_len,
     const char *method_ptr, int method_len,
     const char *body_ptr, int body_len,
     int timeout_ms,
     int response_code_i32_ptr,
     intptr_t mime_std_string_ptr,
-    intptr_t body_std_string_ptr,
-    int invoke_result_i32_ptr),
+    intptr_t body_std_string_ptr),
 {
     const uri = UTF8ToString(uri_ptr, uri_len);
     const method = UTF8ToString(method_ptr, method_len);
@@ -35,8 +34,6 @@ EM_JS(int, js_http_xhr_invoke, (
     const config = globalThis.globalHttpConfig;
     const reqId = Math.random().toString(16).slice(2);
 
-    heap32()[invoke_result_i32_ptr >> 2] = 0;
-
     const body =
       method !== 'GET' && body_len > 0
         ? new Uint8Array(heapU8().buffer, body_ptr, body_len)
@@ -44,63 +41,105 @@ EM_JS(int, js_http_xhr_invoke, (
     const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
 
     const finalUrl = config.mapUrl(uri);
-    config.onFetch(uri, reqId, 'start', 0, 0);
+    config.onFetch(uri, reqId, 'start', 0, -1);
 
-    const failWith = (state) => {
+    /** Do not invoke WASM imports (resize_std_string, HEAP*) from xhr.* handlers:
+     *  while awaiting the Promise, WASM is paused in Asyncify and re-entry corrupts RPC.
+     */
+    const applyFailureOutcome = (state) => {
       heap32()[response_code_i32_ptr >> 2] = 0;
       resizeStdString(mime_std_string_ptr, 0);
       resizeStdString(body_std_string_ptr, 0);
-      heap32()[invoke_result_i32_ptr >> 2] = 0;
       config.onFetch(uri, reqId, state, 0, 0);
-      return 0;
     };
 
-    const xhr = new XMLHttpRequest();
-    xhr.responseType = 'arraybuffer';
-    if (timeout_ms > 0)
-      xhr.timeout = timeout_ms;
-
     try
     {
-      xhr.open(method, finalUrl, false);
+      const xhrOutcome = await new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.responseType = 'arraybuffer';
+        if (timeout_ms > 0)
+          xhr.timeout = timeout_ms;
+
+        xhr.onprogress = (e) => {
+          if (!e.lengthComputable)
+            return;
+          config.onFetch(uri, reqId, 'progress', e.loaded, e.total);
+        };
+
+        xhr.onload = () => {
+          try
+          {
+            if (xhr.status === 0)
+            {
+              resolve({ ok: false, failState: 'error' });
+              return;
+            }
+
+            const mimeType = xhr.getResponseHeader('Content-Type') || "";
+            const mimeTypeBytes = new TextEncoder().encode(mimeType);
+
+            const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
+            resolve({
+              ok: true,
+              status: xhr.status,
+              mimeUtf8: mimeTypeBytes,
+              bodyCopy: rawBody,
+            });
+          }
+          catch (e)
+          {
+            resolve({ ok: false, failState: 'error' });
+          }
+        };
+
+        xhr.onerror = () => {
+          resolve({ ok: false, failState: 'error' });
+        };
+
+        xhr.ontimeout = () => {
+          resolve({ ok: false, failState: 'timeout' });
+        };
+
+        xhr.onabort = () => {
+          resolve({ ok: false, failState: 'abort' });
+        };
+
+        try
+        {
+          xhr.open(method, finalUrl, true);
+          xhr.send(bodyCopyNonShared);
+        }
+        catch (openOrSendErr)
+        {
+          resolve({ ok: false, failState: 'error' });
+        }
+      });
+
+      if (xhrOutcome.ok !== true)
+      {
+        applyFailureOutcome(xhrOutcome.failState);
+        return 0;
+      }
+
+      heap32()[response_code_i32_ptr >> 2] = xhrOutcome.status;
+
+      const mimePtr = resizeStdString(mime_std_string_ptr, xhrOutcome.mimeUtf8.length);
+      heapU8().set(xhrOutcome.mimeUtf8, mimePtr);
+
+      const outBodyPtr = resizeStdString(body_std_string_ptr, xhrOutcome.bodyCopy.length);
+      heapU8().set(xhrOutcome.bodyCopy, outBodyPtr);
+
+      const len = xhrOutcome.bodyCopy.length;
+      config.onFetch(uri, reqId, 'end', len, len);
+
+      return 1;
     }
     catch (e)
     {
-      return failWith('error');
+      applyFailureOutcome('error');
+      return 0;
     }
-
-    try
-    {
-      xhr.send(bodyCopyNonShared);
-    }
-    catch (e)
-    {
-      return failWith('error');
-    }
-
-    if (xhr.readyState !== 4)
-      return failWith('error');
-
-    if (xhr.status === 0)
-      return failWith('error');
-
-    // Match previous async path: any completed load with a status line counts as invoke ok.
-    heap32()[invoke_result_i32_ptr >> 2] = 1;
-    heap32()[response_code_i32_ptr >> 2] = xhr.status;
-
-    const mimeType = xhr.getResponseHeader('Content-Type') || "";
-    const mimeTypeBytes = new TextEncoder().encode(mimeType);
-    const mimeTypePtr = resizeStdString(mime_std_string_ptr, mimeTypeBytes.length);
-    heapU8().set(mimeTypeBytes, mimeTypePtr);
-
-    const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
-    const outBodyPtr = resizeStdString(body_std_string_ptr, rawBody.length);
-    heapU8().set(rawBody, outBodyPtr);
-
-    const total = rawBody.length;
-    config.onFetch(uri, reqId, 'progress', total, total);
-    config.onFetch(uri, reqId, 'end', 0, 0);
-    return 1;
 });
 
 } // namespace
@@ -184,7 +223,8 @@ public:
             *ppresponse_info = std::addressof(m_response_info);
         }
 
-        int invoke_result = 0;
+        // Success/failure MUST come from the EM_ASYNC_JS return value: stack locals updated
+        // during the async gap can be overwritten when Asyncify restores the saved stack frame.
         const auto timeout_count = timeout.count();
         const auto timeout_max = static_cast<decltype(timeout_count)>(std::numeric_limits<int>::max());
         const int timeout_ms_for_js =
@@ -192,17 +232,17 @@ public:
                                : (timeout_count > timeout_max ? std::numeric_limits<int>::max()
                                                               : static_cast<int>(timeout_count));
 
-        js_http_xhr_invoke(
-            uri.data(), static_cast<int>(uri.size()),
-            method.data(), static_cast<int>(method.size()),
-            body.data(), static_cast<int>(body.size()),
-            timeout_ms_for_js,
-            reinterpret_cast<int>(std::addressof(m_response_info.m_response_code)),
-            reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_mime_tipe)),
-            reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_body)),
-            reinterpret_cast<int>(std::addressof(invoke_result)));
+        const int xh_ok =
+            js_http_xhr_invoke(
+                uri.data(), static_cast<int>(uri.size()),
+                method.data(), static_cast<int>(method.size()),
+                body.data(), static_cast<int>(body.size()),
+                timeout_ms_for_js,
+                reinterpret_cast<int>(std::addressof(m_response_info.m_response_code)),
+                reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_mime_tipe)),
+                reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_body)));
         m_is_busy = false;
-        return invoke_result != 0;
+        return xh_ok != 0;
     }
     bool invoke_get(
         const boost::string_ref uri,

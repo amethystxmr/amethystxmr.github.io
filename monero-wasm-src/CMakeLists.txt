@@ -48,7 +48,10 @@ if(EMSCRIPTEN)
         # Do NOT set a huge INITIAL_MEMORY: reserving hundreds of MB at
         # instantiation OOMs/crashes Chrome tabs. Grow from a small heap instead
         # (monero-ts relies on ALLOW_MEMORY_GROWTH without multi-hundred-MB starts).
-        # `-sASYNCIFY` is not passed; HTTP uses synchronous XHR in the worker (http.hpp).
+        # Async HTTP (XHR) yields via EM_ASYNC_JS; Embind awaits completion (libembind_asyncify).
+        -sASYNCIFY
+        # Wallet/daemon stacks are deep during refresh/RPC chains.
+        -sASYNCIFY_STACK_SIZE=131072
         -sINITIAL_MEMORY=64MB
         -sSTACK_SIZE=5MB
         -sWEBSOCKET_URL=ws://localhost:4444

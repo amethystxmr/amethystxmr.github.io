@@ -1,4 +1,5 @@
 node_modules
+bin/
 built-web
 playwright-report
 test-results

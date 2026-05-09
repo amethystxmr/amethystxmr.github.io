@@ -243,7 +243,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         const refreshStatus = await withFsLock(async () => {
           // Refresh probably does not need the same lock as store for FS/IDB; only store
           // writes. Keep both under withFsLock anyway to serialize with other tab activity.
-          const r = await wallet.refresh(false, 0n, true, true, 2000n);
+          const r = await wallet.refresh(false, 0, true, true, 2000);
           await wallet.store();
           return r;
         });
@@ -319,7 +319,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
        */
       let lastTimeRefreshStartedAt: Date | null = null;
       /** Only used for estimations during initial sync */
-      let lastTimeRefreshedBlocks: bigint | null = null;
+      let lastTimeRefreshedBlocks: number | null = null;
 
       while (!cancelled) {
         console.info(
@@ -472,7 +472,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   ) : refreshing ? (
     <ProgressBar
       size="sm"
-      state={downloadInfo ? "progress" : "loading"}
+      state={
+        downloadInfo && downloadInfo.progressTotal > 0 ? "progress" : "loading"
+      }
       value={downloadingProgressValue}
       text={
         !status.isSynced && status.daemonHeight > status.walletHeight

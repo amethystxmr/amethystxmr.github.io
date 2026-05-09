@@ -562,9 +562,11 @@ public:
                            return true; });
     }
 
+    /** `double`: Embind/asyncify rewind mishandles mixed i64/bigint returns on some WASM runs;
+     *  blocks fetched per refresh fits safely in IEEE double integer range. */
     struct RefreshResult
     {
-        uint64_t blocksFetched;
+        double blocksFetched;
         bool receivedMoney;
     };
 
@@ -598,13 +600,37 @@ public:
         std::vector<PendingTxDestinationInfo> destinations;
     };
 
-    auto refresh(bool trusted_daemon, uint64_t start_height, bool check_pool = true, bool try_incremental = true, uint64_t max_blocks = std::numeric_limits<uint64_t>::max())
+    static uint64_t js_double_refresh_u64(double v, const char *what)
     {
+        if (!(v >= 0) || std::isnan(v) || std::isinf(v))
+        {
+            throw std::runtime_error(std::string("invalid ") + what);
+        }
+        constexpr double hi = static_cast<double>(std::numeric_limits<uint64_t>::max());
+        if (v >= hi)
+        {
+            return std::numeric_limits<uint64_t>::max();
+        }
+        return static_cast<uint64_t>(v);
+    }
+
+    /** `start_height_js` / `max_blocks_js` as double: Asyncify rewind + WASM_BIGINT mishandles bigint call args. Pass `start_height`=0 etc.
+     *  Use `max_blocks_js < 0` or NaN for "no limit" (`std::numeric_limits<uint64_t>::max()`). */
+    auto refresh(bool trusted_daemon, double start_height_js, bool check_pool = true, bool try_incremental = true, double max_blocks_js = -1.)
+    {
+        const uint64_t start_height = js_double_refresh_u64(start_height_js, "refresh start_height");
+        const uint64_t max_blocks =
+            max_blocks_js < 0 || std::isnan(max_blocks_js)
+                ? std::numeric_limits<uint64_t>::max()
+                : js_double_refresh_u64(max_blocks_js, "refresh max_blocks");
+
         return dispatch([this, trusted_daemon, start_height, check_pool, try_incremental, max_blocks]()
                        {
-                           auto r = RefreshResult{};
-                           m_wallet.refresh(trusted_daemon, start_height, r.blocksFetched, r.receivedMoney, check_pool, try_incremental, max_blocks);
-                           return r; });
+                           uint64_t fetched = 0;
+                           auto receivedMoney = bool{};
+                           m_wallet.refresh(trusted_daemon, start_height, fetched, receivedMoney, check_pool, try_incremental, max_blocks);
+                           return RefreshResult{.blocksFetched = static_cast<double>(fetched), .receivedMoney = receivedMoney};
+                       });
     }
 
     void set_on_new_block_callback(emscripten::val callback)

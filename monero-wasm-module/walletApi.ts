@@ -60,11 +60,11 @@ export declare class MoneroWasmWallet {
   load(fileName: string, password: string): Promise<void>;
   refresh(
     isTrustedWallet: boolean,
-    startHeight: bigint,
+    startHeight: number,
     checkPool: boolean,
     tryIncremental: boolean,
-    maxBlocks: bigint,
-  ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
+    maxBlocks: number,
+  ): Promise<{ blocksFetched: number; receivedMoney: boolean }>;
   rewrite(fileName: string, password: string): Promise<void>;
   get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
   get_multisig_seed(seedPassword: string): Promise<string>;
@@ -360,6 +360,7 @@ type HttpFetchState =
 
 export type { HttpFetchState };
 
+/** Daemon RPC progress from the wallet worker. `progressTotal < 0` on `start` means size unknown yet; async XHR may follow with `progress` when `lengthComputable`. */
 export type HttpFetchCallback = (
   url: string,
   reqId: string,
