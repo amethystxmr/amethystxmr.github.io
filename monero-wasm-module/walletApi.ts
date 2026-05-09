@@ -274,6 +274,9 @@ export interface TransferDestinationInfo {
 }
 
 interface Module {
+  /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
+  getExceptionMessage?(exn: number): [string, string];
+  decrementExceptionRefcount?(exn: number): void;
   FS: {
     mkdir(path: string): void;
     mount(type: IDBFS, opts: Record<string, never>, mountpoint: string): void;
@@ -290,7 +293,6 @@ interface Module {
   };
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
-  set_max_concurrency(threads: number): void;
   get_monero_version_full(): string;
   decodePolyseed(moneroPolyseed: string): {
     birthday: bigint;
@@ -300,6 +302,54 @@ interface Module {
 }
 
 let module: Module;
+
+/**
+ * Emscripten/embind often rejects with a **numeric** value: the WASM C++ exception
+ * pointer (`throw exceptionLast`). It is **not** a wallet/daemon error code; the
+ * number changes each run with heap layout. When `getExceptionMessage` is exported
+ * (see CMakeLists `EXPORTED_RUNTIME_METHODS`), decode to a real message and release
+ * the exception with `decrementExceptionRefcount` per Emscripten docs.
+ */
+export function wasmThrownValueToError(thrown: unknown): Error {
+  if (thrown instanceof Error) {
+    return thrown;
+  }
+
+  if (typeof thrown !== "number") {
+    return new Error(String(thrown));
+  }
+
+  const ptr = thrown;
+
+  if (!module.getExceptionMessage || !module.decrementExceptionRefcount) {
+    return new Error(
+      "WASM raised a C++ exception (shown as a numeric pointer in the console - not an application error code). " +
+        "Rebuild monero-wasm with `getExceptionMessage` + `decrementExceptionRefcount` in EXPORTED_RUNTIME_METHODS to decode the message.",
+    );
+  }
+
+  try {
+    const [type, rawMessage] = module.getExceptionMessage(ptr);
+    const message =
+      rawMessage && rawMessage.length > 0
+        ? rawMessage
+        : type && type.length > 0
+          ? type
+          : "C++ exception (empty what())";
+    return new Error(message);
+  } catch {
+    return new Error(
+      `Could not decode WASM exception at pointer ${ptr} (heap addresses differ each run).`,
+    );
+  } finally {
+    try {
+      module.decrementExceptionRefcount(ptr);
+    } catch {
+      // Best-effort cleanup; ignore if pointer was already released.
+    }
+  }
+}
+
 type HttpFetchState =
   | "start"
   | "progress"
@@ -353,7 +403,6 @@ export async function initModule() {
   }
   module = (await MoneroWasmWalletModuleFactory()) as Module;
   await initFilesystem();
-  setMaxConcurrency(getRecommendedMaxConcurrency());
   getWalletRuntimeGlobal().moneroWalletModule = module;
   ensureGlobalHttpConfig();
 }
@@ -377,29 +426,6 @@ export function setWalletNewBlockCallback(
   return wallet.set_on_new_block_callback(callback);
 }
 
-export function getMaxConcurrency() {
-  // Note: it always should be the same as in sPTHREAD_POOL_SIZE
-  return navigator.hardwareConcurrency || 2;
-}
-
-export function getRecommendedMaxConcurrency() {
-  const cpuCount =
-    typeof navigator !== "undefined" &&
-    typeof navigator.hardwareConcurrency === "number"
-      ? navigator.hardwareConcurrency
-      : 2;
-  return Math.max(1, cpuCount - 1);
-}
-
-export function setMaxConcurrency(threads: number) {
-  if (!module) {
-    throw new Error("Module not initialized");
-  }
-  const sanitized = Number.isFinite(threads) ? Math.trunc(threads) : 1;
-  const clamped = Math.min(getMaxConcurrency(), Math.max(1, sanitized));
-  module.set_max_concurrency(clamped);
-}
-
 export function decodePolyseed(moneroPolyseed: string) {
   if (!module) {
     throw new Error("Module not initialized");
@@ -414,6 +440,27 @@ export function getMoneroVersionFull() {
   return module.get_monero_version_full();
 }
 
+/**
+ * Matches `navigator.locks` name used by `acquireOriginLock("fs-lock")` in
+ * web-src/components/utils.ts (must stay identical for cross-tab exclusion).
+ */
+const FS_ORIGIN_LOCK_RESOURCE = "origin:fs-lock";
+
+async function withOriginFsLock<T>(description: string, fn: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== "undefined" && navigator.locks?.request) {
+    return navigator.locks.request(
+      FS_ORIGIN_LOCK_RESOURCE,
+      { mode: "exclusive" },
+      fn,
+    );
+  }
+
+  console.warn(
+    `[walletApi:${description}] navigator.locks unavailable; continuing without cross-tab filesystem serialization`,
+  );
+  return fn();
+}
+
 export async function loadFilesystem() {
   await new Promise<void>((resolve, reject) =>
     module.FS.syncfs(true, (err) => (err ? reject(err) : resolve())),
@@ -421,10 +468,12 @@ export async function loadFilesystem() {
 }
 
 async function initFilesystem() {
-  module.FS.mkdir("/data");
-  module.FS.mount(module.IDBFS, {}, "/data");
-  await loadFilesystem();
-  module.FS.chdir("/data");
+  await withOriginFsLock("initFilesystem", async () => {
+    module.FS.mkdir("/data");
+    module.FS.mount(module.IDBFS, {}, "/data");
+    await loadFilesystem();
+    module.FS.chdir("/data");
+  });
 }
 
 export async function saveFilesystem() {
