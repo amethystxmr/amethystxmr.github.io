@@ -264,15 +264,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
         console.error("Error during refresh:", e);
-        const message =
-          e instanceof Error
-            ? e.message
-            : typeof e === "number" || typeof e === "bigint"
-              ? `Wallet refresh failed (${String(e)}). Opening several wallets in the same browser shares one storage bucket and can corrupt the cache — close extra tabs or use another profile/context.`
-              : typeof e === "string"
-                ? e
-                : "Unknown error";
-        setRefreshError(message || "Unknown error");
+        setRefreshError((e as Error).message || "Unknown error");
         setRefreshing(false);
       }
     };
