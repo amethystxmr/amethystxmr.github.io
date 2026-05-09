@@ -38,6 +38,19 @@ static_assert(std::is_same_v<WalletNetworkTypeBacking, std::uint8_t>,
 static_assert(std::is_same_v<WalletPriorityBacking, unsigned int>,
               "Monero::PendingTransaction::Priority backing type must be unsigned int");
 
+namespace
+{
+// Wasm is built without `-sUSE_PTHREADS`; cap Boost concurrency before static init /
+// embind touches the thread pool.
+struct WasmWalletConcurrencyInit
+{
+    WasmWalletConcurrencyInit()
+    {
+        tools::set_max_concurrency(1);
+    }
+} wasm_wallet_concurrency_init;
+} // namespace
+
 class MoneroWasmWallet : public tools::i_wallet2_callback
 {
 private:
@@ -1992,10 +2005,6 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
         emscripten::optional_override([](std::string categories) -> void
                                       { mlog_set_categories(categories.c_str()); }));
     emscripten::function(
-        "set_max_concurrency",
-        emscripten::optional_override([](uint32_t threads) -> void
-                                      { tools::set_max_concurrency(std::max<uint32_t>(1, threads)); }));
-    emscripten::function(
         "get_monero_version_full",
         emscripten::optional_override([]() -> std::string
                                       { return MONERO_VERSION_FULL; }));
@@ -2004,7 +2013,6 @@ emscripten::register_vector<tools::wallet2::transfer_details>("TransferDetailsVe
 int main()
 {
     std::cout << "Initialing module..." << std::endl;
-
     tools::set_max_concurrency(1);
 
     // mlog_set_categories("*:TRACE");
