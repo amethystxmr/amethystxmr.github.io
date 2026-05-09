@@ -17,10 +17,19 @@ const POST_SEND_MINED_BLOCKS = 70;
 
 test.beforeEach(async ({ page }) => {
   await initializeAppTestSettings(page);
+  if (process.env.PW_BROWSER_CONSOLE) {
+    page.on("console", (msg) => {
+      console.log(`[browser ${msg.type()}] ${msg.text()}`);
+    });
+    page.on("pageerror", (err) => {
+      console.error("[browser pageerror]", err);
+    });
+  }
 });
 
 test("basic flow", async ({ page, context }) => {
   test.setTimeout(600_000);
+
   const wallet1Initial = new InitialWalletListPage(page);
   const wallet1Name = `wallet1-restore-${Date.now()}`;
   let wallet1: WalletMainPage;
