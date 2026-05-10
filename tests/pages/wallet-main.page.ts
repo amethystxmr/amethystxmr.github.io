@@ -62,6 +62,12 @@ export class WalletMainPage {
     await this.waitUntilLoaded();
   }
 
+  /** Clicks Exit on the Other tab (how the app leaves the wallet; no assumptions about reload vs in-app navigation). */
+  async exitFromWallet(): Promise<void> {
+    await this.openTab("other");
+    await this.page.getByRole("button", { name: /exit/i }).click();
+  }
+
   async clickRefreshWallet(): Promise<void> {
     await this.openTab("other");
     await this.page.getByRole("button", { name: /refresh wallet/i }).click();

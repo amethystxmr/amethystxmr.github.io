@@ -1,28 +1,16 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
-import { initializeAppTestSettings } from "./helpers/testSettings";
+import { expect, test } from "@playwright/test";
+import { AppAlertsPage } from "./pages/app-alerts.page";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
+import { ManageWalletsPage } from "./pages/manage-wallets.page";
 import { WalletMainPage } from "./pages/wallet-main.page";
+import { initializeAppTestSettings } from "./helpers/testSettings";
 
 test.beforeEach(async ({ page }) => {
   await initializeAppTestSettings(page);
 });
-
-async function expectNoticeThenDismiss(page: Page, pattern: RegExp): Promise<void> {
-  await expect(page.getByText(pattern)).toBeVisible({ timeout: 120_000 });
-  await page.getByRole("button", { name: /^OK$/ }).click();
-}
-
-async function exitWalletThroughUi(walletMain: WalletMainPage): Promise<void> {
-  await walletMain.openTab("other");
-  // Exit triggers reload immediately after enqueueing alert(); "Loading" is usually skipped — wait on navigation instead.
-  await Promise.all([
-    walletMain.page.waitForNavigation({ waitUntil: "domcontentloaded" }),
-    walletMain.page.getByRole("button", { name: /exit/i }).click(),
-  ]);
-}
 
 test("wallet management cross-tab locks, rename, export, remove, import", async ({
   page: page1,
@@ -31,7 +19,7 @@ test("wallet management cross-tab locks, rename, export, remove, import", async 
   test.setTimeout(600_000);
 
   const ts = Date.now();
-  const originalWalletName = `wm-${ts}`;
+  const originalWalletName = `wm-${ts}-original`;
   const renamedWalletName = `wm-${ts}-renamed`;
 
   let primaryAddressAfterCreate = "";
@@ -41,115 +29,98 @@ test("wallet management cross-tab locks, rename, export, remove, import", async 
     await initial.goto();
     await initial.waitUntilLoaded();
     await initial.openCreateWallet();
-    const main = await initial.createNewWallet({ walletName: originalWalletName });
+    const main = await initial.createNewWallet({
+      walletName: originalWalletName,
+    });
     primaryAddressAfterCreate = await main.getPrimaryAddress();
     expect(primaryAddressAfterCreate.length).toBeGreaterThan(20);
   });
 
   const page2 = await context.newPage();
   await initializeAppTestSettings(page2);
+  const initial2 = new InitialWalletListPage(page2);
+  const manage2 = new ManageWalletsPage(page2);
+  const alerts2 = new AppAlertsPage(page2);
 
   await test.step("Tab 2: cannot create another wallet with the same name while tab 1 holds lock", async () => {
-    const initial2 = new InitialWalletListPage(page2);
     await initial2.goto();
     await initial2.waitUntilLoaded();
     await initial2.openCreateWallet();
-    await page2
-      .locator("div")
-      .filter({ hasText: /^Wallet name$/ })
-      .locator("input")
-      .first()
-      .fill(originalWalletName);
-    await page2.getByRole("button", { name: /create wallet/i }).click();
-    await expectNoticeThenDismiss(page2, /currently open in another tab/i);
-    await page2.getByRole("button", { name: /^✖ Cancel$/ }).click();
-    await expect(page2.getByRole("heading", { name: /amethyst xmr wallet/i })).toBeVisible();
+    await initial2.fillCreateWalletName(originalWalletName);
+    await initial2.submitCreateWalletForm();
+    await alerts2.dismissNoticeMatching(/currently open in another tab/i);
+    await initial2.cancelCreateOrRestore();
+    await initial2.expectMainHomeVisible();
   });
 
   await test.step("Tab 2: cannot restore with an existing wallet name", async () => {
-    await page2.getByRole("button", { name: /restore/i }).click();
-    await expect(page2.getByRole("heading", { name: /restore wallet/i })).toBeVisible();
-    await page2
-      .locator("div")
-      .filter({ hasText: /^Wallet name$/ })
-      .locator("input")
-      .first()
-      .fill(originalWalletName);
-    await page2.getByRole("button", { name: /restore wallet/i }).click();
-    await expectNoticeThenDismiss(page2, /already exists/i);
-    await page2.getByRole("button", { name: /^✖ Cancel$/ }).click();
-    await expect(page2.getByRole("heading", { name: /amethyst xmr wallet/i })).toBeVisible();
+    await initial2.openRestoreWallet();
+    await initial2.fillRestoreWalletName(originalWalletName);
+    await initial2.submitRestoreWalletForm();
+    await alerts2.dismissNoticeMatching(/already exists/i);
+    await initial2.cancelCreateOrRestore();
+    await initial2.expectMainHomeVisible();
   });
 
   await test.step("Tab 2: cannot remove wallet while open in tab 1", async () => {
-    await page2.getByRole("button", { name: /manage wallets/i }).click();
-    await expect(page2.getByRole("heading", { name: /manage wallets/i })).toBeVisible();
-    await page2.getByRole("button", { name: "🗑 Remove" }).first().click();
-    await page2.getByPlaceholder(originalWalletName).fill(originalWalletName);
-    await page2.getByRole("button", { name: /^Remove wallet$/ }).click();
-    await expectNoticeThenDismiss(page2, /already opened in another tab/i);
+    await initial2.openManageWallets();
+    await manage2.expectLoaded();
+    await manage2.startRemoveForWallet(originalWalletName);
+    await manage2.confirmRemoveDialog(originalWalletName);
+    await alerts2.dismissNoticeMatching(/already opened in another tab/i);
   });
 
   await test.step("Tab 2: cannot rename wallet while open in tab 1", async () => {
-    await page2.getByRole("button", { name: "✎ Rename" }).first().click();
-    const renameForm = page2.locator("form").filter({ hasText: /Enter new name for/i });
-    await renameForm.locator("input").fill(`${originalWalletName}-x`);
-    await renameForm.getByRole("button", { name: /rename wallet/i }).click();
-    await expectNoticeThenDismiss(page2, /currently opened in another tab/i);
+    await manage2.startRenameForWallet(originalWalletName);
+    await manage2.submitRenameDialog(`${originalWalletName}-x`);
+    await alerts2.dismissNoticeMatching(/currently opened in another tab/i);
   });
 
-  await test.step("Tab 1: exit wallet (reload)", async () => {
+  await test.step("Tab 1: exit wallet", async () => {
     const walletMain1 = new WalletMainPage(page1);
-    await exitWalletThroughUi(walletMain1);
-    const initialAgain = new InitialWalletListPage(page1);
-    await initialAgain.waitUntilLoaded();
+    await walletMain1.exitFromWallet();
+    await new InitialWalletListPage(page1).expectLoaded();
   });
 
   await test.step("Tab 2: rename wallet succeeds", async () => {
-    await page2.getByRole("button", { name: "✎ Rename" }).first().click();
-    const renameForm = page2.locator("form").filter({ hasText: /Enter new name for/i });
-    await renameForm.locator("input").fill(renamedWalletName);
-    await renameForm.getByRole("button", { name: /rename wallet/i }).click();
-    await expect(page2.getByText(renamedWalletName, { exact: true })).toBeVisible({
-      timeout: 120_000,
-    });
+    await manage2.startRenameForWallet(originalWalletName);
+    await manage2.submitRenameDialog(renamedWalletName);
+    await manage2.expectWalletRowVisible(renamedWalletName);
   });
 
-  const zipPath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "wm-e2e-")), "wallet.zip");
+  const zipPath = path.join(
+    await fs.mkdtemp(path.join(os.tmpdir(), "wm-e2e-")),
+    "wallet.zip",
+  );
 
   await test.step("Tab 2: export wallet", async () => {
-    const downloadPromise = page2.waitForEvent("download");
-    await page2.getByRole("button", { name: "⬇︎ Export" }).first().click();
-    const download = await downloadPromise;
-    await download.saveAs(zipPath);
+    await manage2.exportWalletToPath(renamedWalletName, zipPath);
   });
 
   await test.step("Tab 2: remove wallet", async () => {
-    await page2.getByRole("button", { name: "🗑 Remove" }).first().click();
-    await page2.getByPlaceholder(renamedWalletName).fill(renamedWalletName);
-    await page2.getByRole("button", { name: /^Remove wallet$/ }).click();
-    await expect(page2.getByText(/No wallets available/i)).toBeVisible({ timeout: 120_000 });
+    await manage2.startRemoveForWallet(renamedWalletName);
+    await manage2.confirmRemoveDialog(renamedWalletName);
+    await manage2.expectEmptyState();
   });
 
   await test.step("Tab 2: main list no longer lists wallet", async () => {
-    await page2.getByRole("button", { name: /^← Back$/ }).click();
-    await expect(page2.getByRole("heading", { name: /amethyst xmr wallet/i })).toBeVisible();
-    await expect(page2.getByRole("button", { name: renamedWalletName })).toHaveCount(0);
+    await manage2.backToWalletList();
+    await initial2.expectMainHomeVisible();
+    await initial2.expectWalletNotOnList(renamedWalletName);
   });
 
   await test.step("Tab 2: import wallet zip and see it in manage view", async () => {
-    await page2.getByRole("button", { name: /manage wallets/i }).click();
-    await expect(page2.getByRole("heading", { name: /manage wallets/i })).toBeVisible();
-    const fileInput = page2.locator('input[type="file"][accept*="zip"]');
-    await fileInput.setInputFiles(zipPath);
-    await expectNoticeThenDismiss(page2, /Import completed/i);
-    await expect(page2.getByText(renamedWalletName, { exact: true })).toBeVisible();
+    await initial2.openManageWallets();
+    await manage2.expectLoaded();
+    await manage2.importZipFromPath(zipPath);
+    await alerts2.dismissNoticeMatching(/Import completed/i);
+    await manage2.expectWalletRowVisible(renamedWalletName);
   });
 
   await test.step("Tab 2: main list, open wallet, address unchanged", async () => {
-    await page2.getByRole("button", { name: /^← Back$/ }).click();
-    await expect(page2.getByRole("heading", { name: /amethyst xmr wallet/i })).toBeVisible();
-    await page2.getByRole("button", { name: renamedWalletName }).click();
+    await manage2.backToWalletList();
+    await initial2.expectMainHomeVisible();
+    await initial2.openWalletFromList(renamedWalletName);
     const reopened = new WalletMainPage(page2);
     await reopened.waitUntilLoaded();
     const addressAfterImport = await reopened.getPrimaryAddress();
