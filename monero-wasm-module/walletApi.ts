@@ -459,40 +459,21 @@ export function getMoneroVersionFull() {
   return module.get_monero_version_full();
 }
 
-/**
- * Matches `navigator.locks` name used by `acquireOriginLock("fs-lock")` in
- * web-src/components/utils.ts (must stay identical for cross-tab exclusion).
- */
-const FS_ORIGIN_LOCK_RESOURCE = "origin:fs-lock";
-
-async function withOriginFsLock<T>(description: string, fn: () => Promise<T>): Promise<T> {
-  if (typeof navigator !== "undefined" && navigator.locks?.request) {
-    return navigator.locks.request(
-      FS_ORIGIN_LOCK_RESOURCE,
-      { mode: "exclusive" },
-      fn,
-    );
-  }
-
-  console.warn(
-    `[walletApi:${description}] navigator.locks unavailable; continuing without cross-tab filesystem serialization`,
-  );
-  return fn();
-}
-
 export async function loadFilesystem() {
   await new Promise<void>((resolve, reject) =>
     module.FS.syncfs(true, (err) => (err ? reject(err) : resolve())),
   );
 }
 
+/**
+ * Mount in-memory FS only. Populate from IndexedDB via `loadFilesystem()` — call
+ * from the UI under `withFsLock()` (see web-src/components/utils.ts) so all tabs
+ * serialize IDBFS sync and share a consistent view.
+ */
 async function initFilesystem() {
-  await withOriginFsLock("initFilesystem", async () => {
-    module.FS.mkdir("/data");
-    module.FS.mount(module.IDBFS, {}, "/data");
-    await loadFilesystem();
-    module.FS.chdir("/data");
-  });
+  module.FS.mkdir("/data");
+  module.FS.mount(module.IDBFS, {}, "/data");
+  module.FS.chdir("/data");
 }
 
 export async function saveFilesystem() {

@@ -190,7 +190,9 @@ export function WalletsList() {
     (async () => {
       const daemonAddress = options.getValue("daemonAddress");
       await walletApi.setDaemonAddress(daemonAddress);
-      const walletNames = await walletApi.listWalletNames();
+      const walletNames = await withFsLock(async () =>
+        walletApi.listWalletNames(),
+      );
       if (cancelled) {
         return;
       }
@@ -209,7 +211,9 @@ export function WalletsList() {
     if (view.type !== "manage-wallets") {
       throw new Error("Invalid view type");
     }
-    const walletNames = await walletApi.listWalletNames();
+    const walletNames = await withFsLock(async () =>
+      walletApi.listWalletNames(),
+    );
     setView({
       type: "manage-wallets",
       walletNames,
@@ -1377,15 +1381,21 @@ function OpenWalletView({
         if (isUnmountedRef.current) {
           return;
         }
-        wallet = await createWalletUsingCurrentOptions();
-        await wallet.init();
-        if (isUnmountedRef.current) {
-          await closeWallet(wallet);
-          return;
-        }
-        await wallet.load(fileName, passwordToTry);
-        if (isUnmountedRef.current) {
-          await closeWallet(wallet);
+        await withFsLock(async () => {
+          wallet = await createWalletUsingCurrentOptions();
+          await wallet.init();
+          if (isUnmountedRef.current) {
+            await closeWallet(wallet);
+            wallet = undefined;
+            return;
+          }
+          await wallet.load(fileName, passwordToTry);
+          if (isUnmountedRef.current) {
+            await closeWallet(wallet);
+            wallet = undefined;
+          }
+        });
+        if (isUnmountedRef.current || !wallet) {
           return;
         }
         if (!releaseWalletOpenLock) {
