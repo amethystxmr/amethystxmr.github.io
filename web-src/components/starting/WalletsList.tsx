@@ -855,7 +855,7 @@ function RestoreView({
                       <Label>Seed phrase</Label>
                       <TextArea
                         rows={3}
-                        className="lg:min-h-0 lg:flex-1"
+                        className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto lg:min-h-0 lg:flex-1"
                         value={moneroSeed}
                         disabled={restoring}
                         onChange={(e) => setMoneroSeed(e.target.value)}
@@ -875,7 +875,7 @@ function RestoreView({
                       <Label>Seed phrase</Label>
                       <TextArea
                         rows={3}
-                        className="lg:min-h-0 lg:flex-1"
+                        className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto lg:min-h-0 lg:flex-1"
                         value={cakeSeed}
                         disabled={restoring}
                         onChange={(e) => setCakeSeed(e.target.value)}
@@ -896,7 +896,7 @@ function RestoreView({
                       <Label>Multisig seed (hex)</Label>
                       <TextArea
                         rows={3}
-                        className="lg:min-h-0 lg:flex-1"
+                        className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto lg:min-h-0 lg:flex-1"
                         value={multisigSeedHex}
                         disabled={restoring}
                         onChange={(e) => setMultisigSeedHex(e.target.value)}
@@ -1181,7 +1181,7 @@ function CreateNewWalletView({
               <TextArea
                 readOnly
                 rows={4}
-                className="font-mono text-sm leading-relaxed"
+                className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto font-mono text-sm leading-relaxed"
                 value={state.seed}
               />
             </SurfaceCard>
