@@ -2,10 +2,11 @@
 # clangd reads compile_commands.json, then this translates the few em++ driver
 # flags that clangd's parser cannot understand.
 #
-# `monero-wasm-src/build.sh` creates a workspace-root symlink
-#   compile_commands.json -> monero-wasm-src/built-wasm-<BuildType>/compile_commands.json
-# after each successful build, so clangd's default upward-search picks up the
-# database that matches the most recently compiled build type.
+# `monero-wasm-src/build.sh` creates
+#   monero-wasm-src/compile_commands.json -> built-wasm-<BuildType>/compile_commands.json
+# after each successful build (path relative to monero-wasm-src). Clangd picks it
+# up via upward-search from sources under monero-wasm-src or via
+# `--compile-commands-dir` in .vscode/settings.json.
 CompileFlags:
   Add:
     - -pthread

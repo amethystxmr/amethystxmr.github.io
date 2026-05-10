@@ -2,7 +2,7 @@
   "editor.formatOnSave": true,
   "clangd.path": "clangd-22",
   "clangd.arguments": [
-    "--compile-commands-dir=${workspaceFolder}/monero-wasm-src/built-wasm-Debug",
+    "--compile-commands-dir=${workspaceFolder}/monero-wasm-src",
     "--query-driver=**/emsdk/upstream/emscripten/em++,**/emsdk/upstream/bin/clang++,**/emsdk/upstream/bin/wasm32-clang++"
   ],
   "cmake.sourceDirectory": "${workspaceFolder}/monero-wasm-src"

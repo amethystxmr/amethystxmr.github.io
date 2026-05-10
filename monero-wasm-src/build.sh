@@ -52,12 +52,14 @@ cp -v "$BUILD_WASM_DIR"/bin/wasm_wallet.* ../monero-wasm-module/
 
 # Point clangd at whichever built-wasm-*/compile_commands.json was regenerated
 # most recently (CMake re-runs configure on every invocation, so the freshest
-# db is always the one for the build that just finished). The symlink lives at
-# the workspace root so clangd's default upward-search picks it up.
+# db is always the one for the build that just finished). Symlink lives next to
+# this script so upward-search from monero-wasm-src/** finds it; drop the old
+# workspace-root symlink if present.
 LATEST_DB=$(ls -t built-wasm-*/compile_commands.json 2>/dev/null | head -n1)
 if [ -n "$LATEST_DB" ]; then
-  ln -sfn "monero-wasm-src/$LATEST_DB" "../compile_commands.json"
-  echo "Symlinked ../compile_commands.json -> monero-wasm-src/$LATEST_DB"
+  rm -f ../compile_commands.json
+  ln -sfn "$LATEST_DB" compile_commands.json
+  echo "Symlinked monero-wasm-src/compile_commands.json -> $LATEST_DB"
 fi
 
 echo ""
