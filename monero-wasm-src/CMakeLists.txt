@@ -19,43 +19,52 @@ message(STATUS "CMAKE_TOOLCHAIN_FILE='${CMAKE_TOOLCHAIN_FILE}'")
 if(EMSCRIPTEN)
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         message(STATUS "======================== Debug build ========================")
-        set(EMSCRIPTEN_DEBUG_OPTIONS -g -O0)
+        set(EMSCRIPTEN_COMPILE_OPTIONS -g -O0)
+        set(EMSCRIPTEN_LINK_OPTIONS -g -O0)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER -gseparate-dwarf -gsource-map)
-        set(EMSCRIPTEN_PTHREAD_POOL_SIZE "-sPTHREAD_POOL_SIZE=4")
     else()
         message(STATUS "======================== Release build ========================")
-        set(EMSCRIPTEN_DEBUG_OPTIONS -O3)
+        # Fast generated code, but link for size: large wasm parse/compile cost was
+        # hurting the browser; monero-ts uses -Oz similarly.
+        set(EMSCRIPTEN_COMPILE_OPTIONS -O3)
+        set(EMSCRIPTEN_LINK_OPTIONS -Oz)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER)
-        set(EMSCRIPTEN_PTHREAD_POOL_SIZE "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)")
     endif()
 
 
-    # TODO: Check, can we remove NO_DISABLE_EXCEPTION_CATCHING?
+    # pthread API is required for Boost.Asio / threadpool headers even in a
+    # single-threaded WASM link (no -sUSE_PTHREADS).
     add_compile_options(
-        ${EMSCRIPTEN_DEBUG_OPTIONS}
-        -sUSE_PTHREADS=1
+        ${EMSCRIPTEN_COMPILE_OPTIONS}
+        -pthread
         -sNO_DISABLE_EXCEPTION_CATCHING
     )
 
     add_link_options(
-        ${EMSCRIPTEN_DEBUG_OPTIONS}
+        ${EMSCRIPTEN_LINK_OPTIONS}
         ${EMSCRIPTEN_DEBUG_OPTIONS_LINKER}
+        -pthread
         -sNO_DISABLE_EXCEPTION_CATCHING
-        -sINITIAL_MEMORY=800MB
-        -sSTACK_SIZE=10MB
-        -sUSE_PTHREADS=1
-        # -sPROXY_TO_PTHREAD=1
+        # Do NOT set a huge INITIAL_MEMORY: reserving hundreds of MB at
+        # instantiation OOMs/crashes Chrome tabs. Grow from a small heap instead
+        # (monero-ts relies on ALLOW_MEMORY_GROWTH without multi-hundred-MB starts).
+        # Async HTTP (XHR) yields via EM_ASYNC_JS; Embind awaits completion (libembind_asyncify).
+        -sASYNCIFY
+        # Wallet/daemon stacks are deep during refresh/RPC chains.
+        -sASYNCIFY_STACK_SIZE=131072
+        -sINITIAL_MEMORY=64MB
+        -sSTACK_SIZE=5MB
         -sWEBSOCKET_URL=ws://localhost:4444
-        "${EMSCRIPTEN_PTHREAD_POOL_SIZE}"
-        -sPTHREAD_POOL_SIZE_STRICT=1
         -sALLOW_MEMORY_GROWTH=1
+        -sWASM_BIGINT=1
+        -sENVIRONMENT=worker
         -sEXPORT_ES6=1
         -sEXPORT_NAME=MoneroWasmWallet
         -Wl,--error-limit=0
         -lembind
         -lidbfs.js
         -sFORCE_FILESYSTEM=1
-        -sEXPORTED_RUNTIME_METHODS=['FS','IDBFS']
+        -sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','getExceptionMessage','decrementExceptionRefcount']
     )
 
     include_directories(SYSTEM "${CMAKE_SOURCE_DIR}/unbound-stub")

@@ -32,11 +32,23 @@ The script installs `clangd-22` from apt, adding the https://apt.llvm.org/
 repository if the package is not available from the current apt sources.
 Ubuntu 22.04's default `clangd` package is too old for the current emsdk.
 
+## E2E tests
+
+Playwright drives the UI against a local `monerod` (started in `tests/global.setup.ts`).
+Point to your binary when it is not on `PATH`:
+
+```bash
+MONEROD_PATH=~/monero-gui-v0.18.4.2/monerod ./node_modules/.bin/playwright test --headed basic
+```
+
+(`basic` matches `tests/basic_flow.spec.ts`.)
+
 ## Building web
 
-```
+```bash
 npm run build
 
 # or for local development
 npm run dev
 ```
+

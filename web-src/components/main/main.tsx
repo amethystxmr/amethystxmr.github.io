@@ -240,15 +240,12 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         if (cancelled) {
           return;
         }
-        const refreshStatus = await wallet.refresh(
-          false,
-          0n,
-          true,
-          true,
-          2000n,
-        );
-        await withFsLock(async () => {
+        const refreshStatus = await withFsLock(async () => {
+          // Refresh probably does not need the same lock as store for FS/IDB; only store
+          // writes. Keep both under withFsLock anyway to serialize with other tab activity.
+          const r = await wallet.refresh(false, 0, true, true, 2000);
           await wallet.store();
+          return r;
         });
         console.info("Refresh status:", refreshStatus);
         if (cancelled) {
@@ -267,7 +264,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
         console.error("Error during refresh:", e);
-        setRefreshError((e as Error).message || "Unknown error");
+        const message =
+          e instanceof Error
+            ? e.message
+            : typeof e === "number"
+              ? "WASM error (raw exception pointer; worker should decode — see walletApi.worker ensureSequential)."
+              : typeof e === "string"
+                ? e
+                : String(e);
+        setRefreshError(message || "Unknown error");
         setRefreshing(false);
       }
     };
@@ -322,7 +327,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
        */
       let lastTimeRefreshStartedAt: Date | null = null;
       /** Only used for estimations during initial sync */
-      let lastTimeRefreshedBlocks: bigint | null = null;
+      let lastTimeRefreshedBlocks: number | null = null;
 
       while (!cancelled) {
         console.info(
@@ -367,7 +372,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
         // The point of having delay here is to allow to get fresh statuses right after refresh
         // If we have refresh in the end of the loop then we will just wait
-        const isSynced = await wallet.is_synced().catch(() => null);
+        const isSynced = await Promise.resolve(wallet.is_synced()).catch(
+          () => null,
+        );
         if (cancelled) {
           return;
         }
@@ -378,9 +385,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           console.info("Wallet is synced, fetching mempool...");
           {
             // On non-initial refresh also get mempool payments
-            const mempoolPayments = await wallet
-              .get_payments_mempool()
-              .catch(() => null);
+            const mempoolPayments = await Promise.resolve(
+              wallet.get_payments_mempool(),
+            ).catch(() => null);
             if (cancelled) {
               return;
             }
@@ -475,7 +482,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   ) : refreshing ? (
     <ProgressBar
       size="sm"
-      state={downloadInfo ? "progress" : "loading"}
+      state={
+        downloadInfo && downloadInfo.progressTotal > 0 ? "progress" : "loading"
+      }
       value={downloadingProgressValue}
       text={
         !status.isSynced && status.daemonHeight > status.walletHeight

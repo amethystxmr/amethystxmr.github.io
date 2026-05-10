@@ -3,22 +3,11 @@ import type { exposedApi } from "./walletApi.worker";
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority as FeePriorityConst,
-  getMaxConcurrency,
-  getRecommendedMaxConcurrency,
   max64,
   NetworkTypes,
   type FeePriority as FeePriorityType,
-  type KeyImagesImportResult,
   type MoneroWasmWallet,
-  type MultisigAccountStatus,
-  type NetworkType,
-  type PaymentDetails,
-  type TransferInfoItem,
-  type TransferItem,
-  type WalletAddress,
-  type WalletKeys,
   type WalletNewBlockCallback,
-  type WalletTxHandle,
 } from "./walletApi";
 
 const FeePriority = FeePriorityConst;
@@ -26,8 +15,6 @@ const FeePriority = FeePriorityConst;
 export {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority,
-  getMaxConcurrency,
-  getRecommendedMaxConcurrency,
   max64,
   NetworkTypes,
 };
@@ -36,6 +23,7 @@ export type FeePriority = FeePriorityType;
 
 export type {
   KeyImagesImportResult,
+  MaybePromise,
   MultisigAccountStatus,
   NetworkType,
   PaymentDetails,
@@ -45,7 +33,7 @@ export type {
   WalletKeys,
   WalletTxHandle,
   MoneroWasmWallet,
-};
+} from "./walletApi";
 
 export type RemoteApi = Comlink.Remote<typeof exposedApi>;
 

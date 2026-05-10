@@ -12,8 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
-      WASM_CACHE_EPOCH: v12-boost-underlying-nextprior
-      MONERO_SRC_CACHE_EPOCH: v3-patches-layout
+      # Bump both when forcing cold CI caches (restore keys embed these epochs).
+      WASM_CACHE_EPOCH: v15-boost-thread-locale
+      MONERO_SRC_CACHE_EPOCH: v4-patches-layout
 
     steps:
       - name: Checkout

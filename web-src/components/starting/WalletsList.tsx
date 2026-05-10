@@ -7,7 +7,6 @@ import {
   Toggle,
   Header,
   Input,
-  InputWithAction,
   Label,
   ListRowButton,
   OverlayDialog,
@@ -20,10 +19,8 @@ import {
   useIsUnmountedRef,
 } from "../ui";
 import {
-  getMaxConcurrency,
   NetworkTypes,
   type NetworkType as NetworkTypeValue,
-  getRecommendedMaxConcurrency,
   MoneroWasmWallet,
   api as walletApi,
 } from "../../../monero-wasm-module/walletApi.workerClient";
@@ -138,8 +135,6 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
 }
 
 export function WalletsList() {
-  const cpuThreads = options.getValue("cpuThreads");
-
   const [view, setView] = React.useState<
     | {
         type: "initial loading";
@@ -278,10 +273,6 @@ export function WalletsList() {
     },
     [backToList],
   );
-
-  React.useEffect(() => {
-    void walletApi.setMaxConcurrency(cpuThreads);
-  }, [cpuThreads]);
 
   React.useEffect(() => {
     if (view.type !== "list") {
@@ -481,11 +472,6 @@ export function WalletsList() {
 }
 
 async function closeWallet(wallet: MoneroWasmWallet): Promise<void> {
-  try {
-    await wallet.close_wallet();
-  } catch (e) {
-    console.error("Error closing wallet:", e);
-  }
   try {
     await wallet.delete();
   } catch (e) {
@@ -1191,8 +1177,7 @@ function CreateNewWalletView({
     }
     let cancelled = false;
     const wallet = state.wallet;
-    wallet
-      .get_daemon_blockchain_height()
+    Promise.resolve(wallet.get_daemon_blockchain_height())
       .then((daemonHeight) => {
         if (cancelled) {
           return;
@@ -1547,18 +1532,7 @@ function OpenWalletView({
 }
 
 function OptionsView({ onBack }: { onBack: () => void }) {
-  const alert = useAlert();
   const loadLastWallet = options.getValue("loadLastWallet");
-  const cpuThreads = options.getValue("cpuThreads");
-  const [cpuThreadsInput, setCpuThreadsInput] = React.useState(() =>
-    String(cpuThreads),
-  );
-  const recommendedCpuThreads = getRecommendedMaxConcurrency();
-  const detectedCpuThreads =
-    typeof navigator !== "undefined" &&
-    typeof navigator.hardwareConcurrency === "number"
-      ? navigator.hardwareConcurrency
-      : null;
   const networkType = options.getValue("networkType");
   const [networkTypeSelectValue, setNetworkTypeSelectValue] = React.useState(
     () => getNetworkTypeSelectValue(networkType),
@@ -1604,9 +1578,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
-    setCpuThreadsInput(String(cpuThreads));
-  }, [cpuThreads]);
-  React.useEffect(() => {
     setDaemonSelectValue(getDaemonSelectValue(daemonAddress));
   }, [daemonAddress]);
   React.useEffect(() => {
@@ -1633,56 +1604,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
             label="Load last wallet on startup"
             description="Automatically open the previous wallet after app start."
           />
-
-          <FormRow>
-            <Label>CPU threads</Label>
-            <InputWithAction
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={cpuThreadsInput}
-              actionLabel="Set recommended"
-              onAction={async () => {
-                const next = recommendedCpuThreads;
-                options.setValue("cpuThreads", next);
-                void walletApi.setMaxConcurrency(next);
-                setCpuThreadsInput(String(next));
-                refresh((x) => x + 1);
-                await alert(`CPU threads set to recommended value: ${next}`);
-              }}
-              onChange={(e) => {
-                const raw = e.target.value.trim();
-                if (!/^\d*$/.test(raw)) {
-                  return;
-                }
-                setCpuThreadsInput(raw);
-                if (raw === "") {
-                  return;
-                }
-                const parsed = Number(raw);
-                if (!Number.isFinite(parsed) || parsed < 1) {
-                  return;
-                }
-                const clamped = Math.min(
-                  getMaxConcurrency(),
-                  Math.max(1, Math.trunc(parsed)),
-                );
-                options.setValue("cpuThreads", clamped);
-                void walletApi.setMaxConcurrency(clamped);
-                refresh((x) => x + 1);
-              }}
-              onBlur={() => {
-                if (cpuThreadsInput === "") {
-                  setCpuThreadsInput(String(options.getValue("cpuThreads")));
-                }
-              }}
-            />
-            <div className="mt-1 text-[11px] text-white/50">
-              {detectedCpuThreads !== null
-                ? `Detected CPU cores: ${detectedCpuThreads}. Recommended: ${recommendedCpuThreads}.`
-                : `Recommended: ${recommendedCpuThreads}.`}
-            </div>
-          </FormRow>
 
           <FormRow>
             <Label>Network type</Label>
