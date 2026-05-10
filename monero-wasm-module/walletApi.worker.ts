@@ -11,6 +11,13 @@ export type SequentialMethods<T extends object> = {
 /**
  * Returns a proxy that runs each accessed method strictly after the previous
  * call settles (success or failure), so only one runs at a time.
+ *
+ * **Embind + C++ exceptions:** `value.apply` can throw **synchronously** with a
+ * numeric WASM exception pointer. That bypasses
+ * `Promise.resolve(...).catch(...)` (the `.catch` only sees *async* rejections).
+ * Without a `try` here, Comlink forwards the raw number to the UI and
+ * `wasmThrownValueToError` never runs — so keep the `try` + `Promise` `.catch`
+ * pair whenever touching this wrapper.
  */
 function ensureSequential<T extends object>(target: T): SequentialMethods<T> {
   let queue: Promise<unknown> = Promise.resolve();
@@ -22,11 +29,17 @@ function ensureSequential<T extends object>(target: T): SequentialMethods<T> {
         return value;
       }
       return (...args: unknown[]) => {
-        const run = queue.then(() =>
-          Promise.resolve(value.apply(obj, args)).catch((e) => {
+        const run = queue.then(() => {
+          let pending: unknown;
+          try {
+            pending = value.apply(obj, args);
+          } catch (e) {
             throw walletApi.wasmThrownValueToError(e);
-          }),
-        );
+          }
+          return Promise.resolve(pending).catch((e) => {
+            throw walletApi.wasmThrownValueToError(e);
+          });
+        });
         queue = run.catch(() => {});
         return run;
       };

@@ -457,7 +457,12 @@ public:
     /** `start_height_js` as double: Asyncify rewind + WASM_BIGINT mishandles
      *  bigint call args, so heights are passed as `double`. `max_blocks_js`
      *  accepts a number for an upper bound or `null`/`undefined` for "no
-     *  limit". */
+     *  limit".
+     *
+     *  Exceptions from `m_wallet.refresh` often propagate to JS as a **synchronous**
+     *  throw (numeric pointer). The wallet worker must map those with
+     *  `wasmThrownValueToError` — see `walletApi.worker.ts` `ensureSequential`
+     *  (`try` around `apply`, not only `Promise` `.catch`). */
     RefreshResult refresh(bool trusted_daemon, double start_height_js, bool check_pool, bool try_incremental, emscripten::val max_blocks_js)
     {
         const uint64_t start_height = js_double_refresh_u64(start_height_js, "refresh start_height");

@@ -264,7 +264,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
         console.error("Error during refresh:", e);
-        setRefreshError((e as Error).message || "Unknown error");
+        const message =
+          e instanceof Error
+            ? e.message
+            : typeof e === "number"
+              ? "WASM error (raw exception pointer; worker should decode — see walletApi.worker ensureSequential)."
+              : typeof e === "string"
+                ? e
+                : String(e);
+        setRefreshError(message || "Unknown error");
         setRefreshing(false);
       }
     };
