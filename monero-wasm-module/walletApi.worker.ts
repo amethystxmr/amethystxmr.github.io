@@ -12,9 +12,7 @@ export type SequentialMethods<T extends object> = {
  * Returns a proxy that runs each accessed method strictly after the previous
  * call settles (success or failure), so only one runs at a time.
  */
-function ensureSequential<T extends object>(
-  target: T,
-): SequentialMethods<T> {
+function ensureSequential<T extends object>(target: T): SequentialMethods<T> {
   let queue: Promise<unknown> = Promise.resolve();
 
   return new Proxy(target, {
@@ -25,7 +23,7 @@ function ensureSequential<T extends object>(
       }
       return (...args: unknown[]) => {
         const run = queue.then(() =>
-          Promise.resolve(value.apply(obj, args as never[])).catch((e) => {
+          Promise.resolve(value.apply(obj, args)).catch((e) => {
             throw walletApi.wasmThrownValueToError(e);
           }),
         );
@@ -35,14 +33,6 @@ function ensureSequential<T extends object>(
     },
   }) as SequentialMethods<T>;
 }
-
-/*
-TODO REMOVE COMMENTED CODE
-
-async function initModule() {
-  await walletApi.initModule();
-}
-*/
 
 async function createWallet(networkType?: walletApi.NetworkType) {
   try {
@@ -54,7 +44,6 @@ async function createWallet(networkType?: walletApi.NetworkType) {
 }
 export const exposedApi = {
   ...walletApi,
-  // initModule,
   createWallet,
 };
 
