@@ -6,17 +6,8 @@ import {
   max64,
   NetworkTypes,
   type FeePriority as FeePriorityType,
-  type KeyImagesImportResult,
   type MoneroWasmWallet,
-  type MultisigAccountStatus,
-  type NetworkType,
-  type PaymentDetails,
-  type TransferInfoItem,
-  type TransferItem,
-  type WalletAddress,
-  type WalletKeys,
   type WalletNewBlockCallback,
-  type WalletTxHandle,
 } from "./walletApi";
 
 const FeePriority = FeePriorityConst;
