@@ -14,10 +14,10 @@ export class ManageWalletsPage {
     }) as this;
   }
 
+  /** One row card (`SurfaceCard`), not a parent that wraps the whole list. */
   private walletCard(walletName: string): Locator {
     return this.page
-      .locator("div")
-      .filter({ has: this.page.getByRole("button", { name: "🗑 Remove" }) })
+      .locator('div[class*="rounded-xl"][class*="ring-1"]')
       .filter({ has: this.page.getByText(walletName, { exact: true }) })
       .first();
   }

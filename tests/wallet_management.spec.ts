@@ -19,10 +19,48 @@ test("wallet management cross-tab locks, rename, export, remove, import", async 
   test.setTimeout(600_000);
 
   const ts = Date.now();
+  const preflightWalletName = `wm-${ts}-preflight`;
   const originalWalletName = `wm-${ts}-original`;
   const renamedWalletName = `wm-${ts}-renamed`;
 
+  const e2eTmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "wm-e2e-"));
+  const preflightZipPath = path.join(e2eTmpDir, "preflight.zip");
+
   let primaryAddressAfterCreate = "";
+
+  await test.step("Closed wallet on disk: cannot create, restore, or import same name again", async () => {
+    const initial = new InitialWalletListPage(page1);
+    const alerts1 = new AppAlertsPage(page1);
+    const manage1 = new ManageWalletsPage(page1);
+    await initial.goto();
+    await initial.waitUntilLoaded();
+    await initial.openCreateWallet();
+    await initial.createNewWallet({ walletName: preflightWalletName });
+    await new WalletMainPage(page1).exitFromWallet();
+    await initial.expectLoaded();
+
+    await initial.openCreateWallet();
+    await initial.fillCreateWalletName(preflightWalletName);
+    await initial.submitCreateWalletForm();
+    await alerts1.dismissNoticeMatching(/already exists/i);
+    await initial.cancelCreateOrRestore();
+    await initial.expectMainHomeVisible();
+
+    await initial.openRestoreWallet();
+    await initial.fillRestoreWalletName(preflightWalletName);
+    await initial.submitRestoreWalletForm();
+    await alerts1.dismissNoticeMatching(/already exists/i);
+    await initial.cancelCreateOrRestore();
+    await initial.expectMainHomeVisible();
+
+    await initial.openManageWallets();
+    await manage1.expectLoaded();
+    await manage1.exportWalletToPath(preflightWalletName, preflightZipPath);
+    await manage1.importZipFromPath(preflightZipPath);
+    await alerts1.dismissImportCompletedExpectingSkippedWallet(preflightWalletName);
+    await manage1.backToWalletList();
+    await initial.expectMainHomeVisible();
+  });
 
   await test.step("Tab 1: create wallet and remember primary address", async () => {
     const initial = new InitialWalletListPage(page1);
@@ -88,10 +126,7 @@ test("wallet management cross-tab locks, rename, export, remove, import", async 
     await manage2.expectWalletRowVisible(renamedWalletName);
   });
 
-  const zipPath = path.join(
-    await fs.mkdtemp(path.join(os.tmpdir(), "wm-e2e-")),
-    "wallet.zip",
-  );
+  const zipPath = path.join(e2eTmpDir, "wallet.zip");
 
   await test.step("Tab 2: export wallet", async () => {
     await manage2.exportWalletToPath(renamedWalletName, zipPath);
@@ -100,7 +135,7 @@ test("wallet management cross-tab locks, rename, export, remove, import", async 
   await test.step("Tab 2: remove wallet", async () => {
     await manage2.startRemoveForWallet(renamedWalletName);
     await manage2.confirmRemoveDialog(renamedWalletName);
-    await manage2.expectEmptyState();
+    await manage2.expectWalletRowVisible(preflightWalletName);
   });
 
   await test.step("Tab 2: main list no longer lists wallet", async () => {

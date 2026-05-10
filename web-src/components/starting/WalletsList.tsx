@@ -168,6 +168,7 @@ export function WalletsList() {
       }
     | {
         type: "create-new-wallet";
+        walletNames: string[];
       }
   >({
     type: "initial loading",
@@ -361,7 +362,12 @@ export function WalletsList() {
       <RestoreView onDone={handleRestoreDone} walletNames={view.walletNames} />
     );
   } else if (view.type === "create-new-wallet") {
-    return <CreateNewWalletView onDone={handleCreateDone} />;
+    return (
+      <CreateNewWalletView
+        onDone={handleCreateDone}
+        walletNames={view.walletNames}
+      />
+    );
   } else if (view.type === "opening") {
     return (
       <OpenWalletView
@@ -437,7 +443,10 @@ export function WalletsList() {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 lg:shrink-0">
             <Button
               onClick={async () => {
-                setView({ type: "create-new-wallet" });
+                setView({
+                  type: "create-new-wallet",
+                  walletNames: view.walletNames,
+                });
               }}
             >
               ➕︎ New wallet
@@ -1062,8 +1071,10 @@ function RestoreView({
 
 function CreateNewWalletView({
   onDone,
+  walletNames,
 }: {
   onDone: (openedWallet: OpenedWallet | null) => void;
+  walletNames: string[];
 }) {
   const alert = useAlert();
 
@@ -1120,6 +1131,15 @@ function CreateNewWalletView({
         throw new Error(
           `Wallet "${fileName}" is currently open in another tab`,
         );
+      }
+
+      if (walletNames.includes(fileName)) {
+        const release = releaseWalletOpenLock;
+        releaseWalletOpenLock = null;
+        release();
+        void alert(`Wallet with name ${fileName} already exists`);
+        setState({ type: "entering-data", fileName, password, passwordConfirm });
+        return;
       }
 
       const seed = await withFsLock(async () => {
