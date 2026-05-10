@@ -1,9 +1,10 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
-  PaymentDetailsTransformed,
+  type MaybePromise,
+  PaymentDetails,
   WalletAddress,
-} from "../../../monero-wasm-module/walletApi";
+} from "../../../monero-wasm-module/walletApi.workerClient";
 import {
   balanceToString,
   copyToClipboard,
@@ -16,9 +17,9 @@ import { Button, Input, SurfaceCard } from "../ui";
 
 type ReceiveAddressesProps = {
   addresses: WalletAddress[] | null;
-  payments: PaymentDetailsTransformed[] | null;
-  mempoolPayments: PaymentDetailsTransformed[] | null;
-  onAddSubaddressAdd: (newLabel: string) => Promise<void>;
+  payments: PaymentDetails[] | null;
+  mempoolPayments: PaymentDetails[] | null;
+  onAddSubaddressAdd: (newLabel: string) => MaybePromise<void>;
   price: number | null;
 };
 
@@ -221,7 +222,7 @@ export function ReceiveAddresses({
     qrAmountInput.trim().length > 0 && qrAmountAtomic === undefined;
   const handleCreate = useCallback(() => {
     setIsAdding(true);
-    onAddSubaddressAdd(newLabel)
+    Promise.resolve(onAddSubaddressAdd(newLabel))
       .then(() => {
         setIsCreating(false);
         setNewLabel("");

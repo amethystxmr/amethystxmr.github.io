@@ -19,6 +19,7 @@
     "native:dist": "npm run build && electron-builder --publish never",
     "native:dist:ci": "electron-builder --publish never",
     "logo-gen": "./scripts/generate-pwa-icons.sh",
+    "ide:install-clangd": "./scripts/install-clangd.sh",
     "preview": "vite preview",
     "lint": "eslint web-src monero-wasm-module vite.config.js",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -59,6 +60,7 @@
     "@types/react-dom": "^19.2.3",
     "@zxing/browser": "^0.1.5",
     "clsx": "^2.1.1",
+    "comlink": "^4.4.2",
     "install": "^0.13.0",
     "jszip": "^3.10.1",
     "qrcode.react": "^4.2.0",
@@ -67,8 +69,7 @@
     "react-swipeable": "^7.0.2",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vite-plugin-cross-origin-isolation": "^0.1.6"
+    "vite": "^7.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",

@@ -22,11 +22,14 @@ jobs:
     steps:
       - id: resolve
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "build_type=Debug" >> "$GITHUB_OUTPUT"
-          else
-            echo "build_type=Release" >> "$GITHUB_OUTPUT"
-          fi
+          # Always Release for wasm_build / web_frontend / e2e.
+          # Revert PR=Debug / push=Release: comment the next line and uncomment the if/else block below.
+          echo "build_type=Release" >> "$GITHUB_OUTPUT"
+          # if [ "${{ github.event_name }}" = "pull_request" ]; then
+          #   echo "build_type=Debug" >> "$GITHUB_OUTPUT"
+          # else
+          #   echo "build_type=Release" >> "$GITHUB_OUTPUT"
+          # fi
 
   wasm_build:
     needs: resolve_build_type

@@ -4,14 +4,6 @@ import {
   AlertProvider,
   MultisigDataOverlayProvider,
 } from "./components/ui";
-import {
-  CrossOriginIsolationBootstrapResult,
-  isNativeAppRuntime,
-} from "./startup/crossOriginIsolation";
-
-type AppProps = {
-  crossOriginIsolationBootstrap: Promise<CrossOriginIsolationBootstrapResult>;
-};
 
 type BootState =
   | {
@@ -35,7 +27,11 @@ function stringifyError(error: unknown) {
   return String(error);
 }
 
-function BootStatusView({ state }: { state: Exclude<BootState, { type: "ready" }> }) {
+function BootStatusView({
+  state,
+}: {
+  state: Exclude<BootState, { type: "ready" }>;
+}) {
   return (
     <div className="mx-auto max-w-xl space-y-3 px-4 py-12 text-center">
       <h2 className="text-base font-semibold text-white/90">{state.title}</h2>
@@ -49,74 +45,27 @@ function BootStatusView({ state }: { state: Exclude<BootState, { type: "ready" }
   );
 }
 
-export function App({ crossOriginIsolationBootstrap }: AppProps) {
+export function App() {
   const [bootState, setBootState] = React.useState<BootState>({
     type: "booting",
     title: "Initializing Monero",
     hint: "Preparing wallet module...",
   });
-  const [WalletsListComponent, setWalletsListComponent] = React.useState<
-    React.ComponentType | null
-  >(null);
+  const [WalletsListComponent, setWalletsListComponent] =
+    React.useState<React.ComponentType | null>(null);
 
   React.useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const isolationResult = await crossOriginIsolationBootstrap;
-      if (cancelled) {
-        return;
-      }
-
-      const hasSharedArrayBuffer = typeof SharedArrayBuffer !== "undefined";
-      const isNativeApp = isNativeAppRuntime();
-      const canUseThreads =
-        hasSharedArrayBuffer && (window.crossOriginIsolated || isNativeApp);
-
-      if (!canUseThreads) {
-        if (isolationResult.type === "error") {
-          const reasonText =
-            isolationResult.reason === "service-worker-registration-failed" &&
-            isolationResult.cause
-              ? ` ${stringifyError(isolationResult.cause)}`
-              : "";
-          setBootState({
-            type: "error",
-            title: "Monero initialization failed",
-            details: `${isolationResult.message}${reasonText}`,
-          });
-          return;
-        }
-
-        if (isNativeApp && !hasSharedArrayBuffer) {
-          setBootState({
-            type: "error",
-            title: "Monero initialization failed",
-            details:
-              "SharedArrayBuffer is unavailable in this native runtime. Cross-origin isolation and worker threads are required for wallet startup.",
-          });
-          return;
-        }
-
-        const waitingHint =
-          isolationResult.type === "waiting-for-service-worker-control"
-            ? "Waiting for service worker activation. The page should reload automatically."
-            : "Waiting for SharedArrayBuffer support.";
-        setBootState({
-          type: "booting",
-          title: "Initializing Monero",
-          hint: waitingHint,
-        });
-        return;
-      }
-
       setBootState({
         type: "booting",
         title: "Initializing Monero",
         hint: "Loading wallet module...",
       });
       try {
-        const { initModule } = await import("../monero-wasm-module/walletApi");
-        await initModule();
+        const { api } =
+          await import("../monero-wasm-module/walletApi.workerClient");
+        await api.initModule();
         if (cancelled) {
           return;
         }
@@ -137,6 +86,7 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
         if (cancelled) {
           return;
         }
+        console.error("error", error);
         setBootState({
           type: "error",
           title: "Monero initialization failed",
@@ -147,7 +97,7 @@ export function App({ crossOriginIsolationBootstrap }: AppProps) {
     return () => {
       cancelled = true;
     };
-  }, [crossOriginIsolationBootstrap]);
+  }, []);
 
   const statusViewState: Exclude<BootState, { type: "ready" }> =
     bootState.type === "ready"

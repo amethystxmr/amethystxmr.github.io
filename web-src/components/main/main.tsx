@@ -3,11 +3,11 @@ import {
   max64,
   MoneroWasmWallet,
   MultisigAccountStatus,
-  PaymentDetailsTransformed,
+  PaymentDetails,
+  setHttpFetchCallback,
   WalletAddress,
-  transformPayments,
-  transformWalletAddresses,
-} from "../../../monero-wasm-module/walletApi";
+  setWalletNewBlockCallback,
+} from "../../../monero-wasm-module/walletApi.workerClient";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
@@ -57,7 +57,7 @@ export function WalletMain({
     multisigStatus: MultisigAccountStatus;
     hasMultisigPartialKeyImages: boolean;
     hasUnknownKeyImages: boolean;
-    payments: PaymentDetailsTransformed[];
+    payments: PaymentDetails[];
   } | null>(null);
   const [downloadInfo, setDownloadInfo] = React.useState<null | {
     url: string;
@@ -68,7 +68,7 @@ export function WalletMain({
   const [refreshError, setRefreshError] = React.useState<string | null>(null);
 
   const [mempoolPayments, setMempoolPayments] = React.useState<
-    null | PaymentDetailsTransformed[]
+    null | PaymentDetails[]
   >(null);
 
   const [addresses, setAddresses] = React.useState<WalletAddress[] | null>(
@@ -76,8 +76,7 @@ export function WalletMain({
   );
 
   const updateWalletAddresses = React.useCallback(async () => {
-    const addressesVector = await wallet.get_wallet_addresses(0);
-    const nextAddresses = transformWalletAddresses(addressesVector);
+    const nextAddresses = await wallet.get_wallet_addresses(0);
     setAddresses(nextAddresses);
   }, [wallet]);
 
@@ -138,33 +137,28 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
 
   React.useEffect(() => {
-    const oldOnFetch = window.globalHttpConfig.onFetch;
-    window.globalHttpConfig.onFetch = (
-      url,
-      reqId,
-      state,
-      progressLoaded,
-      progressTotal,
-    ) => {
-      console.info(
-        `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
-      );
-      if (
-        state === "end" ||
-        state === "error" ||
-        state === "timeout" ||
-        state === "abort"
-      ) {
-        setDownloadInfo(null);
-      } else if (state === "start" || state === "progress") {
-        setDownloadInfo({ url, progressLoaded, progressTotal });
-      } else {
-        state satisfies never;
-      }
-    };
+    void setHttpFetchCallback(
+      (url, reqId, state, progressLoaded, progressTotal) => {
+        console.info(
+          `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
+        );
+        if (
+          state === "end" ||
+          state === "error" ||
+          state === "timeout" ||
+          state === "abort"
+        ) {
+          setDownloadInfo(null);
+        } else if (state === "start" || state === "progress") {
+          setDownloadInfo({ url, progressLoaded, progressTotal });
+        } else {
+          state satisfies never;
+        }
+      },
+    );
 
     return () => {
-      window.globalHttpConfig.onFetch = oldOnFetch;
+      void setHttpFetchCallback(null);
     };
   }, [wallet]);
 
@@ -182,14 +176,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
   React.useEffect(() => {
     let cancelled = false;
-    wallet.set_on_new_block_callback((height) => {
-      if (cancelled) {
-        return;
-      }
-      setStatus((prev) =>
-        prev === null ? null : { ...prev, walletHeight: height },
-      );
-    });
 
     const getStatus = async () => {
       const walletHeight = await wallet.get_blockchain_current_height();
@@ -222,8 +208,6 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      const transformedPayments = transformPayments(payments);
-
       const daemonHeight = await wallet.get_daemon_blockchain_height();
       if (cancelled) {
         return;
@@ -240,7 +224,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         multisigStatus: newMultisigStatus,
         hasMultisigPartialKeyImages,
         hasUnknownKeyImages,
-        payments: transformedPayments,
+        payments,
       };
 
       return newStatus;
@@ -256,15 +240,12 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         if (cancelled) {
           return;
         }
-        const refreshStatus = await wallet.refresh(
-          false,
-          0n,
-          true,
-          true,
-          2000n,
-        );
-        await withFsLock(async () => {
+        const refreshStatus = await withFsLock(async () => {
+          // Refresh probably does not need the same lock as store for FS/IDB; only store
+          // writes. Keep both under withFsLock anyway to serialize with other tab activity.
+          const r = await wallet.refresh(false, 0, true, true, 2000);
           await wallet.store();
+          return r;
         });
         console.info("Refresh status:", refreshStatus);
         if (cancelled) {
@@ -283,7 +264,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           return;
         }
         console.error("Error during refresh:", e);
-        setRefreshError((e as Error).message || "Unknown error");
+        const message =
+          e instanceof Error
+            ? e.message
+            : typeof e === "number"
+              ? "WASM error (raw exception pointer; worker should decode — see walletApi.worker ensureSequential)."
+              : typeof e === "string"
+                ? e
+                : String(e);
+        setRefreshError(message || "Unknown error");
         setRefreshing(false);
       }
     };
@@ -320,13 +309,29 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     };
 
     (async () => {
+      if (cancelled) {
+        return;
+      }
+      await setWalletNewBlockCallback(wallet, (height, timestamp) => {
+        if (cancelled) {
+          return;
+        }
+        const t = new Date(Number(timestamp) * 1000);
+        console.log(
+          `on_new_block height=${height} timestamp=${t.toISOString()}`,
+        );
+        setStatus((prev) =>
+          prev === null ? null : { ...prev, walletHeight: height },
+        );
+      });
+
       /** Only used for estimations during initial sync.
        *  And it measures whole cycle time, not only refresh time,
        *   so it also includes time for getting statuses and payments
        */
       let lastTimeRefreshStartedAt: Date | null = null;
       /** Only used for estimations during initial sync */
-      let lastTimeRefreshedBlocks: bigint | null = null;
+      let lastTimeRefreshedBlocks: number | null = null;
 
       while (!cancelled) {
         console.info(
@@ -371,7 +376,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
         // The point of having delay here is to allow to get fresh statuses right after refresh
         // If we have refresh in the end of the loop then we will just wait
-        const isSynced = await wallet.is_synced().catch(() => null);
+        const isSynced = await Promise.resolve(wallet.is_synced()).catch(
+          () => null,
+        );
         if (cancelled) {
           return;
         }
@@ -382,17 +389,15 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           console.info("Wallet is synced, fetching mempool...");
           {
             // On non-initial refresh also get mempool payments
-            const mempoolPayments = await wallet
-              .get_payments_mempool()
-              .catch(() => null);
+            const mempoolPayments = await Promise.resolve(
+              wallet.get_payments_mempool(),
+            ).catch(() => null);
             if (cancelled) {
               return;
             }
             if (mempoolPayments) {
-              const transformedMempoolPayments =
-                transformPayments(mempoolPayments);
-              console.log("Mempool payments:", transformedMempoolPayments);
-              setMempoolPayments(transformedMempoolPayments);
+              console.log("Mempool payments:", mempoolPayments);
+              setMempoolPayments(mempoolPayments);
             } else {
               console.warn("Failed to fetch mempool payments");
               setMempoolPayments(null);
@@ -441,7 +446,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         stopWaitingRef.current();
       }
       stopWaitingRef.current = null;
-      wallet.set_on_new_block_callback(null);
+      void setWalletNewBlockCallback(wallet, null);
     };
   }, [wallet, setRefreshing, setStatus, updateWalletAddresses]);
 
@@ -481,7 +486,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
   ) : refreshing ? (
     <ProgressBar
       size="sm"
-      state={downloadInfo ? "progress" : "loading"}
+      state={
+        downloadInfo && downloadInfo.progressTotal > 0 ? "progress" : "loading"
+      }
       value={downloadingProgressValue}
       text={
         !status.isSynced && status.daemonHeight > status.walletHeight

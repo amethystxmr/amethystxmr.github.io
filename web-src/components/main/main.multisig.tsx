@@ -1,9 +1,10 @@
 import React from "react";
 import {
-  MoneroWasmWallet,
   MultisigAccountStatus,
-  PaymentDetailsTransformed,
-} from "../../../monero-wasm-module/walletApi";
+  PaymentDetails,
+  MoneroWasmWallet,
+} from "../../../monero-wasm-module/walletApi.workerClient";
+
 import {
   Button,
   ButtonRadioRow,
@@ -47,8 +48,8 @@ export function MultisigTab({
   wallet: MoneroWasmWallet;
   multisigStatus: MultisigAccountStatus | null;
   onRefresh: () => void;
-  payments: PaymentDetailsTransformed[] | null;
-  mempoolPayments: PaymentDetailsTransformed[] | null;
+  payments: PaymentDetails[] | null;
+  mempoolPayments: PaymentDetails[] | null;
   walletHeight: bigint | null;
   daemonHeight: bigint | null;
   hasMultisigPartialKeyImages: boolean;
@@ -93,7 +94,7 @@ export function MultisigTab({
   const isPrepareBlockedByPayments = hasAnyPayments;
   const isPrepareBlockedBySync = isWalletSyncing && !allowPrepareWhileSyncing;
 
-  const requestValidWalletPassword = React.useCallback(async () => {
+  const requestValidWalletPassword = React.useCallback(async () => {    
     if (await wallet.verify_password("")) {
       return "";
     }
@@ -123,7 +124,7 @@ export function MultisigTab({
     let cancelled = false;
     setMyLastKexMessage({ type: "loading" });
 
-    wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE)
+    Promise.resolve(wallet.get_attribute(LAST_KEX_MESSAGE_ATTRIBUTE))
       .then((lastKexMessage) => {
         if (cancelled) {
           return;

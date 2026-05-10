@@ -1,6 +1,9 @@
 node_modules
+bin/
 built-web
 playwright-report
 test-results
 tests/.artifacts
 dist-native
+/compile_commands.json
+monero-wasm-src/compile_commands.json

@@ -1,7 +1,148 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
-#include "emscripten/proxying.h"
+#include <emscripten/em_js.h>
 #include <limits>
+
+namespace {
+
+/** Async XHR plus Asyncify lets the wallet worker pump events during RPC, so progress
+ * events can reach `globalHttpConfig.onFetch`. Linked with `-sASYNCIFY` (see root CMakeLists).
+ */
+EM_ASYNC_JS(int, js_http_xhr_invoke, (
+    const char *uri_ptr, int uri_len,
+    const char *method_ptr, int method_len,
+    const char *body_ptr, int body_len,
+    int timeout_ms,
+    int response_code_i32_ptr,
+    intptr_t mime_std_string_ptr,
+    intptr_t body_std_string_ptr),
+{
+    const uri = UTF8ToString(uri_ptr, uri_len);
+    const method = UTF8ToString(method_ptr, method_len);
+    const resizeStdString = Module['_resize_std_string'];
+    const heapU8 = () => {
+      if (typeof growMemViews === 'function')
+        growMemViews();
+      return HEAPU8;
+    };
+    const heap32 = () => {
+      if (typeof growMemViews === 'function')
+        growMemViews();
+      return HEAP32;
+    };
+
+    const config = globalThis.globalHttpConfig;
+    const reqId = Math.random().toString(16).slice(2);
+
+    const body =
+      method !== 'GET' && body_len > 0
+        ? new Uint8Array(heapU8().buffer, body_ptr, body_len)
+        : undefined;
+    const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
+
+    const finalUrl = config.mapUrl(uri);
+    config.onFetch(uri, reqId, 'start', 0, 0);
+
+    /** Do not invoke WASM imports (resize_std_string, HEAP*) from xhr.* handlers:
+     *  while awaiting the Promise, WASM is paused in Asyncify and re-entry corrupts RPC.
+     */
+    const applyFailureOutcome = (state) => {
+      heap32()[response_code_i32_ptr >> 2] = 0;
+      resizeStdString(mime_std_string_ptr, 0);
+      resizeStdString(body_std_string_ptr, 0);
+      config.onFetch(uri, reqId, state, 0, 0);
+    };
+
+    try
+    {
+      const xhrOutcome = await new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        xhr.responseType = 'arraybuffer';
+        if (timeout_ms > 0)
+          xhr.timeout = timeout_ms;
+
+        xhr.onprogress = (e) => {
+          if (!e.lengthComputable)
+            return;
+          config.onFetch(uri, reqId, 'progress', e.loaded, e.total);
+        };
+
+        xhr.onload = () => {
+          try
+          {
+            if (xhr.status === 0)
+            {
+              resolve({ ok: false, failState: 'error' });
+              return;
+            }
+
+            const mimeType = xhr.getResponseHeader('Content-Type') || "";
+            const mimeTypeBytes = new TextEncoder().encode(mimeType);
+
+            const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
+            resolve({
+              ok: true,
+              status: xhr.status,
+              mimeUtf8: mimeTypeBytes,
+              bodyCopy: rawBody,
+            });
+          }
+          catch (e)
+          {
+            resolve({ ok: false, failState: 'error' });
+          }
+        };
+
+        xhr.onerror = () => {
+          resolve({ ok: false, failState: 'error' });
+        };
+
+        xhr.ontimeout = () => {
+          resolve({ ok: false, failState: 'timeout' });
+        };
+
+        xhr.onabort = () => {
+          resolve({ ok: false, failState: 'abort' });
+        };
+
+        try
+        {
+          xhr.open(method, finalUrl, true);
+          xhr.send(bodyCopyNonShared);
+        }
+        catch (openOrSendErr)
+        {
+          resolve({ ok: false, failState: 'error' });
+        }
+      });
+
+      if (xhrOutcome.ok !== true)
+      {
+        applyFailureOutcome(xhrOutcome.failState);
+        return 0;
+      }
+
+      heap32()[response_code_i32_ptr >> 2] = xhrOutcome.status;
+
+      const mimePtr = resizeStdString(mime_std_string_ptr, xhrOutcome.mimeUtf8.length);
+      heapU8().set(xhrOutcome.mimeUtf8, mimePtr);
+
+      const outBodyPtr = resizeStdString(body_std_string_ptr, xhrOutcome.bodyCopy.length);
+      heapU8().set(xhrOutcome.bodyCopy, outBodyPtr);
+
+      const len = xhrOutcome.bodyCopy.length;
+      config.onFetch(uri, reqId, 'end', len, len);
+
+      return 1;
+    }
+    catch (e)
+    {
+      applyFailureOutcome('error');
+      return 0;
+    }
+});
+
+} // namespace
 
 class js_http_client : public epee::net_utils::http::abstract_http_client
 {
@@ -69,7 +210,7 @@ public:
     {
         if (m_is_busy)
         {
-            throw std::runtime_error("js_http_client(%i)::invoke called while another request is in progress");
+            throw std::runtime_error("js_http_client::invoke called while another request is in progress");
         }
         m_is_busy = true;
 
@@ -82,138 +223,26 @@ public:
             *ppresponse_info = std::addressof(m_response_info);
         }
 
-        int invoke_result = 0;
+        // Success/failure MUST come from the EM_ASYNC_JS return value: stack locals updated
+        // during the async gap can be overwritten when Asyncify restores the saved stack frame.
         const auto timeout_count = timeout.count();
         const auto timeout_max = static_cast<decltype(timeout_count)>(std::numeric_limits<int>::max());
         const int timeout_ms_for_js =
             timeout_count <= 0 ? 0
                                : (timeout_count > timeout_max ? std::numeric_limits<int>::max()
                                                               : static_cast<int>(timeout_count));
-        m_fetchProxyQueue.proxySyncWithCtx(
-            m_fetchingThreadId,
-            [this, &uri, &method, &body, &additional_params, &invoke_result, timeout_ms_for_js](
-                emscripten::ProxyingQueue::ProxyingCtx ctx)
-            {
-                EM_ASM({
-                    const uri = UTF8ToString($0, $1);
-                    const method = UTF8ToString($2, $3);
-                    const bodyPtr = $4;
-                    const bodySize = $5;
-                    const timeoutMs = $6;
 
-                    const ctxPtr = $7;
-
-                    const response_code_i32_ptr = $8;
-                    const response_mime_type_std_string_ptr = $9;
-                    const response_body_std_string_ptr = $10;
-                    const invoke_result_i32_ptr = $11;
-
-                    /** @type {(p: number, newSize: number) => number} */
-                    const resizeStdString = Module._resize_std_string;
-
-                    const fetchOptions = {};
-                    fetchOptions.method = method;
-
-                    const body = method != 'GET' ? new Uint8Array(HEAPU8.buffer, bodyPtr, bodySize) : undefined;
-
-                    // Firefox do not like when we pass a shared buffer to fetch
-                    const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
-
-                    // TODO: Pass it somehow from the factory
-                    const config = window.globalHttpConfig;
-                    const finalUrl = window.globalHttpConfig.mapUrl(uri);
-
-                    const reqId = Math.random().toString(16).slice(2);
-                    // console.info(`[http ${reqId}] Fetching ${finalUrl} with method ${method} and body size ${bodySize}...`);
-
-                    const xhr = new XMLHttpRequest();
-                    xhr.open(method, finalUrl, true);
-                    xhr.responseType = 'arraybuffer';
-                    xhr.timeout = timeoutMs > 0 ? timeoutMs : 0;
-                    HEAP32[invoke_result_i32_ptr >> 2] = 0;
-
-                    let isFinished = false;
-                    const finishOnce = function(fetchState)
-                    {
-                        if (isFinished)
-                        {
-                            return;
-                        }
-                        isFinished = true;
-                        window.globalHttpConfig.onFetch(uri, reqId, fetchState, 0, 0);
-                        Module._emscripten_ctx_proxy_finish(ctxPtr);
-                    };
-
-                    const failRequest = function(fetchState)
-                    {
-                        HEAP32[response_code_i32_ptr >> 2] = 0;
-                        resizeStdString(response_mime_type_std_string_ptr, 0);
-                        resizeStdString(response_body_std_string_ptr, 0);
-                        finishOnce(fetchState);
-                    };
-
-                    xhr.onprogress = function(event)
-                    {
-                        window.globalHttpConfig.onFetch(uri, reqId, 'progress', event.loaded, event.total);
-                        // console.info(`[http ${reqId}] Progress: ${event.loaded} / ${event.total}`);
-                    };
-                    xhr.onload = function()
-                    {
-                        HEAP32[invoke_result_i32_ptr >> 2] = 1;
-                        HEAP32[response_code_i32_ptr >> 2] = xhr.status;
-
-                        const mimeType = xhr.getResponseHeader('Content-Type') || "";
-                        {
-                            const mimeTypeBytes = new TextEncoder().encode(mimeType);
-                            const mimeTypePtr = resizeStdString(response_mime_type_std_string_ptr, mimeTypeBytes.length);
-                            HEAPU8.set(mimeTypeBytes, mimeTypePtr);
-                        }
-
-                        const rawBody = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
-                        const bodyPtr = resizeStdString(response_body_std_string_ptr, rawBody.length);
-                        HEAPU8.set(rawBody, bodyPtr);
-
-                        finishOnce('end');
-                    };
-
-                    xhr.onerror = function()
-                    {
-                        failRequest('error');
-                    };
-
-                    xhr.ontimeout = function()
-                    {
-                        failRequest('timeout');
-                    };
-
-                    xhr.onabort = function()
-                    {
-                        failRequest('abort');
-                    };
-
-                    window.globalHttpConfig.onFetch(uri, reqId, 'start', 0, 0);
-
-                    xhr.send(bodyCopyNonShared);
-
-                    //
-                }, // 0-5
-                       uri.data(), uri.size(), method.data(), method.size(), body.data(), body.size(),
-                       // 6
-                       timeout_ms_for_js,
-                       // 7
-                       ctx.ctx,
-                       // 8
-                       std::addressof(m_response_info.m_response_code),
-                       // 9
-                       std::addressof(m_response_info.m_mime_tipe),
-                       // 10
-                       std::addressof(m_response_info.m_body),
-                       // 11
-                       std::addressof(invoke_result));
-            });
-
+        const int xh_ok =
+            js_http_xhr_invoke(
+                uri.data(), static_cast<int>(uri.size()),
+                method.data(), static_cast<int>(method.size()),
+                body.data(), static_cast<int>(body.size()),
+                timeout_ms_for_js,
+                reinterpret_cast<int>(std::addressof(m_response_info.m_response_code)),
+                reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_mime_tipe)),
+                reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_body)));
         m_is_busy = false;
-        return invoke_result != 0;
+        return xh_ok != 0;
     }
     bool invoke_get(
         const boost::string_ref uri,
@@ -222,7 +251,6 @@ public:
         const epee::net_utils::http::http_response_info **ppresponse_info = nullptr,
         const epee::net_utils::http::fields_list &additional_params = epee::net_utils::http::fields_list())
     {
-        // TODO: What is CRITICAL_REGION_LOCAL
         return invoke(uri, "GET", body, timeout, ppresponse_info, additional_params);
     }
     bool invoke_post(
@@ -236,7 +264,6 @@ public:
     }
     uint64_t get_bytes_sent() const
     {
-        // TODO: Count bytes
         printf("my-demo: js_http_client(%i)::get_bytes_sent called\n", m_my_id);
         return 0;
     }
@@ -250,8 +277,6 @@ private:
     bool m_is_connected = false;
     epee::net_utils::http::http_response_info m_response_info;
     bool m_is_busy = false;
-    emscripten::ProxyingQueue m_fetchProxyQueue;
-    pthread_t m_fetchingThreadId = pthread_self();
 
     inline static int m_next_id = 1;
     int m_my_id = m_next_id++;
@@ -273,10 +298,5 @@ extern "C"
     {
         str->resize(new_size);
         return str->data();
-    }
-
-    void EMSCRIPTEN_KEEPALIVE emscripten_ctx_proxy_finish(em_proxying_ctx *ctx)
-    {
-        emscripten_proxy_finish(ctx);
     }
 }

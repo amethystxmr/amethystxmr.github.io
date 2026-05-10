@@ -1,5 +1,5 @@
 // @ts-expect-error Generated wasm JS module has no TypeScript declarations.
-import MoneroWasmWalletModuleFactory from "./monero-wasm-wallet.mjs";
+import MoneroWasmWalletModuleFactory from "./wasm_wallet.mjs";
 
 export const NetworkTypes = {
   MAINNET: 0,
@@ -10,27 +10,38 @@ export const NetworkTypes = {
 
 export type NetworkType = (typeof NetworkTypes)[keyof typeof NetworkTypes];
 
+/** Embind + Asyncify may return a plain value (sync path) or a Promise (after a yield). */
+export type MaybePromise<T> = T | Promise<T>;
+
 type IDBFS = unknown & { readonly __nominal: unique symbol };
+
+/**
+ * Invoked from WASM when a new block is seen (`uint64_t` height/timestamp).
+ * With `-sWASM_BIGINT`, Embind passes these as `bigint`.
+ */
+export type WalletNewBlockCallback =
+  | ((height: bigint, timestamp: bigint) => void)
+  | null;
+export type WalletTxHandle = number;
 
 export declare class MoneroWasmWallet {
   constructor(networkType: NetworkType);
-  init(): Promise<boolean>;
-  close_wallet(): Promise<void>;
+  init(): MaybePromise<boolean>;
   delete(): void;
-  get_daemon_blockchain_height(): Promise<bigint>;
+  get_daemon_blockchain_height(): MaybePromise<bigint>;
   generate(
     fileName: string,
     password: string,
     secret32: Uint8Array,
     recover: boolean,
     two_random: boolean,
-  ): Promise<Uint8Array>;
+  ): MaybePromise<Uint8Array>;
   generate_multisig_restore(
     fileName: string,
     password: string,
     multisigDataHex: string,
     createAddressFile: boolean,
-  ): Promise<boolean>;
+  ): MaybePromise<void>;
   generate_from_keys(
     fileName: string,
     password: string,
@@ -38,130 +49,127 @@ export declare class MoneroWasmWallet {
     secretViewKey: Uint8Array,
     secretSpendKey: Uint8Array,
     createAddressFile: boolean,
-  ): Promise<boolean>;
+  ): MaybePromise<void>;
   generate_view_only_from_keys(
     fileName: string,
     password: string,
     address: string,
     secretViewKey: Uint8Array,
     createAddressFile: boolean,
-  ): Promise<boolean>;
-  is_synced(): Promise<boolean>;
-  store(): Promise<void>;
-  set_attribute(key: string, value: string): Promise<boolean>;
-  get_attribute(key: string): Promise<string>;
-  load(fileName: string, password: string): Promise<void>;
+  ): MaybePromise<void>;
+  is_synced(): MaybePromise<boolean>;
+  store(): MaybePromise<void>;
+  /** Install callback for wallet sync progress (height/timestamp); pass `null` to clear. */
+  set_on_new_block_callback(callback: WalletNewBlockCallback): MaybePromise<void>;
+  set_attribute(key: string, value: string): MaybePromise<void>;
+  get_attribute(key: string): MaybePromise<string>;
+  load(fileName: string, password: string): MaybePromise<void>;
   refresh(
     isTrustedWallet: boolean,
-    startHeight: bigint,
+    startHeight: number,
     checkPool: boolean,
     tryIncremental: boolean,
-    maxBlocks: bigint,
-  ): Promise<{ blocksFetched: bigint; receivedMoney: boolean }>;
-  rewrite(fileName: string, password: string): Promise<void>;
-  set_on_new_block_callback: (
-    callback: ((height: bigint, timestamp: bigint) => void) | null,
-  ) => void;
-  get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
-  get_multisig_seed(seedPassword: string): Promise<string>;
-  get_address(): Promise<string>;
-  get_network_type(): NetworkType;
-  allow_mismatched_daemon_version(allowMismatch: boolean): void;
-  watch_only(): Promise<boolean>;
-  is_deterministic(): Promise<boolean>;
-  get_wallet_file(): Promise<string>;
-  get_tx_proof(txid: string, dstaddress: string, note: string): Promise<string>;
-  get_tx_key(txid: string): Promise<string>;
-  get_tx_keys_for_address(txid: string, dstaddress: string): Promise<string[]>;
-  balance(index_major: number, strict: boolean): Promise<bigint>;
+    maxBlocks: number | null,
+  ): MaybePromise<{ blocksFetched: number; receivedMoney: boolean }>;
+  rewrite(fileName: string, password: string): MaybePromise<void>;
+  get_seed(seedLanguage: string, seedPassword: string): MaybePromise<string>;
+  get_multisig_seed(seedPassword: string): MaybePromise<string>;
+  get_address(): MaybePromise<string>;
+  get_network_type(): MaybePromise<NetworkType>;
+  allow_mismatched_daemon_version(allowMismatch: boolean): MaybePromise<void>;
+  watch_only(): MaybePromise<boolean>;
+  is_deterministic(): MaybePromise<boolean>;
+  get_wallet_file(): MaybePromise<string>;
+  get_tx_proof(txid: string, dstaddress: string, note: string): MaybePromise<string>;
+  get_tx_key(txid: string): MaybePromise<string>;
+  get_tx_keys_for_address(txid: string, dstaddress: string): MaybePromise<string[]>;
+  balance(index_major: number, strict: boolean): MaybePromise<bigint>;
   unlocked_balance(
     index_major: number,
     strict: boolean,
-  ): Promise<{
+  ): MaybePromise<{
     balance: bigint;
     blocks_to_unlock: bigint;
     time_to_unlock: bigint;
   }>;
-  set_refresh_from_block_height(height: bigint): Promise<boolean>;
-  set_explicit_refresh_from_block_height(value: boolean): Promise<boolean>;
+  set_refresh_from_block_height(height: bigint): MaybePromise<void>;
+  set_explicit_refresh_from_block_height(value: boolean): MaybePromise<void>;
   /**
    * Current height in the wallet. When it is same as get_daemon_blockchain_height() then it is synced
    */
-  get_blockchain_current_height(): Promise<bigint>;
+  get_blockchain_current_height(): MaybePromise<bigint>;
   get_blockchain_height_by_date(
     year: number,
     month: number,
     day: number,
-  ): Promise<bigint>;
-  words_to_bytes(words: string, language: string): Uint8Array | null;
-  get_payments(
-    minHeight: bigint,
-    maxHeight: bigint,
-  ): Promise<EmbindVector<PaymentDetails>>;
-  get_payments_mempool(): Promise<EmbindVector<PaymentDetails>>;
-  get_num_subaddresses(index_major: number): Promise<number>;
+  ): MaybePromise<bigint>;
+  words_to_bytes(words: string, language: string): MaybePromise<Uint8Array | null>;
+  get_payments(minHeight: bigint, maxHeight: bigint): MaybePromise<PaymentDetails[]>;
+  get_payments_mempool(): MaybePromise<PaymentDetails[]>;
+  get_num_subaddresses(index_major: number): MaybePromise<number>;
   get_subaddress_as_str(
     index_major: number,
     index_minor: number,
-  ): Promise<string>;
+  ): MaybePromise<string>;
   get_subaddress_label(
     index_major: number,
     index_minor: number,
-  ): Promise<string>;
-  get_wallet_addresses(accountId: number): Promise<EmbindVector<WalletAddress>>;
-  get_keys(accountIdx: number): Promise<WalletKeys>;
-  add_subaddress(index_major: number, label: string): Promise<void>;
+  ): MaybePromise<string>;
+  get_wallet_addresses(accountId: number): MaybePromise<WalletAddress[]>;
+  get_keys(accountIdx: number): MaybePromise<WalletKeys>;
+  add_subaddress(index_major: number, label: string): MaybePromise<void>;
   transfer_prepare(
     destinations: string[],
     amounts: bigint[],
     priority: FeePriority,
     subtractFeeFromIndex: number | null,
-  ): Promise<PendingTxHandle>;
+  ): MaybePromise<WalletTxHandle>;
   transfer_prepare_sweep_all(
     destination: string,
     priority: FeePriority,
-  ): Promise<PendingTxHandle>;
-  get_transfers(): Promise<TransferItem[]>;
-  get_transfers_info(handle: PendingTxHandle): TransferInfoItem[];
-  transfer_commit_tx(handle: PendingTxHandle): Promise<void>;
-  save_multisig_tx_pending_tx(handle: PendingTxHandle): Promise<Uint8Array>;
+  ): MaybePromise<WalletTxHandle>;
+  get_transfers(): MaybePromise<TransferItem[]>;
+  get_transfers_info(handle: WalletTxHandle): MaybePromise<TransferInfoItem[]>;
+  transfer_commit_tx(handle: WalletTxHandle): MaybePromise<void>;
+  save_multisig_tx_pending_tx(handle: WalletTxHandle): MaybePromise<Uint8Array>;
   load_multisig_tx(
     data: Uint8Array,
     do_accept: boolean,
-  ): Promise<MultisigTxSetHandle>;
-  get_multisig_tx_set_info(handle: MultisigTxSetHandle): TransferInfoItem[];
+  ): MaybePromise<WalletTxHandle>;
+  get_multisig_tx_set_info(handle: WalletTxHandle): MaybePromise<TransferInfoItem[]>;
   get_multisig_tx_signers_count(
-    handle: MultisigTxSetHandle,
+    handle: WalletTxHandle,
     excludeSelf: boolean,
-  ): number;
-  sign_multisig_tx(handle: MultisigTxSetHandle): Promise<string[]>;
-  save_multisig_tx(handle: MultisigTxSetHandle): Promise<Uint8Array>;
-  transfer_commit_tx_multisig(handle: MultisigTxSetHandle): Promise<void>;
+  ): MaybePromise<number>;
+  sign_multisig_tx(handle: WalletTxHandle): MaybePromise<string[]>;
+  save_multisig_tx(handle: WalletTxHandle): MaybePromise<Uint8Array>;
+  transfer_commit_tx_multisig(handle: WalletTxHandle): MaybePromise<void>;
+  destroy_tx_handle(handle: WalletTxHandle): MaybePromise<void>;
 
-  get_multisig_status(): Promise<MultisigAccountStatus>;
-  has_multisig_partial_key_images(): Promise<boolean>;
-  has_unknown_key_images(): Promise<boolean>;
-  enable_multisig(enable: boolean): Promise<boolean>;
-  prepare_multisig(): Promise<string>;
+  get_multisig_status(): MaybePromise<MultisigAccountStatus>;
+  has_multisig_partial_key_images(): MaybePromise<boolean>;
+  has_unknown_key_images(): MaybePromise<boolean>;
+  enable_multisig(enable: boolean): MaybePromise<void>;
+  prepare_multisig(): MaybePromise<string>;
   /** Note: this function saves wallet, .keys and .address.txt files! */
   make_multisig(
     password: string,
     initial_kex_msgs: string[],
     threshold: number,
-  ): Promise<string>;
+  ): MaybePromise<string>;
   /**
    * Note: this also saves files.
    */
-  exchange_multisig_keys(password: string, kex_msgs: string[]): Promise<string>;
-  export_multisig(): Promise<Uint8Array>;
-  import_multisig(infos: Uint8Array[]): Promise<number>;
-  export_key_images(filename: string, all: boolean): Promise<boolean>;
+  exchange_multisig_keys(password: string, kex_msgs: string[]): MaybePromise<string>;
+  export_multisig(): MaybePromise<Uint8Array>;
+  import_multisig(infos: Uint8Array[]): MaybePromise<number>;
+  export_key_images(filename: string, all: boolean): MaybePromise<void>;
   import_key_images(
     filename: string,
     import_when_untrusted_daemon: boolean,
-  ): Promise<KeyImagesImportResult>;
-  verify_password(password: string): Promise<boolean>;
-  rescan_blockchain(hard: boolean, keep_key_images: boolean): Promise<boolean>;
+  ): MaybePromise<KeyImagesImportResult>;
+  verify_password(password: string): MaybePromise<boolean>;
+  rescan_blockchain(hard: boolean, keep_key_images: boolean): MaybePromise<void>;
 }
 
 export const FeePriority = {
@@ -174,8 +182,13 @@ export const FeePriority = {
 
 export type FeePriority = (typeof FeePriority)[keyof typeof FeePriority];
 
-
 export const CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 10n;
+
+/** Matches Embind `PaymentDestination` (`wallet2`-style address + atomic amount). */
+export interface PaymentDestination {
+  address: string;
+  amount: bigint;
+}
 
 export interface PaymentDetails {
   payment_id: string;
@@ -198,8 +211,7 @@ export interface PaymentDetails {
   amount: bigint;
   tx_hash: string;
   fee: bigint;
-  /** <addr>:<amount>;.... */
-  destinationsStr: string;
+  destinations: PaymentDestination[];
   index_major: number;
   index_minor: number;
   note: string;
@@ -245,22 +257,6 @@ export interface KeyImagesImportResult {
   unspent: bigint;
 }
 
-interface ClassHandle {
-  delete(): void;
-}
-export interface EmbindVector<T> extends ClassHandle {
-  size(): number;
-  get(index: number): T;
-}
-
-export interface PendingTxHandle extends ClassHandle {
-  readonly __nominal: unique symbol;
-}
-
-export interface MultisigTxSetHandle extends ClassHandle {
-  readonly __nominal: unique symbol;
-}
-
 export interface TransferInfoItem {
   fee: bigint;
   changeAmount: bigint;
@@ -290,6 +286,11 @@ export interface TransferDestinationInfo {
 }
 
 interface Module {
+  /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
+  getExceptionMessage?(exn: number): [string, string];
+  decrementExceptionRefcount?(exn: number): void;
+  /** Optional Monero logging categories (`mlog_set_categories` from wasm). */
+  mlog_set_categories?(categories: string): void;
   FS: {
     mkdir(path: string): void;
     mount(type: IDBFS, opts: Record<string, never>, mountpoint: string): void;
@@ -306,16 +307,67 @@ interface Module {
   };
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
-  set_max_concurrency(threads: number): void;
   get_monero_version_full(): string;
+  /**
+   * `birthday` is `polyseed_get_birthday` (wallet birthday height index), a small
+   * integer from WASM — not a Unix timestamp. Typed as `number` (Embind `val(u32)`).
+   */
   decodePolyseed(moneroPolyseed: string): {
-    birthday: bigint;
+    birthday: number;
     privateKey: Uint8Array;
     langStr: string;
   };
 }
 
 let module: Module;
+
+/**
+ * Emscripten/embind often rejects with a **numeric** value: the WASM C++ exception
+ * pointer (`throw exceptionLast`). It is **not** a wallet/daemon error code; the
+ * number changes each run with heap layout. When `getExceptionMessage` is exported
+ * (see CMakeLists `EXPORTED_RUNTIME_METHODS`), decode to a real message and release
+ * the exception with `decrementExceptionRefcount` per Emscripten docs.
+ */
+export function wasmThrownValueToError(thrown: unknown): Error {
+  if (thrown instanceof Error) {
+    return thrown;
+  }
+
+  if (typeof thrown !== "number") {
+    return new Error(String(thrown));
+  }
+
+  const ptr = thrown;
+
+  if (!module.getExceptionMessage || !module.decrementExceptionRefcount) {
+    return new Error(
+      "WASM raised a C++ exception (shown as a numeric pointer in the console - not an application error code). " +
+        "Rebuild monero-wasm with `getExceptionMessage` + `decrementExceptionRefcount` in EXPORTED_RUNTIME_METHODS to decode the message.",
+    );
+  }
+
+  try {
+    const [type, rawMessage] = module.getExceptionMessage(ptr);
+    const message =
+      rawMessage && rawMessage.length > 0
+        ? rawMessage
+        : type && type.length > 0
+          ? type
+          : "C++ exception (empty what())";
+    return new Error(message);
+  } catch {
+    return new Error(
+      `Could not decode WASM exception at pointer ${ptr} (heap addresses differ each run).`,
+    );
+  } finally {
+    try {
+      module.decrementExceptionRefcount(ptr);
+    } catch {
+      // Best-effort cleanup; ignore if pointer was already released.
+    }
+  }
+}
+
 type HttpFetchState =
   | "start"
   | "progress"
@@ -324,66 +376,73 @@ type HttpFetchState =
   | "timeout"
   | "abort";
 
-declare global {
-  interface Window {
-    moneroWalletModule: Module;
-    clearFilesystem: typeof clearFilesystem;
-    globalHttpConfig: {
-      mapUrl: (url: string) => string;
-      onFetch: (
-        url: string,
-        reqId: string,
-        state: HttpFetchState,
-        progressLoaded: number,
-        progressTotal: number,
-      ) => void;
-    };
-  }
+export type { HttpFetchState };
+
+/** Daemon RPC progress from the wallet worker. When `progressTotal` is 0, the UI treats the request as indeterminate until a `progress` event with `lengthComputable`. */
+export type HttpFetchCallback = (
+  url: string,
+  reqId: string,
+  state: HttpFetchState,
+  progressLoaded: number,
+  progressTotal: number,
+) => void;
+
+type GlobalHttpConfig = {
+  mapUrl: (url: string) => string;
+  onFetch: HttpFetchCallback;
+};
+
+type WalletRuntimeGlobal = typeof globalThis & {
+  moneroWalletModule?: Module;
+  clearFilesystem?: typeof clearFilesystem;
+  globalHttpConfig?: GlobalHttpConfig;
+};
+
+function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
+  const runtimeGlobal = globalThis as WalletRuntimeGlobal;
+  return runtimeGlobal;
 }
 
-export async function initModule() {
-  if (module) {
-    return module;
-  }
-  module = (await MoneroWasmWalletModuleFactory()) as Module;
-  await initFilesystem();
-  setMaxConcurrency(getRecommendedMaxConcurrency());
-  window.moneroWalletModule = module;
-
-  window.globalHttpConfig = {
+function ensureGlobalHttpConfig(): GlobalHttpConfig {
+  const runtimeGlobal = getWalletRuntimeGlobal();
+  runtimeGlobal.globalHttpConfig ??= {
     mapUrl: () => {
       throw new Error("mapUrl not set");
     },
-    // mapUrl: (url) => "https://xmr-node.cakewallet.com:18081" + url,
     onFetch: (...args) => {
       console.log("onFetch", ...args);
     },
   };
-
-  return module;
+  return runtimeGlobal.globalHttpConfig;
 }
 
-export function getMaxConcurrency() {
-  // Note: it always should be the same as in sPTHREAD_POOL_SIZE
-  return navigator.hardwareConcurrency || 2;
-}
-
-export function getRecommendedMaxConcurrency() {
-  const cpuCount =
-    typeof navigator !== "undefined" &&
-    typeof navigator.hardwareConcurrency === "number"
-      ? navigator.hardwareConcurrency
-      : 2;
-  return Math.max(1, cpuCount - 1);
-}
-
-export function setMaxConcurrency(threads: number) {
-  if (!module) {
-    throw new Error("Module not initialized");
+export async function initModule() {
+  if (module) {
+    return;
   }
-  const sanitized = Number.isFinite(threads) ? Math.trunc(threads) : 1;
-  const clamped = Math.min(getMaxConcurrency(), Math.max(1, sanitized));
-  module.set_max_concurrency(clamped);
+  module = (await MoneroWasmWalletModuleFactory()) as Module;
+  await initFilesystem();
+  getWalletRuntimeGlobal().moneroWalletModule = module;
+  ensureGlobalHttpConfig();
+}
+
+export function setDaemonAddress(daemonAddress: string) {
+  ensureGlobalHttpConfig().mapUrl = (url) => daemonAddress + url;
+}
+
+export function setHttpFetchCallback(callback: HttpFetchCallback | null) {
+  ensureGlobalHttpConfig().onFetch =
+    callback ??
+    ((...args) => {
+      console.log("onFetch", ...args);
+    });
+}
+
+export function setWalletNewBlockCallback(
+  wallet: MoneroWasmWallet,
+  callback: WalletNewBlockCallback,
+): MaybePromise<void> {
+  return wallet.set_on_new_block_callback(callback);
 }
 
 export function decodePolyseed(moneroPolyseed: string) {
@@ -406,10 +465,14 @@ export async function loadFilesystem() {
   );
 }
 
+/**
+ * Mount in-memory FS only. Populate from IndexedDB via `loadFilesystem()` — call
+ * from the UI under `withFsLock()` (see web-src/components/utils.ts) so all tabs
+ * serialize IDBFS sync and share a consistent view.
+ */
 async function initFilesystem() {
   module.FS.mkdir("/data");
   module.FS.mount(module.IDBFS, {}, "/data");
-  await loadFilesystem();
   module.FS.chdir("/data");
 }
 
@@ -442,9 +505,7 @@ export async function clearFilesystem() {
   await saveFilesystem();
 }
 
-if (typeof window !== "undefined") {
-  window.clearFilesystem = clearFilesystem;
-}
+getWalletRuntimeGlobal().clearFilesystem = clearFilesystem;
 
 export function listWalletNames() {
   return module.FS.readdir(".")
@@ -465,15 +526,21 @@ export function deleteWalletFiles(walletName: string) {
   }
 }
 
-export function createWallet(networkType: NetworkType = NetworkTypes.MAINNET) {
+export async function createWallet(
+  networkType: NetworkType = NetworkTypes.MAINNET,
+) {
   const wallet = new module.MoneroWasmWallet(networkType);
-  const actualNetworkType = wallet.get_network_type();
-  if (actualNetworkType !== networkType) {
+  try {
+    const actualNetworkType = await wallet.get_network_type();
+    if (actualNetworkType !== networkType) {
+      // This is to verify that enums are used correctly
+      throw new Error("Internal error: Wallet network type mismatch");
+    }
+    return wallet;
+  } catch (e) {
     wallet.delete();
-    // This is to verify that enums are used correctly
-    throw new Error("Internal error: Wallet network type mismatch");
+    throw e;
   }
-  return wallet;
 }
 
 export function readFile(path: string): Uint8Array {
@@ -557,57 +624,3 @@ export function saveWalletFilesData(
 }
 
 export const max64 = (1n << 64n) - 1n;
-
-export interface PaymentDetailsTransformed extends PaymentDetails {
-  destinations: { address: string; amount: bigint }[];
-}
-export function transformPayments(
-  payments: EmbindVector<PaymentDetails>,
-): PaymentDetailsTransformed[] {
-  const result: PaymentDetailsTransformed[] = [];
-  for (let i = 0; i < payments.size(); i++) {
-    const p = payments.get(i);
-    const destinations: PaymentDetailsTransformed["destinations"] = [];
-    if (p.destinationsStr) {
-      for (const part of p.destinationsStr.split(";")) {
-        const [address, amountStr] = part.split(":");
-        destinations.push({ address, amount: BigInt(amountStr) });
-      }
-    }
-    result.push({ ...p, destinations });
-  }
-  payments.delete();
-
-  result.sort((a, b) => {
-    // Pending first
-    if (a.type === "pending" && b.type !== "pending") return -1;
-    if (a.type !== "pending" && b.type === "pending") return 1;
-
-    // If both pending → timestamp DESC
-    if (a.type === "pending") {
-      return Number(b.timestamp - a.timestamp);
-    }
-
-    // Confirmed → block_height DESC
-    if (a.block_height !== b.block_height) {
-      return Number(b.block_height - a.block_height);
-    }
-
-    // Same block → timestamp DESC
-    return Number(b.timestamp - a.timestamp);
-  });
-
-  return result;
-}
-
-export function transformWalletAddresses(
-  addresses: EmbindVector<WalletAddress>,
-): WalletAddress[] {
-  const result: WalletAddress[] = [];
-  for (let i = 0; i < addresses.size(); i++) {
-    result.push(addresses.get(i));
-  }
-  addresses.delete();
-  result.sort((a, b) => a.indexMinor - b.indexMinor);
-  return result;
-}

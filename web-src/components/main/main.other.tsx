@@ -3,13 +3,12 @@ import { refreshXmrPrice } from "./useXmrPrice";
 import {
   MultisigAccountStatus,
   MoneroWasmWallet,
-  PaymentDetailsTransformed,
+  PaymentDetails,
   TransferItem,
   WalletKeys,
-  readFile,
-  unlinkFile,
-  writeFile,
-} from "../../../monero-wasm-module/walletApi";
+  api
+} from "../../../monero-wasm-module/walletApi.workerClient";
+
 import { options } from "../options";
 import {
   Button,
@@ -75,7 +74,7 @@ export function OtherTab({
   multisigStatus: MultisigAccountStatus | null;
   hasUnknownKeyImages: boolean | undefined;
   isViewOnly: boolean | undefined;
-  payments: PaymentDetailsTransformed[] | null;
+  payments: PaymentDetails[] | null;
   priceEur: number | null;
   priceSource: string | null;
   priceFetchedAt: number | null;
@@ -345,9 +344,9 @@ export function OtherTab({
     }
   };
 
-  const unlinkIfExists = React.useCallback((fileName: string) => {
+  const unlinkIfExists = React.useCallback(async (fileName: string) => {
     try {
-      unlinkFile(fileName);
+      await api.unlinkFile(fileName);
     } catch {
       // File may already be removed.
     }
@@ -365,13 +364,13 @@ export function OtherTab({
         const [data, walletFile] = await withFsLock(async () => {
           try {
             await wallet.export_key_images(tmpFile, all);
-            const readData = readFile(tmpFile);
+            const readData = await api.readFile(tmpFile);
             const copied = new Uint8Array(readData.length);
             copied.set(readData);
             const walletFileLocal = await wallet.get_wallet_file();
             return [copied, walletFileLocal] as const;
           } finally {
-            unlinkIfExists(tmpFile);
+            await unlinkIfExists(tmpFile);
           }
         });
 
@@ -429,12 +428,12 @@ export function OtherTab({
     try {
       const result = await withFsLock(async () => {
         try {
-          writeFile(tmpFile, importedData);
+          await api.writeFile(tmpFile, importedData);
           const importResult = await wallet.import_key_images(tmpFile, true);
           await wallet.store();
           return importResult;
         } finally {
-          unlinkIfExists(tmpFile);
+          await unlinkIfExists(tmpFile);
         }
       });
       if (isUnmountedRef.current) {

@@ -1,0 +1,15 @@
+# IDE-only config for clangd. This does not affect the Emscripten build.
+# clangd reads compile_commands.json, then this translates the few em++ driver
+# flags that clangd's parser cannot understand.
+#
+# `monero-wasm-src/build.sh` creates
+#   monero-wasm-src/compile_commands.json -> built-wasm-<BuildType>/compile_commands.json
+# after each successful build (path relative to monero-wasm-src). Clangd picks it
+# up via upward-search from sources under monero-wasm-src or via
+# `--compile-commands-dir` in .vscode/settings.json.
+CompileFlags:
+  Add:
+    - -pthread
+  Remove:
+    - -sUSE_PTHREADS=*
+    - -sNO_DISABLE_EXCEPTION_CATCHING
