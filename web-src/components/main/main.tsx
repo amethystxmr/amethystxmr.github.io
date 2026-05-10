@@ -312,10 +312,14 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      await setWalletNewBlockCallback(wallet, (height) => {
+      await setWalletNewBlockCallback(wallet, (height, timestamp) => {
         if (cancelled) {
           return;
         }
+        const t = new Date(Number(timestamp) * 1000);
+        console.log(
+          `on_new_block height=${height} timestamp=${t.toISOString()}`,
+        );
         setStatus((prev) =>
           prev === null ? null : { ...prev, walletHeight: height },
         );

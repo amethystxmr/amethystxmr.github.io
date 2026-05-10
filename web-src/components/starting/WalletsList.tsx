@@ -135,6 +135,7 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
 }
 
 export function WalletsList() {
+  const alert = useAlert();
   const [view, setView] = React.useState<
     | {
         type: "initial loading";
@@ -167,6 +168,7 @@ export function WalletsList() {
       }
     | {
         type: "create-new-wallet";
+        walletNames: string[];
       }
   >({
     type: "initial loading",
@@ -189,7 +191,9 @@ export function WalletsList() {
     (async () => {
       const daemonAddress = options.getValue("daemonAddress");
       await walletApi.setDaemonAddress(daemonAddress);
-      const walletNames = await walletApi.listWalletNames();
+      const walletNames = await withFsLock(async () =>
+        walletApi.listWalletNames(),
+      );
       if (cancelled) {
         return;
       }
@@ -208,7 +212,9 @@ export function WalletsList() {
     if (view.type !== "manage-wallets") {
       throw new Error("Invalid view type");
     }
-    const walletNames = await walletApi.listWalletNames();
+    const walletNames = await withFsLock(async () =>
+      walletApi.listWalletNames(),
+    );
     setView({
       type: "manage-wallets",
       walletNames,
@@ -337,7 +343,17 @@ export function WalletsList() {
           backToList();
           options.setValue("lastWalletName", null);
           setWalletHash(null);
-          void closeWallet(wallet).finally(releaseWalletOpenLock);
+          /*
+           * When true: tear down wallet on worker only (same-tab second open may break).
+           * When false: reload workaround after exit.
+           */
+          const WALLET_TERMINATING_FIXED = false;
+          if (WALLET_TERMINATING_FIXED) {
+            void closeWallet(wallet).finally(releaseWalletOpenLock);
+          } else {
+            void alert("Loading");
+            window.location.reload();
+          }
         }}
       />
     );
@@ -346,7 +362,12 @@ export function WalletsList() {
       <RestoreView onDone={handleRestoreDone} walletNames={view.walletNames} />
     );
   } else if (view.type === "create-new-wallet") {
-    return <CreateNewWalletView onDone={handleCreateDone} />;
+    return (
+      <CreateNewWalletView
+        onDone={handleCreateDone}
+        walletNames={view.walletNames}
+      />
+    );
   } else if (view.type === "opening") {
     return (
       <OpenWalletView
@@ -422,7 +443,10 @@ export function WalletsList() {
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 lg:shrink-0">
             <Button
               onClick={async () => {
-                setView({ type: "create-new-wallet" });
+                setView({
+                  type: "create-new-wallet",
+                  walletNames: view.walletNames,
+                });
               }}
             >
               ➕︎ New wallet
@@ -911,7 +935,7 @@ function RestoreView({
                       <Label>Seed phrase</Label>
                       <TextArea
                         rows={3}
-                        className="lg:min-h-0 lg:flex-1"
+                        className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto lg:min-h-0 lg:flex-1"
                         value={moneroSeed}
                         disabled={restoring}
                         onChange={(e) => setMoneroSeed(e.target.value)}
@@ -931,7 +955,7 @@ function RestoreView({
                       <Label>Seed phrase</Label>
                       <TextArea
                         rows={3}
-                        className="lg:min-h-0 lg:flex-1"
+                        className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto lg:min-h-0 lg:flex-1"
                         value={cakeSeed}
                         disabled={restoring}
                         onChange={(e) => setCakeSeed(e.target.value)}
@@ -952,7 +976,7 @@ function RestoreView({
                       <Label>Multisig seed (hex)</Label>
                       <TextArea
                         rows={3}
-                        className="lg:min-h-0 lg:flex-1"
+                        className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto lg:min-h-0 lg:flex-1"
                         value={multisigSeedHex}
                         disabled={restoring}
                         onChange={(e) => setMultisigSeedHex(e.target.value)}
@@ -1047,8 +1071,10 @@ function RestoreView({
 
 function CreateNewWalletView({
   onDone,
+  walletNames,
 }: {
   onDone: (openedWallet: OpenedWallet | null) => void;
+  walletNames: string[];
 }) {
   const alert = useAlert();
 
@@ -1098,11 +1124,22 @@ function CreateNewWalletView({
     let wallet: MoneroWasmWallet | undefined;
     let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
-      releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
+      releaseWalletOpenLock = await acquireWalletOpenLock(fileName, {
+        ifAvailable: true,
+      });
       if (!releaseWalletOpenLock) {
         throw new Error(
           `Wallet "${fileName}" is currently open in another tab`,
         );
+      }
+
+      if (walletNames.includes(fileName)) {
+        const release = releaseWalletOpenLock;
+        releaseWalletOpenLock = null;
+        release();
+        void alert(`Wallet with name ${fileName} already exists`);
+        setState({ type: "entering-data", fileName, password, passwordConfirm });
+        return;
       }
 
       const seed = await withFsLock(async () => {
@@ -1233,7 +1270,7 @@ function CreateNewWalletView({
               <TextArea
                 readOnly
                 rows={4}
-                className="font-mono text-sm leading-relaxed"
+                className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto font-mono text-sm leading-relaxed"
                 value={state.seed}
               />
             </SurfaceCard>
@@ -1366,15 +1403,21 @@ function OpenWalletView({
         if (isUnmountedRef.current) {
           return;
         }
-        wallet = await createWalletUsingCurrentOptions();
-        await wallet.init();
-        if (isUnmountedRef.current) {
-          await closeWallet(wallet);
-          return;
-        }
-        await wallet.load(fileName, passwordToTry);
-        if (isUnmountedRef.current) {
-          await closeWallet(wallet);
+        await withFsLock(async () => {
+          wallet = await createWalletUsingCurrentOptions();
+          await wallet.init();
+          if (isUnmountedRef.current) {
+            await closeWallet(wallet);
+            wallet = undefined;
+            return;
+          }
+          await wallet.load(fileName, passwordToTry);
+          if (isUnmountedRef.current) {
+            await closeWallet(wallet);
+            wallet = undefined;
+          }
+        });
+        if (isUnmountedRef.current || !wallet) {
           return;
         }
         if (!releaseWalletOpenLock) {

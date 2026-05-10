@@ -839,7 +839,7 @@ export function OtherTab({
                   <TextArea
                     readOnly
                     rows={seedRows}
-                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto font-mono text-sm leading-relaxed"
                     value={
                       seedState.seed ??
                       (seedState.seedMessage
@@ -854,7 +854,7 @@ export function OtherTab({
                   <TextArea
                     readOnly
                     rows={addressRows}
-                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto font-mono text-sm leading-relaxed"
                     value={seedState.keys.address}
                   />
 
@@ -866,7 +866,7 @@ export function OtherTab({
                   <TextArea
                     readOnly
                     rows={keyRows}
-                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto font-mono text-sm leading-relaxed"
                     value={bytesToHex(seedState.keys.viewKey.private)}
                   />
 
@@ -878,7 +878,7 @@ export function OtherTab({
                   <TextArea
                     readOnly
                     rows={keyRows}
-                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto font-mono text-sm leading-relaxed"
                     value={bytesToHex(seedState.keys.viewKey.public)}
                   />
 
@@ -886,7 +886,7 @@ export function OtherTab({
                   <TextArea
                     readOnly
                     rows={keyRows}
-                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto font-mono text-sm leading-relaxed"
                     value={
                       isReadyMultisigWallet
                         ? "(This key is distributed between multisig participants)"
@@ -904,7 +904,7 @@ export function OtherTab({
                   <TextArea
                     readOnly
                     rows={keyRows}
-                    className="scrollbar-glass scrollbar-hidden-mobile font-mono text-sm leading-relaxed"
+                    className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto font-mono text-sm leading-relaxed"
                     value={bytesToHex(seedState.keys.spendKey.public)}
                   />
                 </>
