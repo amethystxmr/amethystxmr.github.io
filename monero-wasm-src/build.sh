@@ -48,6 +48,15 @@ echo ""
 
 cp -v "$BUILD_WASM_DIR"/bin/wasm_wallet.* ../monero-wasm-module/
 
+# Point clangd at the database CMake just produced, so Go-to-Definition in
+# the IDE follows whichever build type was last compiled (Debug/Release).
+COMPILE_DB_SRC="monero-wasm-src/$BUILD_WASM_DIR/compile_commands.json"
+COMPILE_DB_LINK="../compile_commands.json"
+if [ -f "$BUILD_WASM_DIR/compile_commands.json" ]; then
+  ln -sfn "$COMPILE_DB_SRC" "$COMPILE_DB_LINK"
+  echo "Symlinked $COMPILE_DB_LINK -> $COMPILE_DB_SRC"
+fi
+
 echo ""
 echo ""
 echo ""
