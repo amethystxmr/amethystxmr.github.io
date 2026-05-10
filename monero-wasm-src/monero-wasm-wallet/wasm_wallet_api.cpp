@@ -129,12 +129,7 @@ public:
             recover,
             two_random);
 
-        auto v = emscripten::val::global("Uint8Array").new_(32);
-        for (size_t i = 0; i < 32; ++i)
-        {
-            v.set(i, r.data[i]);
-        }
-        return v;
+        return copy_bytes_to_uint8_array(reinterpret_cast<const std::uint8_t *>(r.data), sizeof(r.data));
     }
 
     void generate_multisig_restore(
@@ -264,7 +259,7 @@ public:
             reinterpret_cast<const std::uint8_t *>(dst.data),
             bytes.size(),
             bytes.begin());
-        return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes.data(), bytes.size());
+        return copy_bytes_to_uint8_array(bytes.data(), bytes.size());
     }
 
     auto get_address()
@@ -308,22 +303,22 @@ public:
         auto view_key = emscripten::val::object();
         auto *view_private_bytes = reinterpret_cast<const std::uint8_t *>(keys.m_view_secret_key.data);
         auto *view_public_bytes = reinterpret_cast<const std::uint8_t *>(keys.m_account_address.m_view_public_key.data);
-        view_key.set("private", MoneroWasmWallet::copy_bytes_to_uint8_array(view_private_bytes, 32));
-        view_key.set("public", MoneroWasmWallet::copy_bytes_to_uint8_array(view_public_bytes, 32));
+        view_key.set("private", copy_bytes_to_uint8_array(view_private_bytes, 32));
+        view_key.set("public", copy_bytes_to_uint8_array(view_public_bytes, 32));
         result.set("viewKey", view_key);
 
         auto spend_key = emscripten::val::object();
         if (has_spend_private)
         {
             auto *spend_private_bytes = reinterpret_cast<const std::uint8_t *>(keys.m_spend_secret_key.data);
-            spend_key.set("private", MoneroWasmWallet::copy_bytes_to_uint8_array(spend_private_bytes, 32));
+            spend_key.set("private", copy_bytes_to_uint8_array(spend_private_bytes, 32));
         }
         else
         {
             spend_key.set("private", emscripten::val::null());
         }
         auto *spend_public_bytes = reinterpret_cast<const std::uint8_t *>(keys.m_account_address.m_spend_public_key.data);
-        spend_key.set("public", MoneroWasmWallet::copy_bytes_to_uint8_array(spend_public_bytes, 32));
+        spend_key.set("public", copy_bytes_to_uint8_array(spend_public_bytes, 32));
         result.set("spendKey", spend_key);
 
         return result;
@@ -629,7 +624,7 @@ public:
             }
         }
         sort_payment_details(result);
-        return vector_to_js_array(result, &MoneroWasmWallet::payment_details_to_val);
+        return vector_to_js_array(result, &payment_details_to_val);
     }
 
     emscripten::val get_transfers()
@@ -698,7 +693,7 @@ public:
             });
         }
         sort_payment_details(result);
-        return vector_to_js_array(result, &MoneroWasmWallet::payment_details_to_val);
+        return vector_to_js_array(result, &payment_details_to_val);
     }
 
     auto transfer_prepare(
@@ -887,7 +882,7 @@ public:
     {
         const auto ciphertext = m_wallet.save_multisig_tx(*require_multisig_tx_handle(handle));
         auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
-        return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes, ciphertext.size());
+        return copy_bytes_to_uint8_array(bytes, ciphertext.size());
     }
 
     auto get_multisig_tx_signers_count(WalletTxHandle handle, bool exclude_self)
@@ -916,7 +911,7 @@ public:
         require_multisig_active_and_ready();
         const auto ciphertext = m_wallet.save_multisig_tx(*require_pending_tx_handle(handle));
         auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
-        return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes, ciphertext.size());
+        return copy_bytes_to_uint8_array(bytes, ciphertext.size());
     }
 
     void destroy_tx_handle(WalletTxHandle handle)
@@ -1207,7 +1202,7 @@ public:
         require_multisig_active_and_ready();
         const auto ciphertext = m_wallet.export_multisig();
         auto *bytes = reinterpret_cast<const std::uint8_t *>(ciphertext.data());
-        return MoneroWasmWallet::copy_bytes_to_uint8_array(bytes, ciphertext.size());
+        return copy_bytes_to_uint8_array(bytes, ciphertext.size());
     }
 
     auto import_multisig(emscripten::val others_multisig_info_js)
