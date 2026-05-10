@@ -361,7 +361,7 @@ public:
         std::sort(result.begin(), result.end(), [](const WalletAddress &a, const WalletAddress &b)
                   { return a.indexMinor < b.indexMinor; });
         return vector_to_js_array(result, [](const WalletAddress &wa)
-                                  { return wallet_address_to_val(wa); });
+                                  { return emscripten::val(wa); });
     }
     void add_subaddress(uint32_t index_major, const std::string &label)
     {
@@ -1304,27 +1304,7 @@ private:
 
     static emscripten::val payment_details_to_val(const PaymentDetails &p)
     {
-        auto o = emscripten::val::object();
-        o.set("payment_id", p.payment_id);
-        o.set("type", p.type);
-        o.set("is_unlocked", p.is_unlocked);
-        o.set("block_height", p.block_height);
-        o.set("unlock_time", p.unlock_time);
-        o.set("timestamp", p.timestamp);
-        o.set("amount", p.amount);
-        o.set("tx_hash", p.tx_hash);
-        o.set("fee", p.fee);
-        o.set("destinations", vector_to_js_array(p.destinations, [](const PaymentDetails::Destination &destination)
-                                                 {
-                                                     auto item = emscripten::val::object();
-                                                     item.set("address", destination.address);
-                                                     item.set("amount", destination.amount);
-                                                     return item;
-                                                 }));
-        o.set("index_major", p.index_major);
-        o.set("index_minor", p.index_minor);
-        o.set("note", p.note);
-        return o;
+        return emscripten::val(p);
     }
 
     static void sort_payment_details(std::vector<PaymentDetails> &payments)
@@ -1347,15 +1327,6 @@ private:
                       }
                       return a.timestamp > b.timestamp;
                   });
-    }
-
-    static emscripten::val wallet_address_to_val(const WalletAddress &wa)
-    {
-        auto o = emscripten::val::object();
-        o.set("address", wa.address);
-        o.set("label", wa.label);
-        o.set("indexMinor", wa.indexMinor);
-        return o;
     }
 
     template <typename T, typename ParseItemFn>
@@ -1556,6 +1527,12 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .field("threshold", &MoneroWasmWallet::MultisigStatus::threshold)
         .field("total", &MoneroWasmWallet::MultisigStatus::total);
 
+    emscripten::value_object<MoneroWasmWallet::PaymentDetails::Destination>("PaymentDestination")
+        .field("address", &MoneroWasmWallet::PaymentDetails::Destination::address)
+        .field("amount", &MoneroWasmWallet::PaymentDetails::Destination::amount);
+
+    emscripten::register_vector<MoneroWasmWallet::PaymentDetails::Destination>("PaymentDestinationList");
+
     emscripten::value_object<struct MoneroWasmWallet::PaymentDetails>("PaymentDetails")
         .field("payment_id", &MoneroWasmWallet::PaymentDetails::payment_id)
         .field("type", &MoneroWasmWallet::PaymentDetails::type)
@@ -1566,6 +1543,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         .field("amount", &MoneroWasmWallet::PaymentDetails::amount)
         .field("tx_hash", &MoneroWasmWallet::PaymentDetails::tx_hash)
         .field("fee", &MoneroWasmWallet::PaymentDetails::fee)
+        .field("destinations", &MoneroWasmWallet::PaymentDetails::destinations)
         .field("index_major", &MoneroWasmWallet::PaymentDetails::index_major)
         .field("index_minor", &MoneroWasmWallet::PaymentDetails::index_minor)
         .field("note", &MoneroWasmWallet::PaymentDetails::note);
