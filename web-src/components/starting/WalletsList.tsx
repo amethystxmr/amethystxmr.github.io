@@ -1113,7 +1113,9 @@ function CreateNewWalletView({
     let wallet: MoneroWasmWallet | undefined;
     let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
-      releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
+      releaseWalletOpenLock = await acquireWalletOpenLock(fileName, {
+        ifAvailable: true,
+      });
       if (!releaseWalletOpenLock) {
         throw new Error(
           `Wallet "${fileName}" is currently open in another tab`,
