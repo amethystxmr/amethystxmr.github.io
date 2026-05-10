@@ -473,11 +473,6 @@ export function WalletsList() {
 
 async function closeWallet(wallet: MoneroWasmWallet): Promise<void> {
   try {
-    await wallet.close_wallet();
-  } catch (e) {
-    console.error("Error closing wallet:", e);
-  }
-  try {
     await wallet.delete();
   } catch (e) {
     console.error("Error deleting wallet:", e);

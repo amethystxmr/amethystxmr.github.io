@@ -23,7 +23,6 @@ export type WalletTxHandle = number;
 export declare class MoneroWasmWallet {
   constructor(networkType: NetworkType);
   init(): MaybePromise<boolean>;
-  close_wallet(): MaybePromise<void>;
   delete(): void;
   get_daemon_blockchain_height(): MaybePromise<bigint>;
   generate(
@@ -38,7 +37,7 @@ export declare class MoneroWasmWallet {
     password: string,
     multisigDataHex: string,
     createAddressFile: boolean,
-  ): MaybePromise<boolean>;
+  ): MaybePromise<void>;
   generate_from_keys(
     fileName: string,
     password: string,
@@ -46,19 +45,19 @@ export declare class MoneroWasmWallet {
     secretViewKey: Uint8Array,
     secretSpendKey: Uint8Array,
     createAddressFile: boolean,
-  ): MaybePromise<boolean>;
+  ): MaybePromise<void>;
   generate_view_only_from_keys(
     fileName: string,
     password: string,
     address: string,
     secretViewKey: Uint8Array,
     createAddressFile: boolean,
-  ): MaybePromise<boolean>;
+  ): MaybePromise<void>;
   is_synced(): MaybePromise<boolean>;
   store(): MaybePromise<void>;
   /** Install callback for wallet sync progress (height/timestamp); pass `null` to clear. */
   set_on_new_block_callback(callback: WalletNewBlockCallback): MaybePromise<void>;
-  set_attribute(key: string, value: string): MaybePromise<boolean>;
+  set_attribute(key: string, value: string): MaybePromise<void>;
   get_attribute(key: string): MaybePromise<string>;
   load(fileName: string, password: string): MaybePromise<void>;
   refresh(
@@ -66,7 +65,7 @@ export declare class MoneroWasmWallet {
     startHeight: number,
     checkPool: boolean,
     tryIncremental: boolean,
-    maxBlocks: number,
+    maxBlocks: number | null,
   ): MaybePromise<{ blocksFetched: number; receivedMoney: boolean }>;
   rewrite(fileName: string, password: string): MaybePromise<void>;
   get_seed(seedLanguage: string, seedPassword: string): MaybePromise<string>;
@@ -89,8 +88,8 @@ export declare class MoneroWasmWallet {
     blocks_to_unlock: bigint;
     time_to_unlock: bigint;
   }>;
-  set_refresh_from_block_height(height: bigint): MaybePromise<boolean>;
-  set_explicit_refresh_from_block_height(value: boolean): MaybePromise<boolean>;
+  set_refresh_from_block_height(height: bigint): MaybePromise<void>;
+  set_explicit_refresh_from_block_height(value: boolean): MaybePromise<void>;
   /**
    * Current height in the wallet. When it is same as get_daemon_blockchain_height() then it is synced
    */
@@ -141,12 +140,12 @@ export declare class MoneroWasmWallet {
   sign_multisig_tx(handle: WalletTxHandle): MaybePromise<string[]>;
   save_multisig_tx(handle: WalletTxHandle): MaybePromise<Uint8Array>;
   transfer_commit_tx_multisig(handle: WalletTxHandle): MaybePromise<void>;
-  destroyTxHandle(handle: WalletTxHandle): MaybePromise<void>;
+  destroy_tx_handle(handle: WalletTxHandle): MaybePromise<void>;
 
   get_multisig_status(): MaybePromise<MultisigAccountStatus>;
   has_multisig_partial_key_images(): MaybePromise<boolean>;
   has_unknown_key_images(): MaybePromise<boolean>;
-  enable_multisig(enable: boolean): MaybePromise<boolean>;
+  enable_multisig(enable: boolean): MaybePromise<void>;
   prepare_multisig(): MaybePromise<string>;
   /** Note: this function saves wallet, .keys and .address.txt files! */
   make_multisig(
@@ -160,13 +159,13 @@ export declare class MoneroWasmWallet {
   exchange_multisig_keys(password: string, kex_msgs: string[]): MaybePromise<string>;
   export_multisig(): MaybePromise<Uint8Array>;
   import_multisig(infos: Uint8Array[]): MaybePromise<number>;
-  export_key_images(filename: string, all: boolean): MaybePromise<boolean>;
+  export_key_images(filename: string, all: boolean): MaybePromise<void>;
   import_key_images(
     filename: string,
     import_when_untrusted_daemon: boolean,
   ): MaybePromise<KeyImagesImportResult>;
   verify_password(password: string): MaybePromise<boolean>;
-  rescan_blockchain(hard: boolean, keep_key_images: boolean): MaybePromise<boolean>;
+  rescan_blockchain(hard: boolean, keep_key_images: boolean): MaybePromise<void>;
 }
 
 export const FeePriority = {
