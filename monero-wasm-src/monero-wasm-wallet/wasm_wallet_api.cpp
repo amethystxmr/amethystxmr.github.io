@@ -250,7 +250,11 @@ public:
     {
         crypto::secret_key dst{};
         epee::wipeable_string words_param(words);
-        const bool r = crypto::ElectrumWords::words_to_bytes(words_param, dst, language_name);
+        // `words_to_bytes` takes `language_name` by non-const ref (it can return
+        // the detected language when an empty hint is passed). We don't read
+        // the result back, so feed it a local copy.
+        std::string language_name_inout = language_name;
+        const bool r = crypto::ElectrumWords::words_to_bytes(words_param, dst, language_name_inout);
         if (!r)
         {
             return emscripten::val::null();
