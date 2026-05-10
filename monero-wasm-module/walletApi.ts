@@ -15,6 +15,10 @@ export type MaybePromise<T> = T | Promise<T>;
 
 type IDBFS = unknown & { readonly __nominal: unique symbol };
 
+/**
+ * Invoked from WASM when a new block is seen (`uint64_t` height/timestamp).
+ * With `-sWASM_BIGINT`, Embind passes these as `bigint`.
+ */
 export type WalletNewBlockCallback =
   | ((height: bigint, timestamp: bigint) => void)
   | null;
@@ -180,6 +184,12 @@ export type FeePriority = (typeof FeePriority)[keyof typeof FeePriority];
 
 export const CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE = 10n;
 
+/** Matches Embind `PaymentDestination` (`wallet2`-style address + atomic amount). */
+export interface PaymentDestination {
+  address: string;
+  amount: bigint;
+}
+
 export interface PaymentDetails {
   payment_id: string;
   type: // Mined
@@ -201,7 +211,7 @@ export interface PaymentDetails {
   amount: bigint;
   tx_hash: string;
   fee: bigint;
-  destinations: { address: string; amount: bigint }[];
+  destinations: PaymentDestination[];
   index_major: number;
   index_minor: number;
   note: string;
@@ -279,6 +289,8 @@ interface Module {
   /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
   getExceptionMessage?(exn: number): [string, string];
   decrementExceptionRefcount?(exn: number): void;
+  /** Optional Monero logging categories (`mlog_set_categories` from wasm). */
+  mlog_set_categories?(categories: string): void;
   FS: {
     mkdir(path: string): void;
     mount(type: IDBFS, opts: Record<string, never>, mountpoint: string): void;
@@ -296,8 +308,12 @@ interface Module {
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
   get_monero_version_full(): string;
+  /**
+   * `birthday` is `polyseed_get_birthday` (wallet birthday height index), a small
+   * integer from WASM — not a Unix timestamp. Typed as `number` (Embind `val(u32)`).
+   */
   decodePolyseed(moneroPolyseed: string): {
-    birthday: bigint;
+    birthday: number;
     privateKey: Uint8Array;
     langStr: string;
   };
