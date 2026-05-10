@@ -1,5 +1,7 @@
 #!/bin/bash
-set -e 
+set -e
+
+cd "$(dirname "$0")"
 
 BUILD_TYPE="${1:-Debug}"
 case "$BUILD_TYPE" in
@@ -48,13 +50,14 @@ echo ""
 
 cp -v "$BUILD_WASM_DIR"/bin/wasm_wallet.* ../monero-wasm-module/
 
-# Point clangd at the database CMake just produced, so Go-to-Definition in
-# the IDE follows whichever build type was last compiled (Debug/Release).
-COMPILE_DB_SRC="monero-wasm-src/$BUILD_WASM_DIR/compile_commands.json"
-COMPILE_DB_LINK="../compile_commands.json"
-if [ -f "$BUILD_WASM_DIR/compile_commands.json" ]; then
-  ln -sfn "$COMPILE_DB_SRC" "$COMPILE_DB_LINK"
-  echo "Symlinked $COMPILE_DB_LINK -> $COMPILE_DB_SRC"
+# Point clangd at whichever built-wasm-*/compile_commands.json was regenerated
+# most recently (CMake re-runs configure on every invocation, so the freshest
+# db is always the one for the build that just finished). The symlink lives at
+# the workspace root so clangd's default upward-search picks it up.
+LATEST_DB=$(ls -t built-wasm-*/compile_commands.json 2>/dev/null | head -n1)
+if [ -n "$LATEST_DB" ]; then
+  ln -sfn "monero-wasm-src/$LATEST_DB" "../compile_commands.json"
+  echo "Symlinked ../compile_commands.json -> monero-wasm-src/$LATEST_DB"
 fi
 
 echo ""
