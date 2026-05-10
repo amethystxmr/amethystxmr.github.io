@@ -15,6 +15,7 @@
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
 
+#include "common/util.h"
 #include "memwipe.h"
 #include "mnemonics/electrum-words.h"
 #include "multisig/multisig.h"
@@ -39,8 +40,9 @@ static_assert(std::is_same_v<WalletPriorityBacking, unsigned int>,
 
 namespace
 {
-// Wasm is built without `-sUSE_PTHREADS`; cap Boost concurrency before static init /
-// embind touches the thread pool.
+// Wasm is built without `-sUSE_PTHREADS`; cap Boost concurrency before embind.
+// Also call `set_max_concurrency(1)` from `main()` so it runs after all static
+// initializers (see `common/util.cpp` max_concurrency init order across TUs).
 struct WasmWalletConcurrencyInit
 {
     WasmWalletConcurrencyInit()
@@ -1596,6 +1598,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
 int main()
 {
     std::cout << "Initialing module..." << std::endl;
+
+    tools::set_max_concurrency(1);
 
     // mlog_set_categories("*:TRACE");
 
