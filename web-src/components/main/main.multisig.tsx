@@ -511,7 +511,7 @@ export function MultisigTab({
                   <TextArea
                     aria-label="Multisig round 1 messages input"
                     rows={10}
-                    className="scrollbar-glass scrollbar-hidden-mobile resize-none lg:min-h-0 lg:flex-1"
+                    className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto resize-none lg:min-h-0 lg:flex-1"
                     value={othersRound1Messages}
                     onChange={(e) => setOthersRound1Messages(e.target.value)}
                   />
@@ -592,7 +592,7 @@ export function MultisigTab({
             <TextArea
               aria-label={`Multisig round ${thisRound} messages input`}
               rows={12}
-              className="scrollbar-glass scrollbar-hidden-mobile resize-none lg:min-h-0 lg:flex-1"
+              className="scrollbar-glass scrollbar-hidden-mobile overflow-y-auto resize-none lg:min-h-0 lg:flex-1"
               value={othersRoundMessages}
               onChange={(e) => setOthersRoundMessages(e.target.value)}
             />
