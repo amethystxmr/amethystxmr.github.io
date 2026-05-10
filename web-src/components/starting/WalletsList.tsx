@@ -135,6 +135,7 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
 }
 
 export function WalletsList() {
+  const alert = useAlert();
   const [view, setView] = React.useState<
     | {
         type: "initial loading";
@@ -337,7 +338,17 @@ export function WalletsList() {
           backToList();
           options.setValue("lastWalletName", null);
           setWalletHash(null);
-          void closeWallet(wallet).finally(releaseWalletOpenLock);
+          /*
+           * When true: tear down wallet on worker only (same-tab second open may break).
+           * When false: reload workaround after exit.
+           */
+          const WALLET_TERMINATING_FIXED = false;
+          if (WALLET_TERMINATING_FIXED) {
+            void closeWallet(wallet).finally(releaseWalletOpenLock);
+          } else {
+            void alert("Loading");
+            window.location.reload();
+          }
         }}
       />
     );
