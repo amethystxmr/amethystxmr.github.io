@@ -35,9 +35,10 @@ function resolveMonerodPath(): string {
   }
 
   const candidates = [
+    path.resolve(process.cwd(), "bin/monerod"),
+    "bin/monerod",
     "monero/build/debug/bin/monerod",
     "monero-wasm-src/monero/build/debug/bin/monerod",
-    "bin/monerod",
     "monerod",
   ];
 
