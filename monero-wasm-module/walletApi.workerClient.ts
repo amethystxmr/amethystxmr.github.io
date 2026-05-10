@@ -32,6 +32,7 @@ export type FeePriority = FeePriorityType;
 
 export type {
   KeyImagesImportResult,
+  MaybePromise,
   MultisigAccountStatus,
   NetworkType,
   PaymentDetails,
@@ -41,7 +42,7 @@ export type {
   WalletKeys,
   WalletTxHandle,
   MoneroWasmWallet,
-};
+} from "./walletApi";
 
 export type RemoteApi = Comlink.Remote<typeof exposedApi>;
 

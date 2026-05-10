@@ -10,6 +10,9 @@ export const NetworkTypes = {
 
 export type NetworkType = (typeof NetworkTypes)[keyof typeof NetworkTypes];
 
+/** Embind + Asyncify may return a plain value (sync path) or a Promise (after a yield). */
+export type MaybePromise<T> = T | Promise<T>;
+
 type IDBFS = unknown & { readonly __nominal: unique symbol };
 
 export type WalletNewBlockCallback =
@@ -19,23 +22,23 @@ export type WalletTxHandle = number;
 
 export declare class MoneroWasmWallet {
   constructor(networkType: NetworkType);
-  init(): Promise<boolean>;
-  close_wallet(): Promise<void>;
+  init(): MaybePromise<boolean>;
+  close_wallet(): MaybePromise<void>;
   delete(): void;
-  get_daemon_blockchain_height(): Promise<bigint>;
+  get_daemon_blockchain_height(): MaybePromise<bigint>;
   generate(
     fileName: string,
     password: string,
     secret32: Uint8Array,
     recover: boolean,
     two_random: boolean,
-  ): Promise<Uint8Array>;
+  ): MaybePromise<Uint8Array>;
   generate_multisig_restore(
     fileName: string,
     password: string,
     multisigDataHex: string,
     createAddressFile: boolean,
-  ): Promise<boolean>;
+  ): MaybePromise<boolean>;
   generate_from_keys(
     fileName: string,
     password: string,
@@ -43,127 +46,127 @@ export declare class MoneroWasmWallet {
     secretViewKey: Uint8Array,
     secretSpendKey: Uint8Array,
     createAddressFile: boolean,
-  ): Promise<boolean>;
+  ): MaybePromise<boolean>;
   generate_view_only_from_keys(
     fileName: string,
     password: string,
     address: string,
     secretViewKey: Uint8Array,
     createAddressFile: boolean,
-  ): Promise<boolean>;
-  is_synced(): Promise<boolean>;
-  store(): Promise<void>;
+  ): MaybePromise<boolean>;
+  is_synced(): MaybePromise<boolean>;
+  store(): MaybePromise<void>;
   /** Install callback for wallet sync progress (height/timestamp); pass `null` to clear. */
-  set_on_new_block_callback(callback: WalletNewBlockCallback): Promise<void>;
-  set_attribute(key: string, value: string): Promise<boolean>;
-  get_attribute(key: string): Promise<string>;
-  load(fileName: string, password: string): Promise<void>;
+  set_on_new_block_callback(callback: WalletNewBlockCallback): MaybePromise<void>;
+  set_attribute(key: string, value: string): MaybePromise<boolean>;
+  get_attribute(key: string): MaybePromise<string>;
+  load(fileName: string, password: string): MaybePromise<void>;
   refresh(
     isTrustedWallet: boolean,
     startHeight: number,
     checkPool: boolean,
     tryIncremental: boolean,
     maxBlocks: number,
-  ): Promise<{ blocksFetched: number; receivedMoney: boolean }>;
-  rewrite(fileName: string, password: string): Promise<void>;
-  get_seed(seedLanguage: string, seedPassword: string): Promise<string>;
-  get_multisig_seed(seedPassword: string): Promise<string>;
-  get_address(): Promise<string>;
-  get_network_type(): Promise<NetworkType>;
-  allow_mismatched_daemon_version(allowMismatch: boolean): Promise<void>;
-  watch_only(): Promise<boolean>;
-  is_deterministic(): Promise<boolean>;
-  get_wallet_file(): Promise<string>;
-  get_tx_proof(txid: string, dstaddress: string, note: string): Promise<string>;
-  get_tx_key(txid: string): Promise<string>;
-  get_tx_keys_for_address(txid: string, dstaddress: string): Promise<string[]>;
-  balance(index_major: number, strict: boolean): Promise<bigint>;
+  ): MaybePromise<{ blocksFetched: number; receivedMoney: boolean }>;
+  rewrite(fileName: string, password: string): MaybePromise<void>;
+  get_seed(seedLanguage: string, seedPassword: string): MaybePromise<string>;
+  get_multisig_seed(seedPassword: string): MaybePromise<string>;
+  get_address(): MaybePromise<string>;
+  get_network_type(): MaybePromise<NetworkType>;
+  allow_mismatched_daemon_version(allowMismatch: boolean): MaybePromise<void>;
+  watch_only(): MaybePromise<boolean>;
+  is_deterministic(): MaybePromise<boolean>;
+  get_wallet_file(): MaybePromise<string>;
+  get_tx_proof(txid: string, dstaddress: string, note: string): MaybePromise<string>;
+  get_tx_key(txid: string): MaybePromise<string>;
+  get_tx_keys_for_address(txid: string, dstaddress: string): MaybePromise<string[]>;
+  balance(index_major: number, strict: boolean): MaybePromise<bigint>;
   unlocked_balance(
     index_major: number,
     strict: boolean,
-  ): Promise<{
+  ): MaybePromise<{
     balance: bigint;
     blocks_to_unlock: bigint;
     time_to_unlock: bigint;
   }>;
-  set_refresh_from_block_height(height: bigint): Promise<boolean>;
-  set_explicit_refresh_from_block_height(value: boolean): Promise<boolean>;
+  set_refresh_from_block_height(height: bigint): MaybePromise<boolean>;
+  set_explicit_refresh_from_block_height(value: boolean): MaybePromise<boolean>;
   /**
    * Current height in the wallet. When it is same as get_daemon_blockchain_height() then it is synced
    */
-  get_blockchain_current_height(): Promise<bigint>;
+  get_blockchain_current_height(): MaybePromise<bigint>;
   get_blockchain_height_by_date(
     year: number,
     month: number,
     day: number,
-  ): Promise<bigint>;
-  words_to_bytes(words: string, language: string): Promise<Uint8Array | null>;
-  get_payments(minHeight: bigint, maxHeight: bigint): Promise<PaymentDetails[]>;
-  get_payments_mempool(): Promise<PaymentDetails[]>;
-  get_num_subaddresses(index_major: number): Promise<number>;
+  ): MaybePromise<bigint>;
+  words_to_bytes(words: string, language: string): MaybePromise<Uint8Array | null>;
+  get_payments(minHeight: bigint, maxHeight: bigint): MaybePromise<PaymentDetails[]>;
+  get_payments_mempool(): MaybePromise<PaymentDetails[]>;
+  get_num_subaddresses(index_major: number): MaybePromise<number>;
   get_subaddress_as_str(
     index_major: number,
     index_minor: number,
-  ): Promise<string>;
+  ): MaybePromise<string>;
   get_subaddress_label(
     index_major: number,
     index_minor: number,
-  ): Promise<string>;
-  get_wallet_addresses(accountId: number): Promise<WalletAddress[]>;
-  get_keys(accountIdx: number): Promise<WalletKeys>;
-  add_subaddress(index_major: number, label: string): Promise<void>;
+  ): MaybePromise<string>;
+  get_wallet_addresses(accountId: number): MaybePromise<WalletAddress[]>;
+  get_keys(accountIdx: number): MaybePromise<WalletKeys>;
+  add_subaddress(index_major: number, label: string): MaybePromise<void>;
   transfer_prepare(
     destinations: string[],
     amounts: bigint[],
     priority: FeePriority,
     subtractFeeFromIndex: number | null,
-  ): Promise<WalletTxHandle>;
+  ): MaybePromise<WalletTxHandle>;
   transfer_prepare_sweep_all(
     destination: string,
     priority: FeePriority,
-  ): Promise<WalletTxHandle>;
-  get_transfers(): Promise<TransferItem[]>;
-  get_transfers_info(handle: WalletTxHandle): Promise<TransferInfoItem[]>;
-  transfer_commit_tx(handle: WalletTxHandle): Promise<void>;
-  save_multisig_tx_pending_tx(handle: WalletTxHandle): Promise<Uint8Array>;
+  ): MaybePromise<WalletTxHandle>;
+  get_transfers(): MaybePromise<TransferItem[]>;
+  get_transfers_info(handle: WalletTxHandle): MaybePromise<TransferInfoItem[]>;
+  transfer_commit_tx(handle: WalletTxHandle): MaybePromise<void>;
+  save_multisig_tx_pending_tx(handle: WalletTxHandle): MaybePromise<Uint8Array>;
   load_multisig_tx(
     data: Uint8Array,
     do_accept: boolean,
-  ): Promise<WalletTxHandle>;
-  get_multisig_tx_set_info(handle: WalletTxHandle): Promise<TransferInfoItem[]>;
+  ): MaybePromise<WalletTxHandle>;
+  get_multisig_tx_set_info(handle: WalletTxHandle): MaybePromise<TransferInfoItem[]>;
   get_multisig_tx_signers_count(
     handle: WalletTxHandle,
     excludeSelf: boolean,
-  ): Promise<number>;
-  sign_multisig_tx(handle: WalletTxHandle): Promise<string[]>;
-  save_multisig_tx(handle: WalletTxHandle): Promise<Uint8Array>;
-  transfer_commit_tx_multisig(handle: WalletTxHandle): Promise<void>;
-  destroyTxHandle(handle: WalletTxHandle): Promise<void>;
+  ): MaybePromise<number>;
+  sign_multisig_tx(handle: WalletTxHandle): MaybePromise<string[]>;
+  save_multisig_tx(handle: WalletTxHandle): MaybePromise<Uint8Array>;
+  transfer_commit_tx_multisig(handle: WalletTxHandle): MaybePromise<void>;
+  destroyTxHandle(handle: WalletTxHandle): MaybePromise<void>;
 
-  get_multisig_status(): Promise<MultisigAccountStatus>;
-  has_multisig_partial_key_images(): Promise<boolean>;
-  has_unknown_key_images(): Promise<boolean>;
-  enable_multisig(enable: boolean): Promise<boolean>;
-  prepare_multisig(): Promise<string>;
+  get_multisig_status(): MaybePromise<MultisigAccountStatus>;
+  has_multisig_partial_key_images(): MaybePromise<boolean>;
+  has_unknown_key_images(): MaybePromise<boolean>;
+  enable_multisig(enable: boolean): MaybePromise<boolean>;
+  prepare_multisig(): MaybePromise<string>;
   /** Note: this function saves wallet, .keys and .address.txt files! */
   make_multisig(
     password: string,
     initial_kex_msgs: string[],
     threshold: number,
-  ): Promise<string>;
+  ): MaybePromise<string>;
   /**
    * Note: this also saves files.
    */
-  exchange_multisig_keys(password: string, kex_msgs: string[]): Promise<string>;
-  export_multisig(): Promise<Uint8Array>;
-  import_multisig(infos: Uint8Array[]): Promise<number>;
-  export_key_images(filename: string, all: boolean): Promise<boolean>;
+  exchange_multisig_keys(password: string, kex_msgs: string[]): MaybePromise<string>;
+  export_multisig(): MaybePromise<Uint8Array>;
+  import_multisig(infos: Uint8Array[]): MaybePromise<number>;
+  export_key_images(filename: string, all: boolean): MaybePromise<boolean>;
   import_key_images(
     filename: string,
     import_when_untrusted_daemon: boolean,
-  ): Promise<KeyImagesImportResult>;
-  verify_password(password: string): Promise<boolean>;
-  rescan_blockchain(hard: boolean, keep_key_images: boolean): Promise<boolean>;
+  ): MaybePromise<KeyImagesImportResult>;
+  verify_password(password: string): MaybePromise<boolean>;
+  rescan_blockchain(hard: boolean, keep_key_images: boolean): MaybePromise<boolean>;
 }
 
 export const FeePriority = {
@@ -423,7 +426,7 @@ export function setHttpFetchCallback(callback: HttpFetchCallback | null) {
 export function setWalletNewBlockCallback(
   wallet: MoneroWasmWallet,
   callback: WalletNewBlockCallback,
-) {
+): MaybePromise<void> {
   return wallet.set_on_new_block_callback(callback);
 }
 

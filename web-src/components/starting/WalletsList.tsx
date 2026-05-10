@@ -1182,8 +1182,7 @@ function CreateNewWalletView({
     }
     let cancelled = false;
     const wallet = state.wallet;
-    wallet
-      .get_daemon_blockchain_height()
+    Promise.resolve(wallet.get_daemon_blockchain_height())
       .then((daemonHeight) => {
         if (cancelled) {
           return;

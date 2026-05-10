@@ -364,7 +364,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
         // The point of having delay here is to allow to get fresh statuses right after refresh
         // If we have refresh in the end of the loop then we will just wait
-        const isSynced = await wallet.is_synced().catch(() => null);
+        const isSynced = await Promise.resolve(wallet.is_synced()).catch(
+          () => null,
+        );
         if (cancelled) {
           return;
         }
@@ -375,9 +377,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           console.info("Wallet is synced, fetching mempool...");
           {
             // On non-initial refresh also get mempool payments
-            const mempoolPayments = await wallet
-              .get_payments_mempool()
-              .catch(() => null);
+            const mempoolPayments = await Promise.resolve(
+              wallet.get_payments_mempool(),
+            ).catch(() => null);
             if (cancelled) {
               return;
             }
