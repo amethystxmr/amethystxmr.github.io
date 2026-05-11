@@ -125,6 +125,22 @@ async function main() {
     await client.connect(transport);
     const { tools: mcpTools } = await client.listTools();
 
+    /** Read-only tools enough for CI review; keeps GitHub Models requests under small token caps. */
+    const rawGithubTools = (process.env.LLM_GITHUB_MCP_TOOLS || "").trim();
+    const githubToolAllowlist = new Set(
+      rawGithubTools
+        ? rawGithubTools.split(",").map((s) => s.trim()).filter(Boolean)
+        : [
+            "read_text_file",
+            "read_multiple_files",
+            "list_directory",
+            "get_file_info",
+            "search_files",
+          ],
+    );
+    const mcpToolsGithub = mcpTools.filter((t) => githubToolAllowlist.has(t.name));
+    const toolsForGithubList = mcpToolsGithub.length > 0 ? mcpToolsGithub : mcpTools;
+
     /** Full JSON Schema from MCP (large). */
     const openaiToolsFull = mcpTools.map((t) => ({
       type: "function",
@@ -192,11 +208,11 @@ async function main() {
       return out;
     }
 
-    const githubToolsCompact = mcpTools.map((t) => ({
+    const githubToolsCompact = toolsForGithubList.map((t) => ({
       type: "function",
       function: {
         name: t.name,
-        description: String(t.description ?? "").slice(0, 500),
+        description: String(t.description ?? "").slice(0, 120),
         parameters: githubSlimParameters(
           typeof t.inputSchema === "object" && t.inputSchema !== null ? t.inputSchema : {},
         ),
