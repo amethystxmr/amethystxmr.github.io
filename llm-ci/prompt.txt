@@ -22,6 +22,8 @@ FAIL: C++ `foo_bar` not declared on `MoneroWasmWallet` in walletApi.ts
 
 Verify that the runtime API exposed from C++ Embind in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` matches `monero-wasm-module/walletApi.ts`, so callers using the TypeScript declarations will not crash at runtime.
 
+You **must** read both of these exact paths from the workspace with your tools (they exist in this repo at HEAD): `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` and `monero-wasm-module/walletApi.ts`. Do **not** output a `FAIL` claiming there are “no C++ files” or that sources are missing unless `read_text_file` (or equivalent) actually failed for those paths. If both files read successfully, compare bindings vs TypeScript as below.
+
 After you have loaded both files at the **PR head** state from the workspace, compare at least:
 
 - Every `MoneroWasmWallet` method (and any other exported wallet entrypoints wired in this TU) that reaches JavaScript must have a corresponding declaration on `export declare class MoneroWasmWallet` (or the same module’s related exports used by the worker/TS API) with the same callable name from JS.
@@ -35,4 +37,6 @@ If you find any mismatch, omission, or ambiguity that would plausibly cause a ru
 
 ### No synchronous XHR in the diff
 
-In the PR diff: fail if any added or modified code uses synchronous XMLHttpRequest (e.g. `open(..., false)` or patterns that force sync network).
+Read `.llm-ci-pr.diff`. Emit a `FAIL:` line **only** if the diff shows added or modified code that uses synchronous XMLHttpRequest (e.g. `open(..., false)` or patterns that force synchronous network I/O).
+
+If you scanned the diff and **no** sync XHR appears in added/changed lines, this check **passes** — do **not** mention it on a `FAIL:` line (absence of violations is not a failure). Contributes to a single `OK` when all other checks pass too.

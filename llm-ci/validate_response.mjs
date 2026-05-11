@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Validate LLM CI stdout: exactly OK, or one or more FAIL: lines — nothing else.
- * Exit 0 if valid, 1 otherwise.
+ * Validate LLM CI stdout shape, then gate CI on review outcome.
+ * - Malformed output → exit 1
+ * - Exactly one line "OK" → exit 0 (review passed)
+ * - One or more well-formed FAIL: lines → exit 1 (review failed; job must go red)
  */
 import { readFileSync } from "node:fs";
 
@@ -44,4 +46,8 @@ for (const ln of lines) {
   }
 }
 
-process.exit(0);
+for (const ln of lines) {
+  console.error(ln);
+}
+console.error("LLM CI: review reported one or more failures (see FAIL lines above).");
+process.exit(1);
