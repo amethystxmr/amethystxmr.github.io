@@ -22,11 +22,13 @@ FAIL: C++ `foo_bar` not declared on `MoneroWasmWallet` in walletApi.ts
 
 Verify that the runtime API exposed from C++ Embind in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` matches `monero-wasm-module/walletApi.ts`, so callers using the TypeScript declarations will not crash at runtime.
 
-You **must** read both of these exact paths from the workspace with your tools (they exist in this repo at HEAD): `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` and `monero-wasm-module/walletApi.ts`. Do **not** output a `FAIL` claiming there are “no C++ files” or that sources are missing unless `read_text_file` (or equivalent) actually failed for those paths. If both files read successfully, compare bindings vs TypeScript as below.
+**Authoritative Embind JS names:** CI writes `llm-ci/embind-wallet.functions.txt` — **one exported JS method name per line** (sorted, unique), extracted from every `.function("name", …)` on `MoneroWasmWallet` in `wasm_wallet_api.cpp`. **Read that file** when matching TypeScript `MoneroWasmWallet` to C++ Embind. The `.cpp` is very long and MCP/tool responses in CI may be **truncated**; do **not** infer “missing in C++” from a partial view of the source alone. **Do not** emit `FAIL: No matching method for \`foo\` in C++` unless `foo` is absent from `embind-wallet.functions.txt` **and** absent from a deliberate read of the Embind binding section.
 
-After you have loaded both files at the **PR head** state from the workspace, compare at least:
+You **must** read `monero-wasm-module/walletApi.ts` and at least one of: `llm-ci/embind-wallet.functions.txt` **or** the relevant section of `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` that contains the Embind registrations. Do **not** output a `FAIL` claiming sources are missing unless the read actually failed.
 
-- Every `MoneroWasmWallet` method (and any other exported wallet entrypoints wired in this TU) that reaches JavaScript must have a corresponding declaration on `export declare class MoneroWasmWallet` (or the same module’s related exports used by the worker/TS API) with the same callable name from JS.
+After you have the Embind name list and TypeScript declarations at **PR head**, compare at least:
+
+- Every `MoneroWasmWallet` method on `export declare class MoneroWasmWallet` that should be backed by this TU must appear as a `.function("same_js_name", …)` in the Embind data you loaded (from `embind-wallet.functions.txt` or the `.cpp` binding section), and vice versa for exports you treat as part of this surface.
 - Parameter count and JS-visible types must line up (e.g. `std::string` ↔ `string`, `bool`, numeric widths, `emscripten::val` buffers ↔ `Uint8Array` where that is the contract, `uint64_t` / wallet heights ↔ `bigint` where TS uses `bigint`, Embind `optional` / nullable ↔ optional args or `| null` as appropriate).
 - Return shape: sync vs async — if C++ uses Asyncify / returns a Promise on some paths, TS must use `MaybePromise<…>` (or `Promise`) for that method; do not mark a method as sync-only in TS if Embind can yield.
 - Free functions, enums, or structs registered in the same binding block that `walletApi.ts` models must also match.

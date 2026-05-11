@@ -115,6 +115,7 @@ async function main() {
       "",
       "Read before concluding:",
       "- llm-ci/prompt.txt — checks and exact OK / FAIL: output format",
+      "- llm-ci/embind-wallet.functions.txt — CI list of Embind-exported JS method names (one per line)",
       "- .llm-ci-pr.diff — PR diff (base...head)",
     ].join("\n");
   }

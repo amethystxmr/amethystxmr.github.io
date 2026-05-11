@@ -9,3 +9,4 @@ dist-native
 monero-wasm-src/compile_commands.json
 llm-ci/mcp-access.log
 llm-ci/response.txt
+llm-ci/embind-wallet.functions.txt
