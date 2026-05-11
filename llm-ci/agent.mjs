@@ -44,20 +44,43 @@ function inferenceUrls() {
   return urls;
 }
 
+function truthyEnv(v) {
+  return /^(1|true|yes)$/i.test((v || "").trim());
+}
+
+async function postJson(url, body, headers) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} (${url}): ${text || "(empty body)"}`);
+  }
+  return JSON.parse(text);
+}
+
 async function main() {
   const workspace = process.env.LLM_CI_WORKSPACE || process.cwd();
   const openaiKey = (process.env.OPENAI_API_KEY || "").trim();
+  const useOllama = truthyEnv(process.env.USE_OLLAMA);
   const pat = (process.env.LLM_INFERENCE_TOKEN || "").trim();
   const githubInferenceToken = pat || (process.env.GITHUB_TOKEN || "").trim();
 
-  if (!openaiKey && !githubInferenceToken) {
+  if (!openaiKey && !useOllama && !githubInferenceToken) {
     throw new Error(
-      "Set repository secret OPENAI_API_KEY (OpenAI API, reliable in CI), or LLM_MODELS_PAT / enable GitHub Models for Actions and use GITHUB_TOKEN.",
+      "No inference credentials: set USE_OLLAMA (default in CI), OPENAI_API_KEY, or GitHub Models token (LLM_MODELS_PAT / GITHUB_TOKEN).",
     );
   }
 
   const githubModel = process.env.LLM_MODEL || "openai/gpt-4o-mini";
   const openaiModel = process.env.OPENAI_LLM_MODEL || "gpt-4o-mini";
+  const ollamaModel = process.env.OLLAMA_MODEL || "llama3.2:1b";
+  const ollamaUrl = (
+    process.env.OLLAMA_URL || "http://127.0.0.1:11434/v1/chat/completions"
+  ).trim();
+
   const promptPath = resolvePromptPath();
   const systemPrompt = process.env.LLM_CI_SYSTEM ?? "";
   const userPrompt = readFileSync(promptPath, "utf8");
@@ -94,36 +117,34 @@ async function main() {
     }));
 
     async function chat(messages) {
-      const bodyObj = {
-        model: openaiKey ? openaiModel : githubModel,
+      const base = {
         messages,
         tools: openaiTools,
         tool_choice: "auto",
-        max_tokens: 16384,
+        max_tokens: openaiKey || useOllama ? 8192 : 16384,
         temperature: 0.2,
       };
-      const body = JSON.stringify(bodyObj);
 
       if (openaiKey) {
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${openaiKey}`,
-            "Content-Type": "application/json",
-          },
-          body,
-        });
-        const text = await res.text();
-        if (!res.ok) {
-          throw new Error(`OpenAI chat HTTP ${res.status}: ${text || "(empty body)"}`);
-        }
-        return JSON.parse(text);
+        return postJson(
+          "https://api.openai.com/v1/chat/completions",
+          { ...base, model: openaiModel },
+          { Authorization: `Bearer ${openaiKey}` },
+        );
       }
 
+      if (useOllama) {
+        return postJson(
+          ollamaUrl,
+          { ...base, model: ollamaModel, stream: false },
+          {},
+        );
+      }
+
+      const body = JSON.stringify({ ...base, model: githubModel });
       const headers = {
         Authorization: `Bearer ${githubInferenceToken}`,
         Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
         "X-GitHub-Api-Version": process.env.GITHUB_API_VERSION || "2022-11-28",
         "User-Agent": "amethyst-llm-ci/1.0 (GitHub Actions)",
       };
@@ -138,7 +159,7 @@ async function main() {
         }
         const hint =
           res.status === 403
-            ? " For org repos, enable GitHub Models under Organization settings → Models → Development, allow this model, and ensure workflows may use Models; or set repository secret LLM_MODELS_PAT (PAT with models:read) as a fallback bearer, or set OPENAI_API_KEY to use OpenAI instead."
+            ? " Enable GitHub Models for the org, set LLM_MODELS_PAT, OPENAI_API_KEY, or USE_OLLAMA=true (default in this repo’s workflow)."
             : "";
         lastErr = new Error(
           `GitHub Models inference HTTP ${res.status} (${url}): ${text || "(empty body)"}${hint}`,
