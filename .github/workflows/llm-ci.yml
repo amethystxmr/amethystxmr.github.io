@@ -3,14 +3,14 @@ name: LLM check
 on:
   pull_request:
 
+permissions:
+  contents: read
+  models: read
+  pull-requests: write
+
 jobs:
   llm-check:
     runs-on: ubuntu-latest
-
-    permissions:
-      models: read
-      contents: read
-      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4

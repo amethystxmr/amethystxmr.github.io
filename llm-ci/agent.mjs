@@ -27,6 +27,23 @@ function assistantTextContent(content) {
   return "";
 }
 
+function inferenceUrls() {
+  if (process.env.GITHUB_MODELS_INFERENCE_URL) {
+    return [process.env.GITHUB_MODELS_INFERENCE_URL];
+  }
+  const urls = ["https://models.github.ai/inference/chat/completions"];
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (repo?.includes("/")) {
+    const owner = repo.split("/")[0];
+    if (owner) {
+      urls.push(
+        `https://models.github.ai/orgs/${encodeURIComponent(owner)}/inference/chat/completions`,
+      );
+    }
+  }
+  return urls;
+}
+
 async function main() {
   const workspace = process.env.LLM_CI_WORKSPACE || process.cwd();
   const token = process.env.GITHUB_TOKEN;
@@ -71,31 +88,38 @@ async function main() {
     }));
 
     async function chat(messages) {
-      const res = await fetch(
-        "https://models.github.ai/inference/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
-          body: JSON.stringify({
-            model,
-            messages,
-            tools: openaiTools,
-            tool_choice: "auto",
-            max_tokens: 16384,
-            temperature: 0.2,
-          }),
-        },
-      );
-      if (!res.ok) {
+      const body = JSON.stringify({
+        model,
+        messages,
+        tools: openaiTools,
+        tool_choice: "auto",
+        max_tokens: 16384,
+        temperature: 0.2,
+      });
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      };
+      const urls = inferenceUrls();
+      let lastErr;
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        const res = await fetch(url, { method: "POST", headers, body });
         const text = await res.text();
-        throw new Error(`GitHub Models inference HTTP ${res.status}: ${text}`);
+        if (res.ok) {
+          return JSON.parse(text);
+        }
+        lastErr = new Error(
+          `GitHub Models inference HTTP ${res.status} (${url}): ${text || "(empty body)"}`,
+        );
+        if (res.status === 403 && i < urls.length - 1) {
+          continue;
+        }
+        throw lastErr;
       }
-      return res.json();
+      throw lastErr;
     }
 
     function toolResultToString(result) {
