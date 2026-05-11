@@ -7,3 +7,5 @@ tests/.artifacts
 dist-native
 /compile_commands.json
 monero-wasm-src/compile_commands.json
+llm-ci/mcp-access.log
+llm-ci/response.txt

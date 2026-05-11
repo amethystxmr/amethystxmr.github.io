@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -123,6 +123,13 @@ async function main() {
     process.env.MCP_FILESYSTEM_SERVER_PACKAGE ??
     "@modelcontextprotocol/server-filesystem@2026.1.14";
 
+  const mcpLogRaw = (process.env.LLM_CI_MCP_LOG || "").trim();
+  const mcpLogPath = mcpLogRaw
+    ? isAbsolute(mcpLogRaw)
+      ? mcpLogRaw
+      : join(workspace, mcpLogRaw)
+    : join(workspace, "llm-ci", "mcp-access.log");
+
   const transport = new StdioClientTransport({
     command: "npx",
     args: ["-y", fsServer, workspace],
@@ -136,6 +143,7 @@ async function main() {
 
   try {
     await client.connect(transport);
+    writeFileSync(mcpLogPath, "", "utf8");
     const { tools: mcpTools } = await client.listTools();
 
     /** Read-only tools enough for CI review; keeps GitHub Models requests under small token caps. */
@@ -379,6 +387,8 @@ async function main() {
         } catch {
           args = {};
         }
+        const logLine = `${new Date().toISOString()}\t${name}\t${JSON.stringify(args)}\n`;
+        appendFileSync(mcpLogPath, logLine, "utf8");
         const raw = await client.callTool({ name, arguments: args });
         const content = clampGithubToolPayload(toolResultToString(raw));
         messages.push({

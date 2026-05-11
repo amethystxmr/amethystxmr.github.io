@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# CI / quick checks: only sync git submodules (no patches, depends, or translations).
+if [[ "${LLM_CI_SUBMODULES_ONLY:-}" == "1" ]]; then
+  git submodule update --init --recursive --force
+  exit 0
+fi
+
 # Always reset submodules to the recorded commits before applying patches.
 git submodule update --init --recursive --force
 

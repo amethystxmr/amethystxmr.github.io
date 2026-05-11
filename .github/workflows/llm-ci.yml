@@ -18,6 +18,26 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
 
+      - name: Submodule pointer for cache key
+        id: submod-key
+        run: |
+          set -euo pipefail
+          sha="$(git ls-tree HEAD monero-wasm-src/monero 2>/dev/null | awk '{print $3}' || echo none)"
+          echo "monero=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Monero submodule (for LLM / init.sh submodule sync)
+        uses: actions/cache@v4
+        id: cache-monero-submodule
+        with:
+          path: monero-wasm-src/monero
+          key: llm-ci-monero-sub-${{ runner.os }}-${{ hashFiles('.gitmodules') }}-${{ steps.submod-key.outputs.monero }}
+
+      - name: Init submodules (cached init.sh fast path)
+        run: |
+          set -euo pipefail
+          export LLM_CI_SUBMODULES_ONLY=1
+          bash monero-wasm-src/init.sh
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -64,6 +84,18 @@ jobs:
             echo "(file missing — review step did not produce response.txt)"
           fi
           echo "======== end LLM CI OUTPUT ========"
+
+      - name: Print MCP filesystem access log
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "======== MCP tool calls (llm-ci/mcp-access.log) ========"
+          if [ -f llm-ci/mcp-access.log ]; then
+            cat llm-ci/mcp-access.log
+          else
+            echo "(no MCP log — review may not have run or no tools were called)"
+          fi
+          echo "======== end MCP tool calls ========"
 
       - id: validate
         name: Validate LLM CI response
