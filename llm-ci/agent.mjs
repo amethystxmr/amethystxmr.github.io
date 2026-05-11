@@ -46,13 +46,18 @@ function inferenceUrls() {
 
 async function main() {
   const workspace = process.env.LLM_CI_WORKSPACE || process.cwd();
+  const openaiKey = (process.env.OPENAI_API_KEY || "").trim();
   const pat = (process.env.LLM_INFERENCE_TOKEN || "").trim();
-  const token = pat || process.env.GITHUB_TOKEN;
-  if (!token) {
-    throw new Error("GITHUB_TOKEN or LLM_INFERENCE_TOKEN is required");
+  const githubInferenceToken = pat || (process.env.GITHUB_TOKEN || "").trim();
+
+  if (!openaiKey && !githubInferenceToken) {
+    throw new Error(
+      "Set repository secret OPENAI_API_KEY (OpenAI API, reliable in CI), or LLM_MODELS_PAT / enable GitHub Models for Actions and use GITHUB_TOKEN.",
+    );
   }
 
-  const model = process.env.LLM_MODEL || "openai/gpt-4o-mini";
+  const githubModel = process.env.LLM_MODEL || "openai/gpt-4o-mini";
+  const openaiModel = process.env.OPENAI_LLM_MODEL || "gpt-4o-mini";
   const promptPath = resolvePromptPath();
   const systemPrompt = process.env.LLM_CI_SYSTEM ?? "";
   const userPrompt = readFileSync(promptPath, "utf8");
@@ -89,16 +94,34 @@ async function main() {
     }));
 
     async function chat(messages) {
-      const body = JSON.stringify({
-        model,
+      const bodyObj = {
+        model: openaiKey ? openaiModel : githubModel,
         messages,
         tools: openaiTools,
         tool_choice: "auto",
         max_tokens: 16384,
         temperature: 0.2,
-      });
+      };
+      const body = JSON.stringify(bodyObj);
+
+      if (openaiKey) {
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${openaiKey}`,
+            "Content-Type": "application/json",
+          },
+          body,
+        });
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(`OpenAI chat HTTP ${res.status}: ${text || "(empty body)"}`);
+        }
+        return JSON.parse(text);
+      }
+
       const headers = {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${githubInferenceToken}`,
         Accept: "application/vnd.github+json",
         "Content-Type": "application/json",
         "X-GitHub-Api-Version": process.env.GITHUB_API_VERSION || "2022-11-28",
@@ -115,7 +138,7 @@ async function main() {
         }
         const hint =
           res.status === 403
-            ? " For org repos, enable GitHub Models under Organization settings → Models → Development, allow this model, and ensure workflows may use Models; or set repository secret LLM_MODELS_PAT (PAT with models:read) as a fallback bearer."
+            ? " For org repos, enable GitHub Models under Organization settings → Models → Development, allow this model, and ensure workflows may use Models; or set repository secret LLM_MODELS_PAT (PAT with models:read) as a fallback bearer, or set OPENAI_API_KEY to use OpenAI instead."
             : "";
         lastErr = new Error(
           `GitHub Models inference HTTP ${res.status} (${url}): ${text || "(empty body)"}${hint}`,

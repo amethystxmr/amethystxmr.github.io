@@ -46,6 +46,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLM_INFERENCE_TOKEN: ${{ secrets.LLM_MODELS_PAT }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_LLM_MODEL: gpt-4o-mini
           LLM_MODEL: openai/gpt-4o-mini
           LLM_CI_WORKSPACE: ${{ github.workspace }}
           LLM_CI_SYSTEM: |
