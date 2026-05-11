@@ -168,6 +168,7 @@ async function main() {
       const headers = {
         Authorization: `Bearer ${githubInferenceToken}`,
         Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
         "X-GitHub-Api-Version": process.env.GITHUB_API_VERSION || "2022-11-28",
         "User-Agent": "amethyst-llm-ci/1.0 (GitHub Actions)",
       };
@@ -182,7 +183,7 @@ async function main() {
         }
         const hint =
           res.status === 403
-            ? " Enable GitHub Models for the org, set LLM_MODELS_PAT, OPENAI_API_KEY, or USE_OLLAMA=true (default in this repo’s workflow)."
+            ? " Enable GitHub Models for the org/repo, set LLM_MODELS_PAT, OPENAI_API_KEY, or USE_OLLAMA=true for local/Ollama CI."
             : "";
         lastErr = new Error(
           `GitHub Models inference HTTP ${res.status} (${url}): ${text || "(empty body)"}${hint}`,
