@@ -104,7 +104,7 @@ jobs:
           echo "Changed files:"
           git diff --stat "$PR_BASE_SHA...$PR_HEAD_SHA"
 
-      - name: Run Codex review
+      - name: Start Codex
         id: run_codex
         uses: openai/codex-action@v1
         env:
@@ -115,11 +115,32 @@ jobs:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: .github/codex/prompt.txt
-          output-file: codex-output.json
-          output-schema-file: .github/codex/output-schema.json
           sandbox: read-only
           safety-strategy: drop-sudo
+          codex-home: /home/runner/.codex
+
+      - name: Run Codex review
+        id: codex_exec
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -o pipefail
+          codex exec \
+            --skip-git-repo-check \
+            --cd "$GITHUB_WORKSPACE" \
+            --output-last-message codex-output.json \
+            --output-schema .github/codex/output-schema.json \
+            --sandbox read-only \
+            < .github/codex/prompt.txt \
+            2>&1 | tee codex-action.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Log Codex output file
         if: always()
@@ -132,27 +153,50 @@ jobs:
             echo "codex-output.json was not created"
           fi
 
+      - name: Log Codex raw output
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f codex-action.log ]; then
+            echo "codex-action.log:"
+            cat codex-action.log
+          else
+            echo "codex-action.log was not created"
+          fi
+
       - name: Create or update PR comment
         if: always()
         uses: actions/github-script@v7
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          CODEX_EXEC_EXIT_CODE: ${{ steps.codex_exec.outputs.exit_code }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require("fs");
             const marker = "<!-- codex-review-ci -->";
             const outputPath = "codex-output.json";
+            const rawLogPath = "codex-action.log";
             const short = (value) => (value || "").slice(0, 7);
 
             let body;
             if (!fs.existsSync(outputPath)) {
+              const rawLog = fs.existsSync(rawLogPath)
+                ? fs.readFileSync(rawLogPath, "utf8").trim()
+                : "";
+              const tail = rawLog
+                ? rawLog.split(/\r?\n/).slice(-40).join("\n")
+                : `Codex step exit code: ${process.env.CODEX_EXEC_EXIT_CODE || "unknown"}`;
               body = [
                 marker,
                 "**Codex review:** `FAIL`",
                 "",
-                "Codex did not produce `codex-output.json`, so this review run is invalid."
+                "Codex did not produce `codex-output.json`, so this review run is invalid.",
+                "",
+                "```text",
+                tail,
+                "```"
               ].join("\n");
             } else {
               let parsed;
@@ -233,7 +277,10 @@ jobs:
 
           path = pathlib.Path("codex-output.json")
           if not path.exists():
+              raw_log = pathlib.Path("codex-action.log")
               print("Codex review failed: codex-output.json was not created.", file=sys.stderr)
+              if raw_log.exists():
+                  print(raw_log.read_text(), file=sys.stderr)
               sys.exit(1)
 
           try:
