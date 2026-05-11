@@ -30,7 +30,10 @@ jobs:
       - name: Prepare submodules via init.sh
         run: |
           set -euo pipefail
-          bash monero-wasm-src/init.sh
+          (
+            cd monero-wasm-src
+            bash init.sh
+          )
 
       - name: Setup Node with npm cache
         uses: actions/setup-node@v4
