@@ -236,7 +236,7 @@ async function main() {
     });
 
     const githubToolCharBudget = Number(
-      (process.env.LLM_GITHUB_TOOL_CHARS || "").trim() || "56000",
+      (process.env.LLM_GITHUB_TOOL_CHARS || "").trim() || "3500",
     );
 
     function clampGithubToolPayload(text) {
@@ -280,9 +280,6 @@ async function main() {
       }
 
       const body = JSON.stringify({ ...base, model: githubModel });
-      console.error(
-        `[llm-ci] GitHub Models POST ${body.length} bytes; tools=${toolsList.length}; msgChars=${messages.reduce((n, m) => n + (m.content?.length ?? 0), 0)}`,
-      );
       const headers = {
         Authorization: `Bearer ${githubInferenceToken}`,
         Accept: "application/vnd.github+json",
