@@ -3,6 +3,11 @@ Project review rules for PR CI:
 - Review only the PR diff and directly related context. Ignore unrelated pre-existing issues.
 - Fail only for real problems: correctness regressions, broken behavior, mismatched interfaces, dangerous security/privacy issues, or clearly broken build/runtime logic.
 - Do not fail for minor style preferences, naming preferences, or speculative refactors.
+- Repository trust model for this CI:
+  - Same-repository branches are considered trusted for this workflow.
+  - Fork PRs are not part of this threat model.
+  - Do not fail solely because the PR can modify this workflow, the Codex prompt, or review-rules files, or because same-repo PR preparation steps run before the review.
+  - You may mention such things in `warnings` if they are relevant, but they are not blocking findings for this repository policy.
 
 - For changes touching `monero-wasm-src/**`, `monero-wasm-module/**`, or code that calls wallet APIs:
   - Keep the C++ Embind surface in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` aligned with the TypeScript API surface in `monero-wasm-module/walletApi.ts`.

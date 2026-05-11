@@ -11,8 +11,15 @@
       "items": {
         "type": "string"
       },
-      "description": "Human-readable summary lines. Use one short line for ok, or one line per violation for fail."
+      "description": "Human-readable result lines. Use one short summary line for ok, or one line per violation for fail."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Non-blocking warnings or notes. Use an empty array when there are none."
     }
   },
-  "required": ["status", "reason"]
+  "required": ["status", "reason", "warnings"]
 }

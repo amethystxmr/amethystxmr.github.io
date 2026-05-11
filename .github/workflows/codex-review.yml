@@ -200,11 +200,13 @@ jobs:
             process.exit(1);
           }
 
-          const { status, reason } = data ?? {};
+          const { status, reason, warnings } = data ?? {};
           const validReason =
             Array.isArray(reason) && reason.every((item) => typeof item === "string");
+          const validWarnings =
+            Array.isArray(warnings) && warnings.every((item) => typeof item === "string");
 
-          if (!["ok", "fail"].includes(status) || !validReason) {
+          if (!["ok", "fail"].includes(status) || !validReason || !validWarnings) {
             console.error(
               `Codex review failed: unexpected payload in ${outputPath}: ${JSON.stringify(data)}`
             );
@@ -215,6 +217,12 @@ jobs:
           if (reason.length > 0) {
             console.log("Codex reason:");
             for (const item of reason) {
+              console.log(item);
+            }
+          }
+          if (warnings.length > 0) {
+            console.log("Codex warnings:");
+            for (const item of warnings) {
               console.log(item);
             }
           }
@@ -253,6 +261,7 @@ jobs:
             const outputPath = "codex-output.json";
             const rawLogPath = "codex-action.log";
             const short = (value) => (value || "").slice(0, 7);
+            const asBullets = (lines) => lines.map((line) => `- ${line}`).join("\n");
 
             let body;
             if (!fs.existsSync(outputPath)) {
@@ -290,8 +299,11 @@ jobs:
                 const reasonLines = Array.isArray(parsed?.reason)
                   ? parsed.reason.filter((line) => typeof line === "string" && line.trim().length > 0)
                   : [];
+                const warningLines = Array.isArray(parsed?.warnings)
+                  ? parsed.warnings.filter((line) => typeof line === "string" && line.trim().length > 0)
+                  : [];
                 const reason = reasonLines.length > 0
-                  ? reasonLines.join("\n")
+                  ? asBullets(reasonLines)
                   : status === "OK"
                     ? "No issues found."
                     : "No reason provided.";
@@ -301,7 +313,11 @@ jobs:
                   "",
                   `Diff reviewed: \`${short(process.env.PR_BASE_SHA)}...${short(process.env.PR_HEAD_SHA)}\``,
                   "",
+                  status === "OK" ? "**Summary**" : "**Findings**",
                   reason,
+                  ...(warningLines.length > 0
+                    ? ["", "**Warnings**", asBullets(warningLines)]
+                    : []),
                 ].join("\n");
               }
             }
