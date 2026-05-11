@@ -9,10 +9,11 @@ Project review rules for PR CI:
   - Do not fail solely because the PR can modify this workflow, the Codex prompt, or review-rules files, or because same-repo PR preparation steps run before the review.
   - You may mention such things in `warnings` if they are relevant, but they are not blocking findings for this repository policy.
 
-- For changes touching `monero-wasm-src/**`, `monero-wasm-module/**`, or code that calls wallet APIs:
+- Always verify the full wallet API mapping surface, even if the PR diff only touches one side of it:
   - Keep the C++ Embind surface in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` aligned with the TypeScript API surface in `monero-wasm-module/walletApi.ts`.
   - Also verify related worker exposure stays aligned across `monero-wasm-module/walletApi.worker.ts` and `monero-wasm-module/walletApi.workerClient.ts`.
-  - If a PR adds, removes, renames, or changes a wallet method, enum, object field, callback shape, or return shape on one side but not the corresponding side, fail.
+  - Check the whole mapping for methods, enums, object fields, callback shapes, and return shapes, not just the changed lines.
+  - If any current mismatch exists across those mapping layers, fail, even if only one side changed in the PR.
   - If UI code calls a wallet API method or reads a wallet API field that is missing or mismatched relative to the current TS/C++ bindings, fail.
 
 - Flag obvious debug leftovers introduced by the PR, including `console.log`, temporary prints, or ad hoc diagnostics that should not ship.
