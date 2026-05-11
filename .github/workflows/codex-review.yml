@@ -6,12 +6,12 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   codex-review:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout PR merge commit
@@ -20,6 +20,7 @@ jobs:
           ref: refs/pull/${{ github.event.pull_request.number }}/merge
           fetch-depth: 0
           submodules: recursive
+          persist-credentials: false
 
       - name: Restore cached Monero submodule
         id: monero_cache_restore
@@ -164,108 +165,15 @@ jobs:
             echo "codex-action.log was not created"
           fi
 
-      - name: Create or update PR comment
+      - name: Upload Codex review artifacts
         if: always()
-        uses: actions/github-script@v7
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          CODEX_EXEC_EXIT_CODE: ${{ steps.codex_exec.outputs.exit_code }}
+        uses: actions/upload-artifact@v4
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require("fs");
-            const marker = "<!-- codex-review-ci -->";
-            const outputPath = "codex-output.json";
-            const rawLogPath = "codex-action.log";
-            const short = (value) => (value || "").slice(0, 7);
-
-            let body;
-            if (!fs.existsSync(outputPath)) {
-              const rawLog = fs.existsSync(rawLogPath)
-                ? fs.readFileSync(rawLogPath, "utf8").trim()
-                : "";
-              const tail = rawLog
-                ? rawLog.split(/\r?\n/).slice(-40).join("\n")
-                : `Codex step exit code: ${process.env.CODEX_EXEC_EXIT_CODE || "unknown"}`;
-              body = [
-                marker,
-                "**Codex review:** `FAIL`",
-                "",
-                "Codex did not produce `codex-output.json`, so this review run is invalid.",
-                "",
-                "```text",
-                tail,
-                "```"
-              ].join("\n");
-            } else {
-              let parsed;
-              try {
-                parsed = JSON.parse(fs.readFileSync(outputPath, "utf8"));
-              } catch (error) {
-                body = [
-                  marker,
-                  "**Codex review:** `FAIL`",
-                  "",
-                  "Codex output was not valid JSON.",
-                  "",
-                  "```text",
-                  String(error.message),
-                  "```"
-                ].join("\n");
-              }
-
-              if (!body) {
-                const status = parsed && parsed.status === "ok" ? "OK" : "FAIL";
-                const reasonLines = Array.isArray(parsed?.reason)
-                  ? parsed.reason.filter((line) => typeof line === "string" && line.trim().length > 0)
-                  : [];
-                const reason = reasonLines.length > 0
-                  ? reasonLines.join("\n")
-                  : status === "OK"
-                    ? "No issues found."
-                    : "No reason provided.";
-                body = [
-                  marker,
-                  `**Codex review:** \`${status}\``,
-                  "",
-                  `Diff reviewed: \`${short(process.env.PR_BASE_SHA)}...${short(process.env.PR_HEAD_SHA)}\``,
-                  "",
-                  "```text",
-                  reason,
-                  "```"
-                ].join("\n");
-              }
-            }
-
-            const comments = await github.paginate(github.rest.issues.listComments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              per_page: 100
-            });
-
-            const existing = comments.find((comment) =>
-              comment.user?.login === "github-actions[bot]" &&
-              typeof comment.body === "string" &&
-              comment.body.includes(marker)
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body
-              });
-            }
+          name: codex-review-artifacts
+          if-no-files-found: ignore
+          path: |
+            codex-output.json
+            codex-action.log
 
       - name: Enforce Codex review result
         run: |
@@ -315,3 +223,114 @@ jobs:
             process.exit(1);
           }
           JS
+
+  codex-review-comment:
+    runs-on: ubuntu-latest
+    needs: codex-review
+    if: always()
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Download Codex review artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: codex-review-artifacts
+          path: .
+
+      - name: Create or update PR comment
+        uses: actions/github-script@v7
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REVIEW_RESULT: ${{ needs.codex-review.result }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- codex-review-ci -->";
+            const outputPath = "codex-output.json";
+            const rawLogPath = "codex-action.log";
+            const short = (value) => (value || "").slice(0, 7);
+
+            let body;
+            if (!fs.existsSync(outputPath)) {
+              const rawLog = fs.existsSync(rawLogPath)
+                ? fs.readFileSync(rawLogPath, "utf8").trim()
+                : "";
+              const tail = rawLog
+                ? rawLog.split(/\r?\n/).slice(-40).join("\n")
+                : `Review job result: ${process.env.REVIEW_RESULT || "unknown"}`;
+              body = [
+                marker,
+                "**Codex review:** `FAIL`",
+                "",
+                "Codex did not produce `codex-output.json`, so this review run is invalid.",
+                "",
+                tail,
+              ].join("\n");
+            } else {
+              let parsed;
+              try {
+                parsed = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+              } catch (error) {
+                body = [
+                  marker,
+                  "**Codex review:** `FAIL`",
+                  "",
+                  "Codex output was not valid JSON.",
+                  "",
+                  String(error.message),
+                ].join("\n");
+              }
+
+              if (!body) {
+                const status = parsed && parsed.status === "ok" ? "OK" : "FAIL";
+                const reasonLines = Array.isArray(parsed?.reason)
+                  ? parsed.reason.filter((line) => typeof line === "string" && line.trim().length > 0)
+                  : [];
+                const reason = reasonLines.length > 0
+                  ? reasonLines.join("\n")
+                  : status === "OK"
+                    ? "No issues found."
+                    : "No reason provided.";
+                body = [
+                  marker,
+                  `**Codex review:** \`${status}\``,
+                  "",
+                  `Diff reviewed: \`${short(process.env.PR_BASE_SHA)}...${short(process.env.PR_HEAD_SHA)}\``,
+                  "",
+                  reason,
+                ].join("\n");
+              }
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+
+            const existing = comments.find((comment) =>
+              comment.user?.login === "github-actions[bot]" &&
+              typeof comment.body === "string" &&
+              comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
