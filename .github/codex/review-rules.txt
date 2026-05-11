@@ -1,0 +1,16 @@
+Project review rules for PR CI:
+
+- Review only the PR diff and directly related context. Ignore unrelated pre-existing issues.
+- Fail only for real problems: correctness regressions, broken behavior, mismatched interfaces, dangerous security/privacy issues, or clearly broken build/runtime logic.
+- Do not fail for minor style preferences, naming preferences, or speculative refactors.
+
+- For changes touching `monero-wasm-src/**`, `monero-wasm-module/**`, or code that calls wallet APIs:
+  - Keep the C++ Embind surface in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` aligned with the TypeScript API surface in `monero-wasm-module/walletApi.ts`.
+  - Also verify related worker exposure stays aligned across `monero-wasm-module/walletApi.worker.ts` and `monero-wasm-module/walletApi.workerClient.ts`.
+  - If a PR adds, removes, renames, or changes a wallet method, enum, object field, callback shape, or return shape on one side but not the corresponding side, fail.
+  - If UI code calls a wallet API method or reads a wallet API field that is missing or mismatched relative to the current TS/C++ bindings, fail.
+
+- Flag obvious debug leftovers introduced by the PR, including `console.log`, temporary prints, or ad hoc diagnostics that should not ship.
+- Flag obvious leakage of sensitive wallet data, seeds, keys, or raw secrets through logs, UI, storage, or error messages.
+- Flag newly introduced blocking or obviously unsafe logic in user-facing flows when the surrounding code expects async/non-blocking behavior.
+- Flag broken imports, exports, renamed symbols, or impossible control flow introduced by the PR.

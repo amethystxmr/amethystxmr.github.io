@@ -1,0 +1,244 @@
+name: Codex Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  codex-review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR merge commit
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Restore cached Monero submodule
+        uses: actions/cache@v4
+        with:
+          path: monero-wasm-src/monero
+          key: llm-review-cache-monero-${{ runner.os }}
+
+      - name: Prepare submodules via init.sh
+        run: |
+          set -euo pipefail
+          bash monero-wasm-src/init.sh
+
+      - name: Setup Node with npm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install npm dependencies
+        run: |
+          set -euo pipefail
+          npm ci
+
+      - name: Log review context
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          echo "Reviewing PR #$PR_NUMBER"
+          echo "Base ref: $PR_BASE_REF"
+          echo "Head ref: $PR_HEAD_REF"
+          echo "Base sha: $PR_BASE_SHA"
+          echo "Head sha: $PR_HEAD_SHA"
+          echo "Checked out merge commit: $(git rev-parse HEAD)"
+          echo "Submodules:"
+          git submodule status --recursive || true
+
+      - name: Fetch PR base and head refs
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            "$PR_BASE_REF" \
+            "+refs/pull/$PR_NUMBER/head:refs/remotes/pull/$PR_NUMBER/head"
+
+      - name: Log PR diff summary
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          echo "Changed files:"
+          git diff --stat "$PR_BASE_SHA...$PR_HEAD_SHA"
+
+      - name: Run Codex review
+        id: run_codex
+        uses: openai/codex-action@v1
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompt.txt
+          output-file: codex-output.json
+          output-schema-file: .github/codex/output-schema.json
+          sandbox: read-only
+          safety-strategy: drop-sudo
+
+      - name: Log Codex output file
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f codex-output.json ]; then
+            echo "codex-output.json:"
+            cat codex-output.json
+          else
+            echo "codex-output.json was not created"
+          fi
+
+      - name: Create or update PR comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- codex-review-ci -->";
+            const outputPath = "codex-output.json";
+            const short = (value) => (value || "").slice(0, 7);
+
+            let body;
+            if (!fs.existsSync(outputPath)) {
+              body = [
+                marker,
+                "**Codex review:** `FAIL`",
+                "",
+                "Codex did not produce `codex-output.json`, so this review run is invalid."
+              ].join("\n");
+            } else {
+              let parsed;
+              try {
+                parsed = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+              } catch (error) {
+                body = [
+                  marker,
+                  "**Codex review:** `FAIL`",
+                  "",
+                  "Codex output was not valid JSON.",
+                  "",
+                  "```text",
+                  String(error.message),
+                  "```"
+                ].join("\n");
+              }
+
+              if (!body) {
+                const status = parsed && parsed.status === "ok" ? "OK" : "FAIL";
+                const reasonLines = Array.isArray(parsed?.reason)
+                  ? parsed.reason.filter((line) => typeof line === "string" && line.trim().length > 0)
+                  : [];
+                const reason = reasonLines.length > 0
+                  ? reasonLines.join("\n")
+                  : status === "OK"
+                    ? "No issues found."
+                    : "No reason provided.";
+                body = [
+                  marker,
+                  `**Codex review:** \`${status}\``,
+                  "",
+                  `Diff reviewed: \`${short(process.env.PR_BASE_SHA)}...${short(process.env.PR_HEAD_SHA)}\``,
+                  "",
+                  "```text",
+                  reason,
+                  "```"
+                ].join("\n");
+              }
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+
+            const existing = comments.find((comment) =>
+              comment.user?.login === "github-actions[bot]" &&
+              typeof comment.body === "string" &&
+              comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
+      - name: Enforce Codex review result
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          path = pathlib.Path("codex-output.json")
+          if not path.exists():
+              print("Codex review failed: codex-output.json was not created.", file=sys.stderr)
+              sys.exit(1)
+
+          try:
+              data = json.loads(path.read_text())
+          except json.JSONDecodeError as exc:
+              print(f"Codex review failed: invalid JSON in {path}: {exc}", file=sys.stderr)
+              sys.exit(1)
+
+          status = data.get("status")
+          reason = data.get("reason")
+          if status not in {"ok", "fail"}:
+              print(f"Codex review failed: unexpected payload in {path}: {data!r}", file=sys.stderr)
+              sys.exit(1)
+
+          if reason is not None and (not isinstance(reason, list) or not all(isinstance(item, str) for item in reason)):
+              print(f"Codex review failed: unexpected payload in {path}: {data!r}", file=sys.stderr)
+              sys.exit(1)
+
+          if status == "fail" and reason is None:
+              print(f"Codex review failed: missing reason array in {path}: {data!r}", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"Codex status: {status}")
+          if reason:
+              print("Codex reason:")
+              for item in reason:
+                  print(item)
+
+          if status == "fail":
+              sys.exit(1)
+          PY

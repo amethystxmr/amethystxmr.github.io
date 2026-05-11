@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["ok", "fail"]
+    },
+    "reason": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Human-readable summary lines. Use one short line for ok, or one line per violation for fail."
+    }
+  },
+  "required": ["status"],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "fail"
+          }
+        }
+      },
+      "then": {
+        "required": ["reason"]
+      }
+    }
+  ]
+}
