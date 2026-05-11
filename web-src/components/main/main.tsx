@@ -1,4 +1,5 @@
 import React, { useCallback } from "react";
+import NoSleep from "nosleep.js";
 import {
   max64,
   MoneroWasmWallet,
@@ -18,6 +19,8 @@ import { TransactionsTab } from "./main.transactions";
 import { SendTab } from "./main.send";
 import { OtherTab } from "./main.other";
 import { MultisigTab } from "./main.multisig";
+
+const SYNC_NO_SLEEP_HINT_DELAY_MS = 60_000;
 
 export function WalletMain({
   wallet,
@@ -74,6 +77,9 @@ export function WalletMain({
   const [addresses, setAddresses] = React.useState<WalletAddress[] | null>(
     null,
   );
+  const [unsyncedSince, setUnsyncedSince] = React.useState<Date | null>(null);
+  const [isNoSleepEnabled, setIsNoSleepEnabled] = React.useState(false);
+  const noSleepRef = React.useRef<NoSleep | null>(null);
 
   const updateWalletAddresses = React.useCallback(async () => {
     const nextAddresses = await wallet.get_wallet_addresses(0);
@@ -456,11 +462,14 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 
   const [secondsPerBlockOnInitialSync, setSecondsPerBlockOnInitialSync] =
     React.useState<number | null>(null);
+  const [showSyncNoSleepHint, setShowSyncNoSleepHint] = React.useState(false);
 
   const isInMultisigSetupProcess =
     status &&
     status.multisigStatus.multisig_is_active &&
     !status.multisigStatus.is_ready;
+  const isFullySynced = status !== null && status.isSynced;
+  const hasSyncStatus = status !== null;
   const downloadingProgressValue =
     downloadInfo && downloadInfo.progressTotal > 0
       ? Math.min(
@@ -471,6 +480,63 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           ),
         )
       : undefined;
+
+  React.useEffect(() => {
+    if (!hasSyncStatus || isFullySynced) {
+      setUnsyncedSince(null);
+      setShowSyncNoSleepHint(false);
+      if (isNoSleepEnabled) {
+        noSleepRef.current?.disable();
+        setIsNoSleepEnabled(false);
+      }
+      return;
+    }
+
+    setUnsyncedSince((prev) => prev ?? new Date());
+  }, [hasSyncStatus, isFullySynced, isNoSleepEnabled]);
+
+  React.useEffect(() => {
+    if (!hasSyncStatus || !unsyncedSince || isFullySynced) {
+      setShowSyncNoSleepHint(false);
+      return;
+    }
+
+    const updateVisibility = () => {
+      setShowSyncNoSleepHint(
+        Date.now() - unsyncedSince.getTime() >= SYNC_NO_SLEEP_HINT_DELAY_MS,
+      );
+    };
+
+    updateVisibility();
+    const timeoutId = window.setTimeout(
+      updateVisibility,
+      Math.max(
+        0,
+        SYNC_NO_SLEEP_HINT_DELAY_MS - (Date.now() - unsyncedSince.getTime()),
+      ),
+    );
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [hasSyncStatus, isFullySynced, unsyncedSince]);
+
+  React.useEffect(() => {
+    return () => {
+      noSleepRef.current?.disable();
+    };
+  }, []);
+
+  const handleEnableNoSleep = useCallback(() => {
+    if (!noSleepRef.current) {
+      noSleepRef.current = new NoSleep();
+    }
+    setIsNoSleepEnabled(true);
+    void noSleepRef.current.enable().catch((e) => {
+      setIsNoSleepEnabled(false);
+      console.error("Failed to enable no-sleep during sync:", e);
+    });
+  }, []);
 
   const progressBarCompact = !status ? (
     <ProgressBar
@@ -578,6 +644,12 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       : status.hasUnknownKeyImages
         ? "We are missing key images for some transactions, import key images on Other tab"
         : "";
+  const syncNoSleepMessage =
+    hasSyncStatus && showSyncNoSleepHint && !isFullySynced
+      ? isNoSleepEnabled
+        ? "Screen stays awake until sync finishes"
+        : "Tap to keep screen awake during sync"
+      : null;
 
   return (
     <div className="space-y-5 lg:grid lg:grid-cols-[320px_minmax(0,1fr)] lg:items-start lg:gap-4 lg:space-y-0">
@@ -627,6 +699,21 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 )}
               </div>
               {progressBarCompact}
+              {syncNoSleepMessage && (
+                isNoSleepEnabled ? (
+                  <div className="text-center text-[11px] whitespace-nowrap text-amber-200/95">
+                    {syncNoSleepMessage}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="slow-blink mx-auto block cursor-pointer text-center text-[11px] whitespace-nowrap text-amber-200/95 transition hover:text-amber-100"
+                    onClick={handleEnableNoSleep}
+                  >
+                    {syncNoSleepMessage}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
