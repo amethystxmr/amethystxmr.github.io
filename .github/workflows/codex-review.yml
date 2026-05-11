@@ -270,41 +270,48 @@ jobs:
       - name: Enforce Codex review result
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import pathlib
-          import sys
+          node <<'JS'
+          const fs = require("fs");
 
-          path = pathlib.Path("codex-output.json")
-          if not path.exists():
-              raw_log = pathlib.Path("codex-action.log")
-              print("Codex review failed: codex-output.json was not created.", file=sys.stderr)
-              if raw_log.exists():
-                  print(raw_log.read_text(), file=sys.stderr)
-              sys.exit(1)
+          const outputPath = "codex-output.json";
+          const rawLogPath = "codex-action.log";
 
-          try:
-              data = json.loads(path.read_text())
-          except json.JSONDecodeError as exc:
-              print(f"Codex review failed: invalid JSON in {path}: {exc}", file=sys.stderr)
-              sys.exit(1)
+          if (!fs.existsSync(outputPath)) {
+            console.error("Codex review failed: codex-output.json was not created.");
+            if (fs.existsSync(rawLogPath)) {
+              console.error(fs.readFileSync(rawLogPath, "utf8"));
+            }
+            process.exit(1);
+          }
 
-          status = data.get("status")
-          reason = data.get("reason")
-          if status not in {"ok", "fail"}:
-              print(f"Codex review failed: unexpected payload in {path}: {data!r}", file=sys.stderr)
-              sys.exit(1)
+          let data;
+          try {
+            data = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+          } catch (error) {
+            console.error(`Codex review failed: invalid JSON in ${outputPath}: ${error.message}`);
+            process.exit(1);
+          }
 
-          if not isinstance(reason, list) or not all(isinstance(item, str) for item in reason):
-              print(f"Codex review failed: unexpected payload in {path}: {data!r}", file=sys.stderr)
-              sys.exit(1)
+          const { status, reason } = data ?? {};
+          const validReason =
+            Array.isArray(reason) && reason.every((item) => typeof item === "string");
 
-          print(f"Codex status: {status}")
-          if reason:
-              print("Codex reason:")
-              for item in reason:
-                  print(item)
+          if (!["ok", "fail"].includes(status) || !validReason) {
+            console.error(
+              `Codex review failed: unexpected payload in ${outputPath}: ${JSON.stringify(data)}`
+            );
+            process.exit(1);
+          }
 
-          if status == "fail":
-              sys.exit(1)
-          PY
+          console.log(`Codex status: ${status}`);
+          if (reason.length > 0) {
+            console.log("Codex reason:");
+            for (const item of reason) {
+              console.log(item);
+            }
+          }
+
+          if (status === "fail") {
+            process.exit(1);
+          }
+          JS
