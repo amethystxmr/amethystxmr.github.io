@@ -69,24 +69,47 @@ function truthyEnv(v) {
   return /^(1|true|yes)$/i.test((v || "").trim());
 }
 
-/** In CI, Embind names are precomputed into llm-ci/embind-wallet.functions.txt — inject so GitHub Models sees them without relying on MCP reads alone. */
-function embindIndexInjection(workspaceRoot) {
-  try {
-    const p = join(workspaceRoot, "llm-ci", "embind-wallet.functions.txt");
-    const raw = readFileSync(p, "utf8").trim();
-    if (!raw) {
-      return "\n[CI: llm-ci/embind-wallet.functions.txt is empty — do not claim there are no Embind methods without reading the wasm_wallet_api.cpp binding section via tools.]\n";
-    }
-    const lines = raw.split(/\n/).map((l) => l.trim()).filter(Boolean);
-    const maxChars = 10000;
-    const body =
-      raw.length > maxChars
-        ? `${raw.slice(0, maxChars)}\n… [truncated ${raw.length - maxChars} chars]`
-        : raw;
-    return `\n--- CI-generated Embind JS names for MoneroWasmWallet (${lines.length} names; from wasm_wallet_api.cpp .function("…") lines) ---\n${body}\n--- end CI Embind list ---\n`;
-  } catch {
-    return "\n[CI: llm-ci/embind-wallet.functions.txt not found at agent startup — read it with MCP from the workspace root.]\n";
+function splitPromptDataFiles(text) {
+  const begin = "---LLM_CI_DATA_FILES---";
+  const end = "---END_LLM_CI_DATA_FILES---";
+  const i = text.indexOf(begin);
+  const j = text.indexOf(end);
+  if (i === -1 || j === -1 || j < i) {
+    return { body: text.trimEnd(), dataFiles: [] };
   }
+  const body = `${text.slice(0, i).trimEnd()}\n${text.slice(j + end.length).trimStart()}`.trim();
+  const mid = text.slice(i + begin.length, j);
+  const dataFiles = mid
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !s.startsWith("#"));
+  return { body, dataFiles };
+}
+
+/**
+ * Append raw workspace files (no prose). Paths come from `prompt.txt` footer or env
+ * `LLM_CI_DATA_FILES` (comma-separated) when set — env wins for one-off overrides.
+ * Optional `LLM_CI_DATA_MAX_CHARS` per file (default 12000).
+ */
+function appendCiDataSections(workspaceRoot, relPaths) {
+  if (!relPaths.length) return "";
+  const maxChars = Number((process.env.LLM_CI_DATA_MAX_CHARS || "").trim() || "12000");
+  const chunks = [];
+  for (const rel of relPaths) {
+    const safeRel = rel.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!safeRel || safeRel.includes("..")) continue;
+    const abs = join(workspaceRoot, safeRel);
+    try {
+      let body = readFileSync(abs, "utf8");
+      if (body.length > maxChars) {
+        body = `${body.slice(0, maxChars)}\n… [truncated ${body.length - maxChars} chars]`;
+      }
+      chunks.push(`=== CI_DATA:${safeRel} ===\n${body}`);
+    } catch (err) {
+      chunks.push(`=== CI_DATA:${safeRel} ===\n<unreadable: ${err.message}>`);
+    }
+  }
+  return chunks.length > 0 ? `\n\n${chunks.join("\n\n")}` : "";
 }
 
 async function postJson(url, body, headers) {
@@ -124,24 +147,15 @@ async function main() {
   ).trim();
 
   const promptPath = resolvePromptPath();
-  let systemPrompt = process.env.LLM_CI_SYSTEM ?? "";
-  let userPrompt = readFileSync(promptPath, "utf8");
-  if (useGithubModels && !truthyEnv(process.env.LLM_CI_FULL_PROMPT)) {
-    systemPrompt =
-      "CI reviewer with MCP filesystem tools. Obey llm-ci/prompt.txt for checks and reply only with OK or FAIL: lines as defined there.";
-    userPrompt = [
-      `Workspace: ${workspace}`,
-      "GitHub Models limits request size; full rules are in llm-ci/prompt.txt (read with tools).",
-      "",
-      "The block below is copied from llm-ci/embind-wallet.functions.txt on the runner (Embind-exported JS names). Use it as authoritative for name matching; do not claim there are no C++ Embind methods if that list is non-empty.",
-      "",
-      "Also read before concluding:",
-      "- llm-ci/prompt.txt — checks and exact OK / FAIL: output format",
-      "- monero-wasm-module/walletApi.ts — TypeScript declarations",
-      "- .llm-ci-pr.diff — PR diff (base...head)",
-      embindIndexInjection(workspace),
-    ].join("\n");
-  }
+  const systemPrompt = process.env.LLM_CI_SYSTEM ?? "";
+  const rawPrompt = readFileSync(promptPath, "utf8");
+  const { body, dataFiles } = splitPromptDataFiles(rawPrompt);
+  const envPaths = (process.env.LLM_CI_DATA_FILES || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const injectPaths = envPaths.length > 0 ? envPaths : dataFiles;
+  let userPrompt = body + appendCiDataSections(workspace, injectPaths);
 
   const fsServer =
     process.env.MCP_FILESYSTEM_SERVER_PACKAGE ??

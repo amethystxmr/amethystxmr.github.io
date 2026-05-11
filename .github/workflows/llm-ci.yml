@@ -77,9 +77,8 @@ jobs:
           LLM_MODEL: openai/gpt-4o-mini
           LLM_CI_WORKSPACE: ${{ github.workspace }}
           LLM_CI_SYSTEM: |
-            CI reviewer (PR head checkout). Workspace ${{ github.workspace }}.
+            Workspace: ${{ github.workspace }}
             PR #${{ github.event.pull_request.number }} · base ${{ github.event.pull_request.base.sha }} · head ${{ github.event.pull_request.head.sha }}.
-            Use MCP filesystem tools only; follow llm-ci/prompt.txt for rules and OK/FAIL output format.
 
       - name: Print LLM CI output
         if: always()
