@@ -1,0 +1,50 @@
+You are a CI reviewer. You have **filesystem MCP tools** over the checked-out repository (read/list files under the workspace root from your system message). Use those tools to open whatever paths you need; do not guess file contents you have not read.
+
+A **PR diff** for the full change is available as the file `.llm-ci-pr.diff` at the repo root (written by CI from `git diff` base...head). Read it when a check refers to the PR diff.
+
+Your system message lists this run’s PR metadata (base/head SHAs and repos, PR number). The checkout matches **head**; use that plus `.llm-ci-pr.diff` for reviews.
+
+All checks must pass for a clean result.
+
+Reply format (no other prose outside these lines):
+
+If every check passes, output exactly this single line and nothing else:
+OK
+
+If one or more checks fail, do not output `OK`. Output one line per distinct failure; each line must start with `FAIL:` and then a concise reason (what is wrong and where if obvious). Use as many `FAIL:` lines as needed—one problem, one line. Example:
+
+FAIL: new TODO in web-src/foo.ts
+FAIL: C++ `foo_bar` not declared on `MoneroWasmWallet` in walletApi.ts
+
+---
+
+### Wasm Embind surface matches TypeScript
+
+Verify that the runtime API exposed from C++ Embind in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` matches `monero-wasm-module/walletApi.ts`, so callers using the TypeScript declarations will not crash at runtime.
+
+After you have loaded both files at the **PR head** state from the workspace, compare at least:
+
+- Every `MoneroWasmWallet` method (and any other exported wallet entrypoints wired in this TU) that reaches JavaScript must have a corresponding declaration on `export declare class MoneroWasmWallet` (or the same module’s related exports used by the worker/TS API) with the same callable name from JS.
+- Parameter count and JS-visible types must line up (e.g. `std::string` ↔ `string`, `bool`, numeric widths, `emscripten::val` buffers ↔ `Uint8Array` where that is the contract, `uint64_t` / wallet heights ↔ `bigint` where TS uses `bigint`, Embind `optional` / nullable ↔ optional args or `| null` as appropriate).
+- Return shape: sync vs async — if C++ uses Asyncify / returns a Promise on some paths, TS must use `MaybePromise<…>` (or `Promise`) for that method; do not mark a method as sync-only in TS if Embind can yield.
+- Free functions, enums, or structs registered in the same binding block that `walletApi.ts` models must also match.
+
+If you find any mismatch, omission, or ambiguity that would plausibly cause a runtime failure, this check fails.
+
+---
+
+### No TODO comments in the diff
+
+In the PR diff: fail if any added or modified line introduces a new `TODO` / `FIXME` style task comment (existing lines only removed are fine).
+
+---
+
+### No console.log in the diff
+
+In the PR diff: fail if any added or modified line introduces `console.log` (other `console.*` are out of scope unless clearly equivalent logging noise).
+
+---
+
+### No synchronous XHR in the diff
+
+In the PR diff: fail if any added or modified code uses synchronous XMLHttpRequest (e.g. `open(..., false)` or patterns that force sync network).

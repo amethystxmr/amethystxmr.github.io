@@ -1,0 +1,124 @@
+name: LLM check
+
+on:
+  pull_request:
+
+jobs:
+  llm-check:
+    runs-on: ubuntu-latest
+
+    permissions:
+      models: read
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write PR diff for LLM tools
+        run: |
+          set -euo pipefail
+          git diff "${{ github.event.pull_request.base.sha }}"..."${{ github.event.pull_request.head.sha }}" > .llm-ci-pr.diff
+
+      - id: review
+        run: |
+          set -euo pipefail
+          node scripts/llm-ci-agent.mjs 2>&1 | tee llm-ci-response.txt
+          {
+            echo 'response<<LLM_OUT'
+            cat llm-ci-response.txt
+            echo 'LLM_OUT'
+          } >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLM_MODEL: openai/gpt-4.1-mini
+          LLM_CI_WORKSPACE: ${{ github.workspace }}
+          LLM_CI_PROMPT_FILE: llm-ci.txt
+          LLM_CI_SYSTEM: |
+            You are a CI reviewer. The repository is checked out at the PR head commit on disk.
+
+            Workspace root (absolute path): ${{ github.workspace }}
+            Read files only through your filesystem MCP tools under that root.
+
+            PR metadata:
+            - pull_request_number: ${{ github.event.pull_request.number }}
+            - base_repository: ${{ github.event.pull_request.base.repo.full_name }}
+            - base_ref: ${{ github.event.pull_request.base.ref }}
+            - base_sha: ${{ github.event.pull_request.base.sha }}
+            - head_repository: ${{ github.event.pull_request.head.repo.full_name }}
+            - head_ref: ${{ github.event.pull_request.head.ref }}
+            - head_sha: ${{ github.event.pull_request.head.sha }}
+
+            A unified git diff for this PR (base...head) is written at the repo-relative path `.llm-ci-pr.diff` — read it with your tools when checks refer to the PR diff.
+
+            When you are done investigating, reply exactly as specified in the user prompt (OK or one or more FAIL lines only).
+
+      - name: Fail if LLM reported FAIL
+        run: |
+          set -euo pipefail
+          if grep -qE '^[[:space:]]*FAIL:' llm-ci-response.txt; then
+            exit 1
+          fi
+
+      - name: Comment on LLM FAIL lines
+        if: ${{ failure() && steps.review.outcome == 'success' }}
+        env:
+          RESPONSE: ${{ steps.review.outputs.response }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const response = process.env.RESPONSE ?? '';
+            const failLines = response
+              .split(/\n/)
+              .filter((line) => /^\s*FAIL:/.test(line));
+            if (failLines.length === 0) {
+              return;
+            }
+            const marker = '<!-- llm-ci-check -->';
+            const timestamp = new Date().toISOString();
+            const escaped = response
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;');
+            const body = `${marker}\n**LLM CI check** · ${timestamp}\n\n<pre>${escaped}</pre>\n`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(
+              (c) =>
+                c.user?.login === 'github-actions[bot]' &&
+                typeof c.body === 'string' &&
+                c.body.includes(marker)
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
