@@ -22,7 +22,8 @@ jobs:
           submodules: recursive
 
       - name: Restore cached Monero submodule
-        uses: actions/cache@v4
+        id: monero_cache_restore
+        uses: actions/cache/restore@v4
         with:
           path: monero-wasm-src/monero
           key: llm-review-cache-monero-${{ runner.os }}
@@ -35,17 +36,36 @@ jobs:
             bash init.sh
           )
 
+      - name: Save Monero submodule cache
+        if: ${{ always() && steps.monero_cache_restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: monero-wasm-src/monero
+          key: llm-review-cache-monero-${{ runner.os }}
+
+      - name: Restore npm cache
+        id: npm_cache_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.npm
+          key: llm-review-cache-npm-${{ runner.os }}
+
       - name: Setup Node with npm cache
         uses: actions/setup-node@v4
         with:
           node-version: "24"
-          cache: npm
-          cache-dependency-path: package-lock.json
 
       - name: Install npm dependencies
         run: |
           set -euo pipefail
           npm ci
+
+      - name: Save npm cache
+        if: ${{ always() && steps.npm_cache_restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.npm
+          key: llm-review-cache-npm-${{ runner.os }}
 
       - name: Log review context
         env:
