@@ -27,6 +27,27 @@ function assistantTextContent(content) {
   return "";
 }
 
+/** Strict OK / FAIL: lines only; strips unrelated prose from small models. */
+function extractProtocolOutput(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return null;
+  const lines = raw
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  const failLines = lines.filter((l) => l.startsWith("FAIL:"));
+  if (failLines.length > 0) {
+    return `${failLines.join("\n")}\n`;
+  }
+  const okCount = lines.filter((l) => l === "OK").length;
+  const nonOk = lines.filter((l) => l !== "OK");
+  if (okCount === 1 && nonOk.length === 0) {
+    return "OK\n";
+  }
+  return null;
+}
+
 function inferenceUrls() {
   if (process.env.GITHUB_MODELS_INFERENCE_URL) {
     return [process.env.GITHUB_MODELS_INFERENCE_URL];
@@ -116,14 +137,16 @@ async function main() {
       },
     }));
 
-    async function chat(messages) {
+    async function chat(messages, { withTools = true } = {}) {
       const base = {
         messages,
-        tools: openaiTools,
-        tool_choice: "auto",
         max_tokens: openaiKey || useOllama ? 8192 : 16384,
         temperature: 0.2,
       };
+      if (withTools && openaiTools.length > 0) {
+        base.tools = openaiTools;
+        base.tool_choice = "auto";
+      }
 
       if (openaiKey) {
         return postJson(
@@ -203,8 +226,32 @@ async function main() {
 
       const toolCalls = msg.tool_calls;
       if (!toolCalls?.length) {
-        const text = assistantTextContent(msg.content);
-        process.stdout.write(`${text.trimEnd()}\n`);
+        let out = extractProtocolOutput(assistantTextContent(msg.content));
+        if (!out) {
+          messages.push({
+            role: "user",
+            content:
+              "Your previous reply was not in the required format. Respond with ONLY the single line OK (if all checks pass) or ONLY lines starting with FAIL: (one per issue). No JSON, markdown, code fences, or other text.",
+          });
+          const dataRetry = await chat(messages, { withTools: false });
+          const choiceR = dataRetry.choices?.[0];
+          if (!choiceR) {
+            throw new Error("No choice in model response (format retry)");
+          }
+          const msgR = choiceR.message;
+          messages.push(msgR);
+          if (msgR.tool_calls?.length) {
+            out =
+              "FAIL: LLM CI reviewer returned tool calls on a no-tools format retry.\n";
+          } else {
+            out = extractProtocolOutput(assistantTextContent(msgR.content));
+          }
+        }
+        if (!out) {
+          out =
+            "FAIL: LLM CI reviewer did not return a strict OK / FAIL: block after a format retry.\n";
+        }
+        process.stdout.write(out.endsWith("\n") ? out : `${out}\n`);
         return;
       }
 

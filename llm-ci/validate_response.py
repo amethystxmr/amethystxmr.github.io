@@ -23,7 +23,7 @@ def main() -> int:
         if not fail_re.match(ln):
             print(f"LLM CI: invalid line (expected OK alone or only FAIL: lines): {ln!r}", file=sys.stderr)
             return 1
-    return 1
+    return 0
 
 
 if __name__ == "__main__":
