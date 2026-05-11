@@ -104,18 +104,18 @@ async function main() {
   ).trim();
 
   const promptPath = resolvePromptPath();
-  const systemPrompt = process.env.LLM_CI_SYSTEM ?? "";
+  let systemPrompt = process.env.LLM_CI_SYSTEM ?? "";
   let userPrompt = readFileSync(promptPath, "utf8");
   if (useGithubModels && !truthyEnv(process.env.LLM_CI_FULL_PROMPT)) {
+    systemPrompt =
+      "CI reviewer with MCP filesystem tools. Obey llm-ci/prompt.txt for checks and reply only with OK or FAIL: lines as defined there.";
     userPrompt = [
-      "You are running automated PR review in GitHub Actions with a strict API request size limit.",
-      "Use MCP filesystem tools on the workspace root.",
+      `Workspace: ${workspace}`,
+      "GitHub Models limits request size; full rules are in llm-ci/prompt.txt (read with tools).",
       "",
-      "Before you conclude, read:",
-      "- llm-ci/prompt.txt — full review rules, checks, and exact OK / FAIL: output format",
-      "- .llm-ci-pr.diff — unified diff for this PR (base...head)",
-      "",
-      "Follow every instruction in llm-ci/prompt.txt. Reply only as that file specifies (one line OK, or only FAIL: lines).",
+      "Read before concluding:",
+      "- llm-ci/prompt.txt — checks and exact OK / FAIL: output format",
+      "- .llm-ci-pr.diff — PR diff (base...head)",
     ].join("\n");
   }
 
@@ -280,6 +280,9 @@ async function main() {
       }
 
       const body = JSON.stringify({ ...base, model: githubModel });
+      console.error(
+        `[llm-ci] GitHub Models POST ${body.length} bytes; tools=${toolsList.length}; msgChars=${messages.reduce((n, m) => n + (m.content?.length ?? 0), 0)}`,
+      );
       const headers = {
         Authorization: `Bearer ${githubInferenceToken}`,
         Accept: "application/vnd.github+json",

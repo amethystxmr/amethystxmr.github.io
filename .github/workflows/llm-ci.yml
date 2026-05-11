@@ -49,23 +49,9 @@ jobs:
           LLM_MODEL: openai/gpt-4o-mini
           LLM_CI_WORKSPACE: ${{ github.workspace }}
           LLM_CI_SYSTEM: |
-            You are a CI reviewer. The repository is checked out at the PR head commit on disk.
-
-            Workspace root (absolute path): ${{ github.workspace }}
-            Read files only through your filesystem MCP tools under that root.
-
-            PR metadata:
-            - pull_request_number: ${{ github.event.pull_request.number }}
-            - base_repository: ${{ github.event.pull_request.base.repo.full_name }}
-            - base_ref: ${{ github.event.pull_request.base.ref }}
-            - base_sha: ${{ github.event.pull_request.base.sha }}
-            - head_repository: ${{ github.event.pull_request.head.repo.full_name }}
-            - head_ref: ${{ github.event.pull_request.head.ref }}
-            - head_sha: ${{ github.event.pull_request.head.sha }}
-
-            A unified git diff for this PR (base...head) is written at the repo-relative path `.llm-ci-pr.diff` — read it with your tools when checks refer to the PR diff.
-
-            When you are done investigating, reply exactly as specified in the user prompt (OK or one or more FAIL lines only).
+            CI reviewer (PR head checkout). Workspace ${{ github.workspace }}.
+            PR #${{ github.event.pull_request.number }} · base ${{ github.event.pull_request.base.sha }} · head ${{ github.event.pull_request.head.sha }}.
+            Use MCP filesystem tools only; follow llm-ci/prompt.txt for rules and OK/FAIL output format.
 
       - name: Print LLM CI output
         if: always()
