@@ -46,7 +46,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLM_INFERENCE_TOKEN: ${{ secrets.LLM_MODELS_PAT }}
-          LLM_MODEL: openai/gpt-4o-mini
+          LLM_MODEL: openai/gpt-4o
           LLM_CI_WORKSPACE: ${{ github.workspace }}
           LLM_CI_SYSTEM: |
             You are a CI reviewer. The repository is checked out at the PR head commit on disk.

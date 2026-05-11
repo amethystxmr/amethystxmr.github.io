@@ -86,6 +86,7 @@ async function main() {
   const workspace = process.env.LLM_CI_WORKSPACE || process.cwd();
   const openaiKey = (process.env.OPENAI_API_KEY || "").trim();
   const useOllama = truthyEnv(process.env.USE_OLLAMA);
+  const useGithubModels = !openaiKey && !useOllama;
   const pat = (process.env.LLM_INFERENCE_TOKEN || "").trim();
   const githubInferenceToken = pat || (process.env.GITHUB_TOKEN || "").trim();
 
@@ -155,69 +156,83 @@ async function main() {
     }));
 
     /**
-     * GitHub Models caps total request size (~8k tokens for gpt-4o-mini) and rejects
-     * object schemas with no `properties`. Shallow-clone each tool schema so every
-     * object has explicit properties; MCP still receives real args at callTool time.
+     * MCP `listTools()` JSON Schemas can be huge ($ref trees). GitHub Models enforces a
+     * small total request budget for some models — use tiny hand-written schemas instead.
      */
-    function githubSlimParameters(schema) {
-      const fallback = { type: "object", properties: { value: { type: "string" } } };
-      if (!schema || typeof schema !== "object") {
-        return fallback;
-      }
-      let s = schema;
-      if (Array.isArray(s.anyOf) && s.anyOf[0]) {
-        s = s.anyOf[0];
-      }
-      if (Array.isArray(s.allOf) && s.allOf[0]) {
-        s = s.allOf[0];
-      }
-      if (s.type !== "object" || !s.properties || typeof s.properties !== "object") {
-        return fallback;
-      }
-      const properties = {};
-      for (const [key, val] of Object.entries(s.properties).slice(0, 24)) {
-        if (val && typeof val === "object" && val.type === "object" && val.properties) {
-          const inner = {};
-          for (const ik of Object.keys(val.properties).slice(0, 16)) {
-            inner[ik] = { type: "string" };
-          }
-          properties[key] =
-            Object.keys(inner).length > 0
-              ? { type: "object", properties: inner }
-              : { type: "string" };
-        } else if (val?.type === "array") {
-          properties[key] = { type: "array", items: { type: "string" } };
-        } else if (val?.type === "boolean") {
-          properties[key] = { type: "boolean" };
-        } else if (val?.type === "number" || val?.type === "integer") {
-          properties[key] = { type: "number" };
-        } else {
-          properties[key] = { type: "string" };
-        }
-      }
-      if (Object.keys(properties).length === 0) {
-        return fallback;
-      }
-      const out = { type: "object", properties };
-      if (Array.isArray(s.required)) {
-        const req = s.required.filter((r) => r in properties).slice(0, 16);
-        if (req.length > 0) {
-          out.required = req;
-        }
-      }
-      return out;
-    }
-
-    const githubToolsCompact = toolsForGithubList.map((t) => ({
-      type: "function",
-      function: {
-        name: t.name,
-        description: String(t.description ?? "").slice(0, 120),
-        parameters: githubSlimParameters(
-          typeof t.inputSchema === "object" && t.inputSchema !== null ? t.inputSchema : {},
-        ),
+    const githubToolParamSchemas = {
+      read_text_file: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          head: { type: "number" },
+          tail: { type: "number" },
+        },
+        required: ["path"],
       },
-    }));
+      read_multiple_files: {
+        type: "object",
+        properties: {
+          paths: { type: "array", items: { type: "string" }, minItems: 1 },
+        },
+        required: ["paths"],
+      },
+      list_directory: {
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: ["path"],
+      },
+      get_file_info: {
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: ["path"],
+      },
+      search_files: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          pattern: { type: "string" },
+          excludePatterns: { type: "array", items: { type: "string" } },
+        },
+        required: ["path", "pattern"],
+      },
+    };
+
+    const githubToolShortDesc = {
+      read_text_file: "Read a UTF-8 text file under the workspace (path; optional head/tail line limits).",
+      read_multiple_files: "Read several text files in one call (paths array).",
+      list_directory: "List non-hidden entries in a directory (path).",
+      get_file_info: "Return metadata for a file or directory (path).",
+      search_files: "Glob search under path for pattern; optional excludePatterns.",
+    };
+
+    const githubToolsCompact = toolsForGithubList.map((t) => {
+      const params = githubToolParamSchemas[t.name];
+      if (!params) {
+        throw new Error(
+          `GitHub Models CI: tool "${t.name}" has no compact schema; extend githubToolParamSchemas or LLM_GITHUB_MCP_TOOLS.`,
+        );
+      }
+      return {
+        type: "function",
+        function: {
+          name: t.name,
+          description:
+            githubToolShortDesc[t.name] ?? String(t.description ?? "").slice(0, 100),
+          parameters: params,
+        },
+      };
+    });
+
+    const githubToolCharBudget = Number(
+      (process.env.LLM_GITHUB_TOOL_CHARS || "").trim() || "56000",
+    );
+
+    function clampGithubToolPayload(text) {
+      const s = String(text);
+      if (!useGithubModels) return s;
+      if (s.length <= githubToolCharBudget) return s;
+      return `${s.slice(0, githubToolCharBudget)}\n\n[...truncated ${s.length - githubToolCharBudget} chars for GitHub Models request size]`;
+    }
 
     function toolsForChat() {
       if (openaiKey || useOllama) return openaiToolsFull;
@@ -353,7 +368,7 @@ async function main() {
           args = {};
         }
         const raw = await client.callTool({ name, arguments: args });
-        const content = toolResultToString(raw);
+        const content = clampGithubToolPayload(toolResultToString(raw));
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
