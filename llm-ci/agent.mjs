@@ -139,15 +139,67 @@ async function main() {
     }));
 
     /**
-     * GitHub Models rejects requests over a small token budget (~8k for gpt-4o-mini).
-     * Send compact tool defs; MCP still validates at callTool time.
+     * GitHub Models caps total request size (~8k tokens for gpt-4o-mini) and rejects
+     * object schemas with no `properties`. Shallow-clone each tool schema so every
+     * object has explicit properties; MCP still receives real args at callTool time.
      */
+    function githubSlimParameters(schema) {
+      const fallback = { type: "object", properties: { value: { type: "string" } } };
+      if (!schema || typeof schema !== "object") {
+        return fallback;
+      }
+      let s = schema;
+      if (Array.isArray(s.anyOf) && s.anyOf[0]) {
+        s = s.anyOf[0];
+      }
+      if (Array.isArray(s.allOf) && s.allOf[0]) {
+        s = s.allOf[0];
+      }
+      if (s.type !== "object" || !s.properties || typeof s.properties !== "object") {
+        return fallback;
+      }
+      const properties = {};
+      for (const [key, val] of Object.entries(s.properties).slice(0, 24)) {
+        if (val && typeof val === "object" && val.type === "object" && val.properties) {
+          const inner = {};
+          for (const ik of Object.keys(val.properties).slice(0, 16)) {
+            inner[ik] = { type: "string" };
+          }
+          properties[key] =
+            Object.keys(inner).length > 0
+              ? { type: "object", properties: inner }
+              : { type: "string" };
+        } else if (val?.type === "array") {
+          properties[key] = { type: "array", items: { type: "string" } };
+        } else if (val?.type === "boolean") {
+          properties[key] = { type: "boolean" };
+        } else if (val?.type === "number" || val?.type === "integer") {
+          properties[key] = { type: "number" };
+        } else {
+          properties[key] = { type: "string" };
+        }
+      }
+      if (Object.keys(properties).length === 0) {
+        return fallback;
+      }
+      const out = { type: "object", properties };
+      if (Array.isArray(s.required)) {
+        const req = s.required.filter((r) => r in properties).slice(0, 16);
+        if (req.length > 0) {
+          out.required = req;
+        }
+      }
+      return out;
+    }
+
     const githubToolsCompact = mcpTools.map((t) => ({
       type: "function",
       function: {
         name: t.name,
         description: String(t.description ?? "").slice(0, 500),
-        parameters: { type: "object", additionalProperties: true },
+        parameters: githubSlimParameters(
+          typeof t.inputSchema === "object" && t.inputSchema !== null ? t.inputSchema : {},
+        ),
       },
     }));
 
