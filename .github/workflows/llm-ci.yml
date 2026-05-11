@@ -53,13 +53,10 @@ jobs:
           set -euo pipefail
           git diff "${{ github.event.pull_request.base.sha }}"..."${{ github.event.pull_request.head.sha }}" > .llm-ci-pr.diff
 
-      - name: Embind MoneroWasmWallet .function index for LLM
-        run: |
-          set -euo pipefail
-          cpp="monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp"
-          grep '\.function("' "$cpp" | sed -n 's/.*\.function(\"\([^\"]*\)\".*/\1/p' | sort -u > llm-ci/embind-wallet.functions.txt
-          test -s llm-ci/embind-wallet.functions.txt
-          echo "Embind name count: $(wc -l < llm-ci/embind-wallet.functions.txt)"
+      - name: Prepare LLM CI data files (prompt footer)
+        run: node llm-ci/prepare-ci-data.mjs
+        env:
+          LLM_CI_WORKSPACE: ${{ github.workspace }}
 
       - id: review
         working-directory: llm-ci

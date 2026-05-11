@@ -8,7 +8,7 @@ The CI runner may append raw file contents **after** the main body of this promp
 
 `=== CI_DATA:<repo-relative/path> ===`
 
-followed by the file text until the next such line or end of message. Treat a blob as if you had read that path with MCP (useful when MCP replies would be truncated). Which paths are appended is listed in the **`---LLM_CI_DATA_FILES---` footer** at the end of this file (one repo-relative path per line). The agent strips that footer from the instructions it shows you, then injects those files as `CI_DATA` blobs. For emergencies only, the workflow may set env `LLM_CI_DATA_FILES` (comma-separated paths) to override the footer. If no `=== CI_DATA:` sections appear, rely on MCP for those paths.
+followed by the file text until the next such line or end of message. Treat a blob as if you had read that path with MCP (useful when MCP replies would be truncated). Which paths are appended is listed in the **`---LLM_CI_DATA_FILES---` footer** at the end of this file (one repo-relative path per line). The agent strips that footer from the instructions it shows you, then injects those files as `CI_DATA` blobs. CI runs `node llm-ci/prepare-ci-data.mjs` first to write any **generated** footer paths (see the small registry in that script); static repo files need no generator. For emergencies only, the workflow may set env `LLM_CI_DATA_FILES` (comma-separated paths) to override the footer. If no `=== CI_DATA:` sections appear, rely on MCP for those paths.
 
 A **PR diff** for the full change is available as the file `.llm-ci-pr.diff` at the repo root (written by CI from `git diff` base...head). Read it when a check refers to the PR diff.
 

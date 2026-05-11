@@ -1,18 +1,11 @@
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolvePromptPath, splitPromptDataFiles } from "./prompt_util.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function resolvePromptPath() {
-  const raw = process.env.LLM_CI_PROMPT_FILE;
-  if (raw) {
-    return isAbsolute(raw) ? raw : join(process.env.LLM_CI_PROMPT_ROOT ?? __dirname, raw);
-  }
-  return join(__dirname, "prompt.txt");
-}
 
 function assistantTextContent(content) {
   if (typeof content === "string") {
@@ -67,23 +60,6 @@ function inferenceUrls() {
 
 function truthyEnv(v) {
   return /^(1|true|yes)$/i.test((v || "").trim());
-}
-
-function splitPromptDataFiles(text) {
-  const begin = "---LLM_CI_DATA_FILES---";
-  const end = "---END_LLM_CI_DATA_FILES---";
-  const i = text.indexOf(begin);
-  const j = text.indexOf(end);
-  if (i === -1 || j === -1 || j < i) {
-    return { body: text.trimEnd(), dataFiles: [] };
-  }
-  const body = `${text.slice(0, i).trimEnd()}\n${text.slice(j + end.length).trimStart()}`.trim();
-  const mid = text.slice(i + begin.length, j);
-  const dataFiles = mid
-    .split(/\r?\n/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith("#"));
-  return { body, dataFiles };
 }
 
 /**
