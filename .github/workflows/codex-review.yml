@@ -228,12 +228,8 @@ jobs:
               print(f"Codex review failed: unexpected payload in {path}: {data!r}", file=sys.stderr)
               sys.exit(1)
 
-          if reason is not None and (not isinstance(reason, list) or not all(isinstance(item, str) for item in reason)):
+          if not isinstance(reason, list) or not all(isinstance(item, str) for item in reason):
               print(f"Codex review failed: unexpected payload in {path}: {data!r}", file=sys.stderr)
-              sys.exit(1)
-
-          if status == "fail" and reason is None:
-              print(f"Codex review failed: missing reason array in {path}: {data!r}", file=sys.stderr)
               sys.exit(1)
 
           print(f"Codex status: {status}")

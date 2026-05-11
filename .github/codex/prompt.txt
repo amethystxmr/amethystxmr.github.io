@@ -20,5 +20,5 @@ Output requirements:
 - No explanation outside the JSON object.
 
 Reason requirements:
-- If `status` is `ok`, `reason` may be omitted. If present, use an array with one short sentence.
+- If `status` is `ok`, set `reason` to an array with one short sentence.
 - If `status` is `fail`, set `reason` to an array of violation strings, one violation per item, with file paths when useful.

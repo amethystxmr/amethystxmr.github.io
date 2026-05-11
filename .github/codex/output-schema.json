@@ -14,5 +14,5 @@
       "description": "Human-readable summary lines. Use one short line for ok, or one line per violation for fail."
     }
   },
-  "required": ["status"]
+  "required": ["status", "reason"]
 }
