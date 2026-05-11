@@ -125,7 +125,8 @@ async function main() {
     await client.connect(transport);
     const { tools: mcpTools } = await client.listTools();
 
-    const openaiTools = mcpTools.map((t) => ({
+    /** Full JSON Schema from MCP (large). */
+    const openaiToolsFull = mcpTools.map((t) => ({
       type: "function",
       function: {
         name: t.name,
@@ -137,14 +138,33 @@ async function main() {
       },
     }));
 
+    /**
+     * GitHub Models rejects requests over a small token budget (~8k for gpt-4o-mini).
+     * Send compact tool defs; MCP still validates at callTool time.
+     */
+    const githubToolsCompact = mcpTools.map((t) => ({
+      type: "function",
+      function: {
+        name: t.name,
+        description: String(t.description ?? "").slice(0, 500),
+        parameters: { type: "object", additionalProperties: true },
+      },
+    }));
+
+    function toolsForChat() {
+      if (openaiKey || useOllama) return openaiToolsFull;
+      return githubToolsCompact;
+    }
+
     async function chat(messages, { withTools = true } = {}) {
+      const toolsList = toolsForChat();
       const base = {
         messages,
-        max_tokens: openaiKey || useOllama ? 8192 : 16384,
+        max_tokens: openaiKey || useOllama ? 8192 : 4096,
         temperature: 0.2,
       };
-      if (withTools && openaiTools.length > 0) {
-        base.tools = openaiTools;
+      if (withTools && toolsList.length > 0) {
+        base.tools = toolsList;
         base.tool_choice = "auto";
       }
 
