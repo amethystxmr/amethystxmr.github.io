@@ -46,9 +46,10 @@ function inferenceUrls() {
 
 async function main() {
   const workspace = process.env.LLM_CI_WORKSPACE || process.cwd();
-  const token = process.env.GITHUB_TOKEN;
+  const pat = (process.env.LLM_INFERENCE_TOKEN || "").trim();
+  const token = pat || process.env.GITHUB_TOKEN;
   if (!token) {
-    throw new Error("GITHUB_TOKEN is required");
+    throw new Error("GITHUB_TOKEN or LLM_INFERENCE_TOKEN is required");
   }
 
   const model = process.env.LLM_MODEL || "openai/gpt-4o-mini";
@@ -100,7 +101,8 @@ async function main() {
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
         "Content-Type": "application/json",
-        "X-GitHub-Api-Version": "2022-11-28",
+        "X-GitHub-Api-Version": process.env.GITHUB_API_VERSION || "2022-11-28",
+        "User-Agent": "amethyst-llm-ci/1.0 (GitHub Actions)",
       };
       const urls = inferenceUrls();
       let lastErr;
@@ -111,8 +113,12 @@ async function main() {
         if (res.ok) {
           return JSON.parse(text);
         }
+        const hint =
+          res.status === 403
+            ? " For org repos, enable GitHub Models under Organization settings → Models → Development, allow this model, and ensure workflows may use Models; or set repository secret LLM_MODELS_PAT (PAT with models:read) as a fallback bearer."
+            : "";
         lastErr = new Error(
-          `GitHub Models inference HTTP ${res.status} (${url}): ${text || "(empty body)"}`,
+          `GitHub Models inference HTTP ${res.status} (${url}): ${text || "(empty body)"}${hint}`,
         );
         if (res.status === 403 && i < urls.length - 1) {
           continue;
