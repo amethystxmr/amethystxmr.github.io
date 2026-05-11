@@ -69,6 +69,26 @@ function truthyEnv(v) {
   return /^(1|true|yes)$/i.test((v || "").trim());
 }
 
+/** In CI, Embind names are precomputed into llm-ci/embind-wallet.functions.txt — inject so GitHub Models sees them without relying on MCP reads alone. */
+function embindIndexInjection(workspaceRoot) {
+  try {
+    const p = join(workspaceRoot, "llm-ci", "embind-wallet.functions.txt");
+    const raw = readFileSync(p, "utf8").trim();
+    if (!raw) {
+      return "\n[CI: llm-ci/embind-wallet.functions.txt is empty — do not claim there are no Embind methods without reading the wasm_wallet_api.cpp binding section via tools.]\n";
+    }
+    const lines = raw.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    const maxChars = 10000;
+    const body =
+      raw.length > maxChars
+        ? `${raw.slice(0, maxChars)}\n… [truncated ${raw.length - maxChars} chars]`
+        : raw;
+    return `\n--- CI-generated Embind JS names for MoneroWasmWallet (${lines.length} names; from wasm_wallet_api.cpp .function("…") lines) ---\n${body}\n--- end CI Embind list ---\n`;
+  } catch {
+    return "\n[CI: llm-ci/embind-wallet.functions.txt not found at agent startup — read it with MCP from the workspace root.]\n";
+  }
+}
+
 async function postJson(url, body, headers) {
   const res = await fetch(url, {
     method: "POST",
@@ -113,10 +133,13 @@ async function main() {
       `Workspace: ${workspace}`,
       "GitHub Models limits request size; full rules are in llm-ci/prompt.txt (read with tools).",
       "",
-      "Read before concluding:",
+      "The block below is copied from llm-ci/embind-wallet.functions.txt on the runner (Embind-exported JS names). Use it as authoritative for name matching; do not claim there are no C++ Embind methods if that list is non-empty.",
+      "",
+      "Also read before concluding:",
       "- llm-ci/prompt.txt — checks and exact OK / FAIL: output format",
-      "- llm-ci/embind-wallet.functions.txt — CI list of Embind-exported JS method names (one per line)",
+      "- monero-wasm-module/walletApi.ts — TypeScript declarations",
       "- .llm-ci-pr.diff — PR diff (base...head)",
+      embindIndexInjection(workspace),
     ].join("\n");
   }
 

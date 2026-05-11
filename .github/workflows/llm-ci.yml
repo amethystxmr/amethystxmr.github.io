@@ -58,6 +58,8 @@ jobs:
           set -euo pipefail
           cpp="monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp"
           grep '\.function("' "$cpp" | sed -n 's/.*\.function(\"\([^\"]*\)\".*/\1/p' | sort -u > llm-ci/embind-wallet.functions.txt
+          test -s llm-ci/embind-wallet.functions.txt
+          echo "Embind name count: $(wc -l < llm-ci/embind-wallet.functions.txt)"
 
       - id: review
         working-directory: llm-ci
