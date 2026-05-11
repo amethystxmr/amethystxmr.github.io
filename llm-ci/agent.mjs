@@ -91,7 +91,7 @@ async function main() {
 
   if (!openaiKey && !useOllama && !githubInferenceToken) {
     throw new Error(
-      "No inference credentials: set USE_OLLAMA (default in CI), OPENAI_API_KEY, or GitHub Models token (LLM_MODELS_PAT / GITHUB_TOKEN).",
+      "No inference credentials: set OPENAI_API_KEY, USE_OLLAMA=true, or GitHub Models (LLM_MODELS_PAT or GITHUB_TOKEN with models: read).",
     );
   }
 

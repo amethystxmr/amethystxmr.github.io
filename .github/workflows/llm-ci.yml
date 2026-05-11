@@ -24,35 +24,6 @@ jobs:
           cache: npm
           cache-dependency-path: llm-ci/package-lock.json
 
-      - id: ollama-model
-        name: Read Ollama model id
-        run: |
-          set -euo pipefail
-          echo "model=$(tr -d '[:space:]' < llm-ci/ollama-model)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Ollama
-        uses: actions/cache@v4
-        with:
-          path: ~/.ollama
-          key: ${{ runner.os }}-ollama-${{ hashFiles('llm-ci/ollama-model') }}
-
-      - name: Install and start Ollama
-        run: |
-          set -euo pipefail
-          if ! command -v ollama >/dev/null 2>&1; then
-            curl -fsSL https://ollama.com/install.sh | sh
-          fi
-          export OLLAMA_HOST=127.0.0.1:11434
-          nohup ollama serve > /tmp/ollama-serve.log 2>&1 &
-          for i in $(seq 1 120); do
-            if curl -fsS "http://127.0.0.1:11434/api/tags" >/dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-          curl -fsS "http://127.0.0.1:11434/api/tags" >/dev/null
-          ollama pull "${{ steps.ollama-model.outputs.model }}"
-
       - name: Install LLM CI dependencies
         working-directory: llm-ci
         run: npm ci
@@ -67,7 +38,6 @@ jobs:
         run: |
           set -euo pipefail
           node agent.mjs > response.txt
-          cat response.txt
           {
             echo 'response<<LLM_OUT'
             cat response.txt
@@ -76,12 +46,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLM_INFERENCE_TOKEN: ${{ secrets.LLM_MODELS_PAT }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_LLM_MODEL: gpt-4o-mini
           LLM_MODEL: openai/gpt-4o-mini
-          USE_OLLAMA: "true"
-          OLLAMA_MODEL: ${{ steps.ollama-model.outputs.model }}
-          OLLAMA_URL: http://127.0.0.1:11434/v1/chat/completions
           LLM_CI_WORKSPACE: ${{ github.workspace }}
           LLM_CI_SYSTEM: |
             You are a CI reviewer. The repository is checked out at the PR head commit on disk.
@@ -102,11 +67,23 @@ jobs:
 
             When you are done investigating, reply exactly as specified in the user prompt (OK or one or more FAIL lines only).
 
+      - name: Print LLM CI output
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "======== LLM CI OUTPUT (llm-ci/response.txt, verbatim) ========"
+          if [ -f llm-ci/response.txt ]; then
+            cat llm-ci/response.txt
+          else
+            echo "(file missing — review step did not produce response.txt)"
+          fi
+          echo "======== end LLM CI OUTPUT ========"
+
       - id: validate
         name: Validate LLM CI response
         run: |
           set -euo pipefail
-          python3 llm-ci/validate_response.py llm-ci/response.txt
+          node llm-ci/validate_response.mjs llm-ci/response.txt
 
       - name: Comment on LLM CI failure
         if: ${{ failure() && steps.review.outcome == 'success' }}
