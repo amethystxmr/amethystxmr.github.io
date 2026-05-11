@@ -66,7 +66,8 @@ jobs:
         working-directory: llm-ci
         run: |
           set -euo pipefail
-          node agent.mjs 2>&1 | tee response.txt
+          node agent.mjs > response.txt
+          cat response.txt
           {
             echo 'response<<LLM_OUT'
             cat response.txt
