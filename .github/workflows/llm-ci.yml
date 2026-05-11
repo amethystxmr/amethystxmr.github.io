@@ -69,14 +69,13 @@ jobs:
 
             When you are done investigating, reply exactly as specified in the user prompt (OK or one or more FAIL lines only).
 
-      - name: Fail if LLM reported FAIL
+      - id: validate
+        name: Validate LLM CI response
         run: |
           set -euo pipefail
-          if grep -qE '^[[:space:]]*FAIL:' llm-ci/response.txt; then
-            exit 1
-          fi
+          python3 llm-ci/validate_response.py llm-ci/response.txt
 
-      - name: Comment on LLM FAIL lines
+      - name: Comment on LLM CI failure
         if: ${{ failure() && steps.review.outcome == 'success' }}
         env:
           RESPONSE: ${{ steps.review.outputs.response }}
@@ -88,7 +87,12 @@ jobs:
             const failLines = response
               .split(/\n/)
               .filter((line) => /^\s*FAIL:/.test(line));
-            if (failLines.length === 0) {
+            const nonEmpty = response
+              .split(/\n/)
+              .map((l) => l.trim())
+              .filter((l) => l.length > 0);
+            const strictOk = nonEmpty.length === 1 && nonEmpty[0] === 'OK';
+            if (strictOk) {
               return;
             }
             const marker = '<!-- llm-ci-check -->';
@@ -97,16 +101,31 @@ jobs:
               .replace(/&/g, '&amp;')
               .replace(/</g, '&lt;')
               .replace(/>/g, '&gt;');
-            const body = `${marker}\n**LLM CI check** · ${timestamp}\n\n<pre>${escaped}</pre>\n`;
+            const headline =
+              failLines.length > 0
+                ? '**LLM CI check**'
+                : '**LLM CI check (invalid output)**';
+            const body = `${marker}\n${headline} · ${timestamp}\n\n<pre>${escaped}</pre>\n`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
-            const { data: comments } = await github.rest.issues.listComments({
-              owner,
-              repo,
-              issue_number,
-              per_page: 100,
-            });
-            const existing = comments.find(
+            const allComments = [];
+            for (let page = 1; ; page++) {
+              const { data } = await github.rest.issues.listComments({
+                owner,
+                repo,
+                issue_number,
+                per_page: 100,
+                page,
+              });
+              if (!data.length) {
+                break;
+              }
+              allComments.push(...data);
+              if (data.length < 100) {
+                break;
+              }
+            }
+            const existing = allComments.find(
               (c) =>
                 c.user?.login === 'github-actions[bot]' &&
                 typeof c.body === 'string' &&
