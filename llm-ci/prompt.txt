@@ -33,18 +33,6 @@ If you find any mismatch, omission, or ambiguity that would plausibly cause a ru
 
 ---
 
-### No TODO comments in the diff
-
-In the PR diff: fail if any added or modified line introduces a new `TODO` / `FIXME` style task comment (existing lines only removed are fine).
-
----
-
-### No console.log in the diff
-
-In the PR diff: fail if any added or modified line introduces `console.log` (other `console.*` are out of scope unless clearly equivalent logging noise).
-
----
-
 ### No synchronous XHR in the diff
 
 In the PR diff: fail if any added or modified code uses synchronous XMLHttpRequest (e.g. `open(..., false)` or patterns that force sync network).

@@ -1,7 +1,31 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function resolvePromptPath() {
+  const raw = process.env.LLM_CI_PROMPT_FILE;
+  if (raw) {
+    return isAbsolute(raw) ? raw : join(process.env.LLM_CI_PROMPT_ROOT ?? __dirname, raw);
+  }
+  return join(__dirname, "prompt.txt");
+}
+
+function assistantTextContent(content) {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .filter((p) => p && p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text)
+      .join("");
+  }
+  return "";
+}
 
 async function main() {
   const workspace = process.env.LLM_CI_WORKSPACE || process.cwd();
@@ -11,14 +35,17 @@ async function main() {
   }
 
   const model = process.env.LLM_MODEL || "openai/gpt-4o-mini";
-  const promptRel = process.env.LLM_CI_PROMPT_FILE || "llm-ci.txt";
-  const promptPath = join(workspace, promptRel);
+  const promptPath = resolvePromptPath();
   const systemPrompt = process.env.LLM_CI_SYSTEM ?? "";
   const userPrompt = readFileSync(promptPath, "utf8");
 
+  const fsServer =
+    process.env.MCP_FILESYSTEM_SERVER_PACKAGE ??
+    "@modelcontextprotocol/server-filesystem@2026.1.14";
+
   const transport = new StdioClientTransport({
     command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", workspace],
+    args: ["-y", fsServer, workspace],
     cwd: workspace,
   });
 
@@ -102,7 +129,7 @@ async function main() {
 
       const toolCalls = msg.tool_calls;
       if (!toolCalls?.length) {
-        const text = typeof msg.content === "string" ? msg.content : "";
+        const text = assistantTextContent(msg.content);
         process.stdout.write(`${text.trimEnd()}\n`);
         return;
       }

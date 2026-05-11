@@ -1,0 +1,8 @@
+{
+  "name": "amethyst-llm-ci",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0"
+  }
+}

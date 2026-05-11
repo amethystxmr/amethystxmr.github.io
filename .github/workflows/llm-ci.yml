@@ -22,8 +22,10 @@ jobs:
         with:
           node-version: "24"
           cache: npm
+          cache-dependency-path: llm-ci/package-lock.json
 
-      - name: Install dependencies
+      - name: Install LLM CI dependencies
+        working-directory: llm-ci
         run: npm ci
 
       - name: Write PR diff for LLM tools
@@ -32,19 +34,19 @@ jobs:
           git diff "${{ github.event.pull_request.base.sha }}"..."${{ github.event.pull_request.head.sha }}" > .llm-ci-pr.diff
 
       - id: review
+        working-directory: llm-ci
         run: |
           set -euo pipefail
-          node scripts/llm-ci-agent.mjs 2>&1 | tee llm-ci-response.txt
+          node agent.mjs 2>&1 | tee response.txt
           {
             echo 'response<<LLM_OUT'
-            cat llm-ci-response.txt
+            cat response.txt
             echo 'LLM_OUT'
           } >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLM_MODEL: openai/gpt-4.1-mini
           LLM_CI_WORKSPACE: ${{ github.workspace }}
-          LLM_CI_PROMPT_FILE: llm-ci.txt
           LLM_CI_SYSTEM: |
             You are a CI reviewer. The repository is checked out at the PR head commit on disk.
 
@@ -67,7 +69,7 @@ jobs:
       - name: Fail if LLM reported FAIL
         run: |
           set -euo pipefail
-          if grep -qE '^[[:space:]]*FAIL:' llm-ci-response.txt; then
+          if grep -qE '^[[:space:]]*FAIL:' llm-ci/response.txt; then
             exit 1
           fi
 
