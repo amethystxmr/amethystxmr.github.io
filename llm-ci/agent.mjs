@@ -105,7 +105,19 @@ async function main() {
 
   const promptPath = resolvePromptPath();
   const systemPrompt = process.env.LLM_CI_SYSTEM ?? "";
-  const userPrompt = readFileSync(promptPath, "utf8");
+  let userPrompt = readFileSync(promptPath, "utf8");
+  if (useGithubModels && !truthyEnv(process.env.LLM_CI_FULL_PROMPT)) {
+    userPrompt = [
+      "You are running automated PR review in GitHub Actions with a strict API request size limit.",
+      "Use MCP filesystem tools on the workspace root.",
+      "",
+      "Before you conclude, read:",
+      "- llm-ci/prompt.txt — full review rules, checks, and exact OK / FAIL: output format",
+      "- .llm-ci-pr.diff — unified diff for this PR (base...head)",
+      "",
+      "Follow every instruction in llm-ci/prompt.txt. Reply only as that file specifies (one line OK, or only FAIL: lines).",
+    ].join("\n");
+  }
 
   const fsServer =
     process.env.MCP_FILESYSTEM_SERVER_PACKAGE ??
@@ -243,7 +255,7 @@ async function main() {
       const toolsList = toolsForChat();
       const base = {
         messages,
-        max_tokens: openaiKey || useOllama ? 8192 : 4096,
+        max_tokens: openaiKey || useOllama ? 8192 : 2048,
         temperature: 0.2,
       };
       if (withTools && toolsList.length > 0) {
