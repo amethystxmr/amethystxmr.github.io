@@ -1569,7 +1569,7 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
     emscripten::value_object<struct MoneroWasmWallet::WalletAddress>("WalletAddress")
         .field("address", &MoneroWasmWallet::WalletAddress::address)
         .field("label", &MoneroWasmWallet::WalletAddress::label)
-        .field("indexMinor", &MoneroWasmWallet::WalletAddress::indexMinor);
+        .field("index", &MoneroWasmWallet::WalletAddress::indexMinor);
 
     emscripten::value_object<MoneroWasmWallet::RefreshResult>("RefreshResult")
         .field("blocksFetched", &MoneroWasmWallet::RefreshResult::blocksFetched)
