@@ -18,7 +18,7 @@ cd monero-wasm-src
 
 ## C++ IDE support
 
-VS Code/Cursor should use the `clangd` extension for C/C++ support. Install
+VSCode/Cursor should use the `clangd` extension for C/C++ support. Install
 `clangd-22` with:
 
 ```bash
