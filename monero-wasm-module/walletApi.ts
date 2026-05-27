@@ -60,7 +60,9 @@ export declare class MoneroWasmWallet {
   is_synced(): MaybePromise<boolean>;
   store(): MaybePromise<void>;
   /** Install callback for wallet sync progress (height/timestamp); pass `null` to clear. */
-  set_on_new_block_callback(callback: WalletNewBlockCallback): MaybePromise<void>;
+  set_on_new_block_callback(
+    callback: WalletNewBlockCallback,
+  ): MaybePromise<void>;
   set_attribute(key: string, value: string): MaybePromise<void>;
   get_attribute(key: string): MaybePromise<string>;
   load(fileName: string, password: string): MaybePromise<void>;
@@ -80,9 +82,16 @@ export declare class MoneroWasmWallet {
   watch_only(): MaybePromise<boolean>;
   is_deterministic(): MaybePromise<boolean>;
   get_wallet_file(): MaybePromise<string>;
-  get_tx_proof(txid: string, dstaddress: string, note: string): MaybePromise<string>;
+  get_tx_proof(
+    txid: string,
+    dstaddress: string,
+    note: string,
+  ): MaybePromise<string>;
   get_tx_key(txid: string): MaybePromise<string>;
-  get_tx_keys_for_address(txid: string, dstaddress: string): MaybePromise<string[]>;
+  get_tx_keys_for_address(
+    txid: string,
+    dstaddress: string,
+  ): MaybePromise<string[]>;
   balance(index_major: number, strict: boolean): MaybePromise<bigint>;
   unlocked_balance(
     index_major: number,
@@ -103,8 +112,14 @@ export declare class MoneroWasmWallet {
     month: number,
     day: number,
   ): MaybePromise<bigint>;
-  words_to_bytes(words: string, language: string): MaybePromise<Uint8Array | null>;
-  get_payments(minHeight: bigint, maxHeight: bigint): MaybePromise<PaymentDetails[]>;
+  words_to_bytes(
+    words: string,
+    language: string,
+  ): MaybePromise<Uint8Array | null>;
+  get_payments(
+    minHeight: bigint,
+    maxHeight: bigint,
+  ): MaybePromise<PaymentDetails[]>;
   get_payments_mempool(): MaybePromise<PaymentDetails[]>;
   get_num_subaddresses(index_major: number): MaybePromise<number>;
   get_subaddress_as_str(
@@ -136,7 +151,9 @@ export declare class MoneroWasmWallet {
     data: Uint8Array,
     do_accept: boolean,
   ): MaybePromise<WalletTxHandle>;
-  get_multisig_tx_set_info(handle: WalletTxHandle): MaybePromise<TransferInfoItem[]>;
+  get_multisig_tx_set_info(
+    handle: WalletTxHandle,
+  ): MaybePromise<TransferInfoItem[]>;
   get_multisig_tx_signers_count(
     handle: WalletTxHandle,
     excludeSelf: boolean,
@@ -160,7 +177,10 @@ export declare class MoneroWasmWallet {
   /**
    * Note: this also saves files.
    */
-  exchange_multisig_keys(password: string, kex_msgs: string[]): MaybePromise<string>;
+  exchange_multisig_keys(
+    password: string,
+    kex_msgs: string[],
+  ): MaybePromise<string>;
   export_multisig(): MaybePromise<Uint8Array>;
   import_multisig(infos: Uint8Array[]): MaybePromise<number>;
   export_key_images(filename: string, all: boolean): MaybePromise<void>;
@@ -169,7 +189,10 @@ export declare class MoneroWasmWallet {
     import_when_untrusted_daemon: boolean,
   ): MaybePromise<KeyImagesImportResult>;
   verify_password(password: string): MaybePromise<boolean>;
-  rescan_blockchain(hard: boolean, keep_key_images: boolean): MaybePromise<void>;
+  rescan_blockchain(
+    hard: boolean,
+    keep_key_images: boolean,
+  ): MaybePromise<void>;
 }
 
 export const FeePriority = {
@@ -319,10 +342,6 @@ interface Module {
   };
 }
 
-/**
- * Module bootstrap progress. Keep this API semantic only; user-facing text
- * belongs in the UI layer, keyed by `phase`.
- */
 export type ModuleLoadProgress =
   | { phase: "preparingModule" }
   | {
@@ -508,7 +527,10 @@ function fetchWasmBinaryWithProgress(
 
 function instantiateWalletWasmWithProgress(
   imports: WebAssembly.Imports,
-  receiveInstance: (instance: WebAssembly.Instance, mod: WebAssembly.Module) => void,
+  receiveInstance: (
+    instance: WebAssembly.Instance,
+    mod: WebAssembly.Module,
+  ) => void,
   reportProgress: WasmProgressReporter,
   onError: (error: unknown) => void,
 ): void {
@@ -522,7 +544,9 @@ function instantiateWalletWasmWithProgress(
   })().catch(onError);
 }
 
-export async function initModule(onProgress: ModuleLoadProgressCallback = null) {
+export async function initModule(
+  onProgress: ModuleLoadProgressCallback = null,
+) {
   if (module) {
     onProgress?.({ phase: "moduleReady" });
     return;
@@ -535,7 +559,10 @@ export async function initModule(onProgress: ModuleLoadProgressCallback = null) 
   const moduleLoadFailed = new Promise<never>((_, reject) => {
     failModuleLoad = reject;
   });
-  const reportWasmProgress: WasmProgressReporter = (bytesLoaded, bytesTotal) => {
+  const reportWasmProgress: WasmProgressReporter = (
+    bytesLoaded,
+    bytesTotal,
+  ) => {
     onProgress?.({ phase: "downloadingWasm", bytesLoaded, bytesTotal });
   };
 
