@@ -60,7 +60,9 @@ export declare class MoneroWasmWallet {
   is_synced(): MaybePromise<boolean>;
   store(): MaybePromise<void>;
   /** Install callback for wallet sync progress (height/timestamp); pass `null` to clear. */
-  set_on_new_block_callback(callback: WalletNewBlockCallback): MaybePromise<void>;
+  set_on_new_block_callback(
+    callback: WalletNewBlockCallback,
+  ): MaybePromise<void>;
   set_attribute(key: string, value: string): MaybePromise<void>;
   get_attribute(key: string): MaybePromise<string>;
   load(fileName: string, password: string): MaybePromise<void>;
@@ -80,9 +82,16 @@ export declare class MoneroWasmWallet {
   watch_only(): MaybePromise<boolean>;
   is_deterministic(): MaybePromise<boolean>;
   get_wallet_file(): MaybePromise<string>;
-  get_tx_proof(txid: string, dstaddress: string, note: string): MaybePromise<string>;
+  get_tx_proof(
+    txid: string,
+    dstaddress: string,
+    note: string,
+  ): MaybePromise<string>;
   get_tx_key(txid: string): MaybePromise<string>;
-  get_tx_keys_for_address(txid: string, dstaddress: string): MaybePromise<string[]>;
+  get_tx_keys_for_address(
+    txid: string,
+    dstaddress: string,
+  ): MaybePromise<string[]>;
   balance(index_major: number, strict: boolean): MaybePromise<bigint>;
   unlocked_balance(
     index_major: number,
@@ -103,8 +112,14 @@ export declare class MoneroWasmWallet {
     month: number,
     day: number,
   ): MaybePromise<bigint>;
-  words_to_bytes(words: string, language: string): MaybePromise<Uint8Array | null>;
-  get_payments(minHeight: bigint, maxHeight: bigint): MaybePromise<PaymentDetails[]>;
+  words_to_bytes(
+    words: string,
+    language: string,
+  ): MaybePromise<Uint8Array | null>;
+  get_payments(
+    minHeight: bigint,
+    maxHeight: bigint,
+  ): MaybePromise<PaymentDetails[]>;
   get_payments_mempool(): MaybePromise<PaymentDetails[]>;
   get_num_subaddresses(index_major: number): MaybePromise<number>;
   get_subaddress_as_str(
@@ -136,7 +151,9 @@ export declare class MoneroWasmWallet {
     data: Uint8Array,
     do_accept: boolean,
   ): MaybePromise<WalletTxHandle>;
-  get_multisig_tx_set_info(handle: WalletTxHandle): MaybePromise<TransferInfoItem[]>;
+  get_multisig_tx_set_info(
+    handle: WalletTxHandle,
+  ): MaybePromise<TransferInfoItem[]>;
   get_multisig_tx_signers_count(
     handle: WalletTxHandle,
     excludeSelf: boolean,
@@ -160,7 +177,10 @@ export declare class MoneroWasmWallet {
   /**
    * Note: this also saves files.
    */
-  exchange_multisig_keys(password: string, kex_msgs: string[]): MaybePromise<string>;
+  exchange_multisig_keys(
+    password: string,
+    kex_msgs: string[],
+  ): MaybePromise<string>;
   export_multisig(): MaybePromise<Uint8Array>;
   import_multisig(infos: Uint8Array[]): MaybePromise<number>;
   export_key_images(filename: string, all: boolean): MaybePromise<void>;
@@ -169,7 +189,10 @@ export declare class MoneroWasmWallet {
     import_when_untrusted_daemon: boolean,
   ): MaybePromise<KeyImagesImportResult>;
   verify_password(password: string): MaybePromise<boolean>;
-  rescan_blockchain(hard: boolean, keep_key_images: boolean): MaybePromise<void>;
+  rescan_blockchain(
+    hard: boolean,
+    keep_key_images: boolean,
+  ): MaybePromise<void>;
 }
 
 export const FeePriority = {
@@ -319,6 +342,41 @@ interface Module {
   };
 }
 
+export type ModuleLoadProgress =
+  | { phase: "preparingModule" }
+  | {
+      phase: "downloadingWasm";
+      bytesLoaded: number;
+      bytesTotal: number | null;
+    }
+  | {
+      phase: "linkingNativeModule";
+      resolvedDependencies: number;
+      totalDependencies: number;
+    }
+  | { phase: "initializingWalletStorage" }
+  | { phase: "moduleReady" };
+
+export type ModuleLoadProgressCallback =
+  | ((progress: ModuleLoadProgress) => void)
+  | null;
+
+type ModuleFactoryOptions = {
+  monitorRunDependencies?: (left: number) => void;
+  instantiateWasm?: (
+    imports: WebAssembly.Imports,
+    receiveInstance: (
+      instance: WebAssembly.Instance,
+      module: WebAssembly.Module,
+    ) => void,
+  ) => WebAssembly.Exports | Record<string, never>;
+};
+
+type WasmProgressReporter = (
+  bytesLoaded: number,
+  bytesTotal: number | null,
+) => void;
+
 let module: Module;
 
 /**
@@ -416,14 +474,131 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
   return runtimeGlobal.globalHttpConfig;
 }
 
-export async function initModule() {
+function getWalletWasmUrl() {
+  return new URL("wasm_wallet.wasm", import.meta.url).href;
+}
+
+function fetchWasmBinaryWithProgress(
+  url: string,
+  onProgress: WasmProgressReporter,
+): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let bytesTotal: number | null = null;
+    xhr.open("GET", url, true);
+    xhr.responseType = "arraybuffer";
+
+    xhr.onprogress = (event) => {
+      bytesTotal = event.lengthComputable ? event.total : null;
+      onProgress(event.loaded, bytesTotal);
+    };
+
+    xhr.onload = () => {
+      if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
+        const response = xhr.response;
+        if (response instanceof ArrayBuffer) {
+          onProgress(response.byteLength, bytesTotal);
+          resolve(response);
+          return;
+        }
+        reject(new Error(`Invalid WASM response from ${url}`));
+        return;
+      }
+
+      reject(new Error(`${xhr.status} : ${xhr.responseURL || url}`));
+    };
+
+    xhr.onerror = () => {
+      reject(new Error(`Failed to load WASM from ${url}`));
+    };
+
+    xhr.onabort = () => {
+      reject(new Error(`WASM load aborted from ${url}`));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new Error(`WASM load timed out from ${url}`));
+    };
+
+    onProgress(0, null);
+    xhr.send();
+  });
+}
+
+function instantiateWalletWasmWithProgress(
+  imports: WebAssembly.Imports,
+  receiveInstance: (
+    instance: WebAssembly.Instance,
+    mod: WebAssembly.Module,
+  ) => void,
+  reportProgress: WasmProgressReporter,
+  onError: (error: unknown) => void,
+): void {
+  void (async () => {
+    const binary = await fetchWasmBinaryWithProgress(
+      getWalletWasmUrl(),
+      reportProgress,
+    );
+    const result = await WebAssembly.instantiate(binary, imports);
+    receiveInstance(result.instance, result.module);
+  })().catch(onError);
+}
+
+export async function initModule(
+  onProgress: ModuleLoadProgressCallback = null,
+) {
   if (module) {
+    onProgress?.({ phase: "moduleReady" });
     return;
   }
-  module = (await MoneroWasmWalletModuleFactory()) as Module;
+
+  onProgress?.({ phase: "preparingModule" });
+
+  let totalRunDependencies = 0;
+  let failModuleLoad!: (error: unknown) => void;
+  const moduleLoadFailed = new Promise<never>((_, reject) => {
+    failModuleLoad = reject;
+  });
+  const reportWasmProgress: WasmProgressReporter = (
+    bytesLoaded,
+    bytesTotal,
+  ) => {
+    onProgress?.({ phase: "downloadingWasm", bytesLoaded, bytesTotal });
+  };
+
+  const moduleLoad = MoneroWasmWalletModuleFactory({
+    instantiateWasm(imports, receiveInstance) {
+      instantiateWalletWasmWithProgress(
+        imports,
+        receiveInstance,
+        reportWasmProgress,
+        failModuleLoad,
+      );
+      // Emscripten requires `{}` to mark async instantiation:
+      // https://emscripten.org/docs/api_reference/module.html#Module.instantiateWasm
+      return {};
+    },
+    monitorRunDependencies(left) {
+      totalRunDependencies = Math.max(totalRunDependencies, left);
+      if (totalRunDependencies <= 0) {
+        return;
+      }
+      const resolved = totalRunDependencies - left;
+      onProgress?.({
+        phase: "linkingNativeModule",
+        resolvedDependencies: resolved,
+        totalDependencies: totalRunDependencies,
+      });
+    },
+  } satisfies ModuleFactoryOptions) as Promise<Module>;
+
+  module = await Promise.race([moduleLoad, moduleLoadFailed]);
+
+  onProgress?.({ phase: "initializingWalletStorage" });
   await initFilesystem();
   getWalletRuntimeGlobal().moneroWalletModule = module;
   ensureGlobalHttpConfig();
+  onProgress?.({ phase: "moduleReady" });
 }
 
 export function setDaemonAddress(daemonAddress: string) {
