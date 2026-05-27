@@ -349,6 +349,7 @@ export type ModuleLoadProgress =
       bytesLoaded: number;
       bytesTotal: number | null;
     }
+  | { phase: "decodingWasm" }
   | {
       phase: "linkingNativeModule";
       resolvedDependencies: number;
@@ -376,6 +377,8 @@ type WasmProgressReporter = (
   bytesLoaded: number,
   bytesTotal: number | null,
 ) => void;
+
+declare const __WASM_WALLET_SIZE__: number;
 
 let module: Module;
 
@@ -478,18 +481,26 @@ function getWalletWasmUrl() {
   return new URL("wasm_wallet.wasm", import.meta.url).href;
 }
 
+function getWasmProgressTotal(event: ProgressEvent) {
+  // If the server sends a usable total, prefer the browser's progress metadata.
+  // On GitHub Pages, though, the WASM response may be gzip-compressed in transit:
+  // the Content-Length header then describes compressed bytes, while XHR progress
+  // events report decoded bytes. When lengthComputable is false, use Vite's
+  // build-time raw WASM size so the denominator matches event.loaded.
+  return event.lengthComputable ? event.total : __WASM_WALLET_SIZE__;
+}
+
 function fetchWasmBinaryWithProgress(
   url: string,
   onProgress: WasmProgressReporter,
 ): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    let bytesTotal: number | null = null;
     xhr.open("GET", url, true);
     xhr.responseType = "arraybuffer";
 
     xhr.onprogress = (event) => {
-      bytesTotal = event.lengthComputable ? event.total : null;
+      const bytesTotal = getWasmProgressTotal(event);
       onProgress(event.loaded, bytesTotal);
     };
 
@@ -497,7 +508,7 @@ function fetchWasmBinaryWithProgress(
       if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
         const response = xhr.response;
         if (response instanceof ArrayBuffer) {
-          onProgress(response.byteLength, bytesTotal);
+          onProgress(response.byteLength, response.byteLength);
           resolve(response);
           return;
         }
@@ -532,6 +543,7 @@ function instantiateWalletWasmWithProgress(
     mod: WebAssembly.Module,
   ) => void,
   reportProgress: WasmProgressReporter,
+  onDecoding: () => void,
   onError: (error: unknown) => void,
 ): void {
   void (async () => {
@@ -539,6 +551,7 @@ function instantiateWalletWasmWithProgress(
       getWalletWasmUrl(),
       reportProgress,
     );
+    onDecoding();
     const result = await WebAssembly.instantiate(binary, imports);
     receiveInstance(result.instance, result.module);
   })().catch(onError);
@@ -572,6 +585,7 @@ export async function initModule(
         imports,
         receiveInstance,
         reportWasmProgress,
+        () => onProgress?.({ phase: "decodingWasm" }),
         failModuleLoad,
       );
       // Emscripten requires `{}` to mark async instantiation:

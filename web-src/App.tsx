@@ -47,6 +47,11 @@ function getBootPhaseUiText(progress: BootPhaseProgress): {
         title,
         barLabel: "Loading wallet engine...",
       };
+    case "decodingWasm":
+      return {
+        title,
+        barLabel: "Decoding wallet engine...",
+      };
     case "linkingNativeModule":
       return {
         title,
