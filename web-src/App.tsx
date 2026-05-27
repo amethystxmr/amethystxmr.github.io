@@ -1,16 +1,19 @@
 import * as React from "react";
+import type { ModuleLoadProgress } from "../monero-wasm-module/walletApi.workerClient";
 import {
   APP_OVERLAY_ROOT_ATTRIBUTE,
   AlertProvider,
   MultisigDataOverlayProvider,
+  ProgressBar,
 } from "./components/ui";
 
+/** App-only phase after the worker module is ready (dynamic import of wallet UI). */
+type WalletUiBootProgress = { phase: "loadingWalletUi" };
+
+type BootPhaseProgress = ModuleLoadProgress | WalletUiBootProgress;
+
 type BootState =
-  | {
-      type: "booting";
-      title: string;
-      hint?: string;
-    }
+  | { type: "booting"; progress: BootPhaseProgress }
   | {
       type: "error";
       title: string;
@@ -27,20 +30,93 @@ function stringifyError(error: unknown) {
   return String(error);
 }
 
+/**
+ * User-facing text for boot phases. Keep English here for now; for i18n, replace
+ * this map with `t('boot.phase.preparingModule')` etc. keyed by `progress.phase`.
+ */
+function getBootPhaseUiText(progress: BootPhaseProgress): { title: string; barLabel: string } {
+  switch (progress.phase) {
+    case "preparingModule":
+      return {
+        title: "Initializing Monero",
+        barLabel: "Preparing wallet module…",
+      };
+    case "downloadingWasm":
+      return {
+        title: "Initializing Monero",
+        barLabel: "Loading wallet engine…",
+      };
+    case "linkingNativeModule":
+      return {
+        title: "Initializing Monero",
+        barLabel: "Starting wallet engine…",
+      };
+    case "initializingWalletStorage":
+      return {
+        title: "Initializing Monero",
+        barLabel: "Preparing wallet storage…",
+      };
+    case "moduleReady":
+      return {
+        title: "Initializing Monero",
+        barLabel: "Wallet module ready",
+      };
+    case "loadingWalletUi":
+      return {
+        title: "Initializing Monero",
+        barLabel: "Loading wallet UI…",
+      };
+    default: {
+      const _exhaustive: never = progress;
+      return _exhaustive;
+    }
+  }
+}
+
+function wasmDownloadPercent(progress: ModuleLoadProgress): number | undefined {
+  if (progress.phase !== "downloadingWasm") {
+    return undefined;
+  }
+  const { bytesLoaded, bytesTotal } = progress;
+  if (bytesTotal === null || bytesTotal <= 0) {
+    return undefined;
+  }
+  return Math.min(100, Math.max(0, (bytesLoaded / bytesTotal) * 100));
+}
+
 function BootStatusView({
   state,
 }: {
   state: Exclude<BootState, { type: "ready" }>;
 }) {
+  if (state.type === "error") {
+    return (
+      <div className="mx-auto max-w-xl space-y-3 px-4 py-12 text-center">
+        <h2 className="text-base font-semibold text-white/90">{state.title}</h2>
+        <ProgressBar state="error" value={100} text="Initialization failed" />
+        <p className="text-sm text-red-200/90">{state.details}</p>
+      </div>
+    );
+  }
+
+  const uiText = getBootPhaseUiText(state.progress);
+
+  const wasmPct =
+    state.progress.phase === "downloadingWasm"
+      ? wasmDownloadPercent(state.progress)
+      : undefined;
+
+  const showDeterminateWasmBar =
+    state.progress.phase === "downloadingWasm" && wasmPct !== undefined;
+
+  const barState = showDeterminateWasmBar ? ("progress" as const) : ("loading" as const);
+  const barValue = showDeterminateWasmBar ? wasmPct! : 0;
+  const barText = showDeterminateWasmBar ? `${Math.round(wasmPct!)}%` : uiText.barLabel;
+
   return (
     <div className="mx-auto max-w-xl space-y-3 px-4 py-12 text-center">
-      <h2 className="text-base font-semibold text-white/90">{state.title}</h2>
-      {"hint" in state && state.hint ? (
-        <p className="text-sm text-white/70">{state.hint}</p>
-      ) : null}
-      {"details" in state ? (
-        <p className="text-sm text-red-200/90">{state.details}</p>
-      ) : null}
+      <h2 className="text-base font-semibold text-white/90">{uiText.title}</h2>
+      <ProgressBar state={barState} value={barValue} text={barText} />
     </div>
   );
 }
@@ -48,8 +124,7 @@ function BootStatusView({
 export function App() {
   const [bootState, setBootState] = React.useState<BootState>({
     type: "booting",
-    title: "Initializing Monero",
-    hint: "Preparing wallet module...",
+    progress: { phase: "preparingModule" },
   });
   const [WalletsListComponent, setWalletsListComponent] =
     React.useState<React.ComponentType | null>(null);
@@ -59,20 +134,23 @@ export function App() {
     void (async () => {
       setBootState({
         type: "booting",
-        title: "Initializing Monero",
-        hint: "Loading wallet module...",
+        progress: { phase: "preparingModule" },
       });
       try {
-        const { api } =
+        const { initModule } =
           await import("../monero-wasm-module/walletApi.workerClient");
-        await api.initModule();
+        await initModule((progress) => {
+          if (cancelled) {
+            return;
+          }
+          setBootState({ type: "booting", progress });
+        });
         if (cancelled) {
           return;
         }
         setBootState({
           type: "booting",
-          title: "Initializing Monero",
-          hint: "Loading wallet UI...",
+          progress: { phase: "loadingWalletUi" },
         });
         const { WalletsList } = await import("./components/starting");
         if (cancelled) {
@@ -101,11 +179,7 @@ export function App() {
 
   const statusViewState: Exclude<BootState, { type: "ready" }> =
     bootState.type === "ready"
-      ? {
-          type: "booting",
-          title: "Initializing Monero",
-          hint: "Loading wallet UI...",
-        }
+      ? { type: "booting", progress: { phase: "loadingWalletUi" } }
       : bootState;
 
   return (

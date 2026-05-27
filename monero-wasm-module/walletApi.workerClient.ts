@@ -24,6 +24,8 @@ export type FeePriority = FeePriorityType;
 export type {
   KeyImagesImportResult,
   MaybePromise,
+  ModuleLoadProgress,
+  ModuleLoadProgressCallback,
   MultisigAccountStatus,
   NetworkType,
   PaymentDetails,
@@ -42,6 +44,10 @@ const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
   type: "module",
 });
 export const api = Comlink.wrap<typeof exposedApi>(worker);
+
+export const initModule: typeof exposedApi.initModule = async (onProgress) => {
+  await api.initModule(onProgress ? Comlink.proxy(onProgress) : null);
+};
 
 export async function setWalletNewBlockCallback(
   wallet: MoneroWasmWallet,
