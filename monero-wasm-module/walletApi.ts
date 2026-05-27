@@ -482,9 +482,11 @@ function getWalletWasmUrl() {
 }
 
 function getWasmProgressTotal(event: ProgressEvent) {
-  // GitHub Pages can gzip the transfer while XHR reports decoded byte counts.
-  // When the browser cannot compute a total, use Vite's build-time raw WASM size
-  // instead of the compressed Content-Length header.
+  // If the server sends a usable total, prefer the browser's progress metadata.
+  // On GitHub Pages, though, the WASM response may be gzip-compressed in transit:
+  // the Content-Length header then describes compressed bytes, while XHR progress
+  // events report decoded bytes. When lengthComputable is false, use Vite's
+  // build-time raw WASM size so the denominator matches event.loaded.
   return event.lengthComputable ? event.total : __WASM_WALLET_SIZE__;
 }
 
