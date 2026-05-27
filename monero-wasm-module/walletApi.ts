@@ -349,6 +349,7 @@ export type ModuleLoadProgress =
       bytesLoaded: number;
       bytesTotal: number | null;
     }
+  | { phase: "decodingWasm" }
   | {
       phase: "linkingNativeModule";
       resolvedDependencies: number;
@@ -539,6 +540,7 @@ function instantiateWalletWasmWithProgress(
     mod: WebAssembly.Module,
   ) => void,
   reportProgress: WasmProgressReporter,
+  onDecoding: () => void,
   onError: (error: unknown) => void,
 ): void {
   void (async () => {
@@ -546,6 +548,7 @@ function instantiateWalletWasmWithProgress(
       getWalletWasmUrl(),
       reportProgress,
     );
+    onDecoding();
     const result = await WebAssembly.instantiate(binary, imports);
     receiveInstance(result.instance, result.module);
   })().catch(onError);
@@ -579,6 +582,7 @@ export async function initModule(
         imports,
         receiveInstance,
         reportWasmProgress,
+        () => onProgress?.({ phase: "decodingWasm" }),
         failModuleLoad,
       );
       // Emscripten requires `{}` to mark async instantiation:
