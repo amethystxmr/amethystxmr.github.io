@@ -75,15 +75,25 @@ function getBootPhaseUiText(progress: BootPhaseProgress): { title: string; barLa
   }
 }
 
-function wasmDownloadPercent(progress: ModuleLoadProgress): number | undefined {
-  if (progress.phase !== "downloadingWasm") {
-    return undefined;
+function bootProgressPercent(progress: BootPhaseProgress): number | undefined {
+  if (progress.phase === "downloadingWasm") {
+    const { bytesLoaded, bytesTotal } = progress;
+    if (bytesTotal === null || bytesTotal <= 0) {
+      return undefined;
+    }
+    return Math.min(100, Math.max(0, (bytesLoaded / bytesTotal) * 100));
   }
-  const { bytesLoaded, bytesTotal } = progress;
-  if (bytesTotal === null || bytesTotal <= 0) {
-    return undefined;
+  if (progress.phase === "linkingNativeModule") {
+    const { resolvedDependencies, totalDependencies } = progress;
+    if (totalDependencies <= 0) {
+      return undefined;
+    }
+    return Math.min(
+      100,
+      Math.max(0, (resolvedDependencies / totalDependencies) * 100),
+    );
   }
-  return Math.min(100, Math.max(0, (bytesLoaded / bytesTotal) * 100));
+  return undefined;
 }
 
 function BootStatusView({
@@ -103,17 +113,13 @@ function BootStatusView({
 
   const uiText = getBootPhaseUiText(state.progress);
 
-  const wasmPct =
-    state.progress.phase === "downloadingWasm"
-      ? wasmDownloadPercent(state.progress)
-      : undefined;
+  const progressPercent = bootProgressPercent(state.progress);
 
-  const showDeterminateWasmBar =
-    state.progress.phase === "downloadingWasm" && wasmPct !== undefined;
-
-  const barState = showDeterminateWasmBar ? ("progress" as const) : ("loading" as const);
-  const barValue = showDeterminateWasmBar ? wasmPct! : 0;
-  const barText = showDeterminateWasmBar ? `${Math.round(wasmPct!)}%` : uiText.barLabel;
+  const barState = progressPercent !== undefined ? ("progress" as const) : ("loading" as const);
+  const barValue = progressPercent ?? 0;
+  const barText = progressPercent !== undefined
+    ? `${uiText.barLabel} ${Math.round(progressPercent)}%`
+    : uiText.barLabel;
 
   return (
     <div className="mx-auto max-w-xl space-y-3 px-4 py-12 text-center">
