@@ -547,7 +547,8 @@ export async function initModule(onProgress: ModuleLoadProgressCallback = null) 
         reportWasmProgress,
         failModuleLoad,
       );
-      // Emscripten requires `{}` to mark async instantiation.
+      // Emscripten requires `{}` to mark async instantiation:
+      // https://emscripten.org/docs/api_reference/module.html#Module.instantiateWasm
       return {};
     },
     monitorRunDependencies(left) {
