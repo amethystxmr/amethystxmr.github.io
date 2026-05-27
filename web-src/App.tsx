@@ -35,35 +35,37 @@ function stringifyError(error: unknown) {
  * this map with `t('boot.phase.preparingModule')` etc. keyed by `progress.phase`.
  */
 function getBootPhaseUiText(progress: BootPhaseProgress): { title: string; barLabel: string } {
+  const title = "Initializing AmethystXMR";
+
   switch (progress.phase) {
     case "preparingModule":
       return {
-        title: "Initializing Monero",
+        title,
         barLabel: "Preparing wallet module...",
       };
     case "downloadingWasm":
       return {
-        title: "Initializing Monero",
+        title,
         barLabel: "Loading wallet engine...",
       };
     case "linkingNativeModule":
       return {
-        title: "Initializing Monero",
+        title,
         barLabel: "Starting wallet engine...",
       };
     case "initializingWalletStorage":
       return {
-        title: "Initializing Monero",
+        title,
         barLabel: "Preparing wallet storage...",
       };
     case "moduleReady":
       return {
-        title: "Initializing Monero",
+        title,
         barLabel: "Wallet module ready",
       };
     case "loadingWalletUi":
       return {
-        title: "Initializing Monero",
+        title,
         barLabel: "Loading wallet UI...",
       };
     default: {
