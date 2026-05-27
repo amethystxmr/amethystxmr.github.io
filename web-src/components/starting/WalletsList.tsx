@@ -403,7 +403,7 @@ export function WalletsList() {
                 </p>
                 <div className="text-white/65">
                   <ul className="list-disc space-y-1 pl-5">
-                    <li>Self-custodial</li>
+                    <li>Self-custodial: your keys stay in your browser</li>
                     <li>Send and receive XMR</li>
                     <li>Multisig support</li>
                     <li>
