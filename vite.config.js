@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { execSync } from "node:child_process";
 import { statSync } from "node:fs";
+import { URL } from "node:url";
 
 function getGitHash() {
   try {
