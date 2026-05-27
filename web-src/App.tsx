@@ -39,22 +39,22 @@ function getBootPhaseUiText(progress: BootPhaseProgress): { title: string; barLa
     case "preparingModule":
       return {
         title: "Initializing Monero",
-        barLabel: "Preparing wallet module…",
+        barLabel: "Preparing wallet module...",
       };
     case "downloadingWasm":
       return {
         title: "Initializing Monero",
-        barLabel: "Loading wallet engine…",
+        barLabel: "Loading wallet engine...",
       };
     case "linkingNativeModule":
       return {
         title: "Initializing Monero",
-        barLabel: "Starting wallet engine…",
+        barLabel: "Starting wallet engine...",
       };
     case "initializingWalletStorage":
       return {
         title: "Initializing Monero",
-        barLabel: "Preparing wallet storage…",
+        barLabel: "Preparing wallet storage...",
       };
     case "moduleReady":
       return {
@@ -64,7 +64,7 @@ function getBootPhaseUiText(progress: BootPhaseProgress): { title: string; barLa
     case "loadingWalletUi":
       return {
         title: "Initializing Monero",
-        barLabel: "Loading wallet UI…",
+        barLabel: "Loading wallet UI...",
       };
     default: {
       const _exhaustive: never = progress;

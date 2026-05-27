@@ -320,8 +320,8 @@ interface Module {
 }
 
 /**
- * Module bootstrap progress. Uses `phase` only — no user-facing strings here
- * (those belong in the UI / i18n layer keyed by `phase`).
+ * Module bootstrap progress. Keep this API semantic only; user-facing text
+ * belongs in the UI layer, keyed by `phase`.
  */
 export type ModuleLoadProgress =
   | { phase: "preparingModule" }
@@ -352,6 +352,11 @@ type ModuleFactoryOptions = {
     ) => void,
   ) => void;
 };
+
+type WasmProgressReporter = (
+  bytesLoaded: number,
+  bytesTotal: number | null,
+) => void;
 
 let module: Module;
 
@@ -450,9 +455,13 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
   return runtimeGlobal.globalHttpConfig;
 }
 
+function getWalletWasmUrl() {
+  return new URL("wasm_wallet.wasm", import.meta.url).href;
+}
+
 function fetchWasmBinaryWithProgress(
   url: string,
-  onProgress: ModuleLoadProgressCallback,
+  onProgress: WasmProgressReporter,
 ): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -462,22 +471,14 @@ function fetchWasmBinaryWithProgress(
 
     xhr.onprogress = (event) => {
       bytesTotal = event.lengthComputable ? event.total : null;
-      onProgress?.({
-        phase: "downloadingWasm",
-        bytesLoaded: event.loaded,
-        bytesTotal,
-      });
+      onProgress(event.loaded, bytesTotal);
     };
 
     xhr.onload = () => {
       if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
         const response = xhr.response;
         if (response instanceof ArrayBuffer) {
-          onProgress?.({
-            phase: "downloadingWasm",
-            bytesLoaded: response.byteLength,
-            bytesTotal,
-          });
+          onProgress(response.byteLength, bytesTotal);
           resolve(response);
           return;
         }
@@ -500,7 +501,7 @@ function fetchWasmBinaryWithProgress(
       reject(new Error(`WASM load timed out from ${url}`));
     };
 
-    onProgress?.({ phase: "downloadingWasm", bytesLoaded: 0, bytesTotal: null });
+    onProgress(0, null);
     xhr.send();
   });
 }
@@ -508,20 +509,17 @@ function fetchWasmBinaryWithProgress(
 function instantiateWalletWasmWithProgress(
   imports: WebAssembly.Imports,
   receiveInstance: (instance: WebAssembly.Instance, mod: WebAssembly.Module) => void,
-  onProgress: ModuleLoadProgressCallback,
+  reportProgress: WasmProgressReporter,
+  onError: (error: unknown) => void,
 ): void {
   void (async () => {
-    const wasmUrl = new URL("wasm_wallet.wasm", import.meta.url).href;
-    const binary = await fetchWasmBinaryWithProgress(wasmUrl, onProgress);
+    const binary = await fetchWasmBinaryWithProgress(
+      getWalletWasmUrl(),
+      reportProgress,
+    );
     const result = await WebAssembly.instantiate(binary, imports);
     receiveInstance(result.instance, result.module);
-  })().catch((err: unknown) => {
-    console.error("Wallet WASM load/instantiate failed:", err);
-    // Emscripten only settles `createWasm` when `receiveInstance` runs; if we never
-    // call it, `initModule` hangs forever. Force failure by invoking the callback
-    // with invalid inputs so `receiveInstance` throws and the glue promise rejects.
-    receiveInstance(null as unknown as WebAssembly.Instance, null as unknown as WebAssembly.Module);
-  });
+  })().catch(onError);
 }
 
 export async function initModule(onProgress: ModuleLoadProgressCallback = null) {
@@ -533,9 +531,22 @@ export async function initModule(onProgress: ModuleLoadProgressCallback = null) 
   onProgress?.({ phase: "preparingModule" });
 
   let totalRunDependencies = 0;
-  module = (await MoneroWasmWalletModuleFactory({
+  let failModuleLoad!: (error: unknown) => void;
+  const moduleLoadFailed = new Promise<never>((_, reject) => {
+    failModuleLoad = reject;
+  });
+  const reportWasmProgress: WasmProgressReporter = (bytesLoaded, bytesTotal) => {
+    onProgress?.({ phase: "downloadingWasm", bytesLoaded, bytesTotal });
+  };
+
+  const moduleLoad = MoneroWasmWalletModuleFactory({
     instantiateWasm(imports, receiveInstance) {
-      instantiateWalletWasmWithProgress(imports, receiveInstance, onProgress);
+      instantiateWalletWasmWithProgress(
+        imports,
+        receiveInstance,
+        reportWasmProgress,
+        failModuleLoad,
+      );
     },
     monitorRunDependencies(left) {
       totalRunDependencies = Math.max(totalRunDependencies, left);
@@ -549,7 +560,9 @@ export async function initModule(onProgress: ModuleLoadProgressCallback = null) 
         totalDependencies: totalRunDependencies,
       });
     },
-  } satisfies ModuleFactoryOptions)) as Module;
+  } satisfies ModuleFactoryOptions) as Promise<Module>;
+
+  module = await Promise.race([moduleLoad, moduleLoadFailed]);
 
   onProgress?.({ phase: "initializingWalletStorage" });
   await initFilesystem();
