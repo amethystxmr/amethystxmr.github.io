@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { execSync } from "node:child_process";
+import { statSync } from "node:fs";
 
 function getGitHash() {
   try {
@@ -17,6 +18,9 @@ function getGitHash() {
 const buildTimestamp = new Date().toISOString();
 const gitHash = getGitHash();
 const gitHashShort = gitHash === "unknown" ? gitHash : gitHash.slice(0, 12);
+const wasmWalletSize = statSync(
+  new URL("./monero-wasm-module/wasm_wallet.wasm", import.meta.url),
+).size;
 
 function emitGitHashFile() {
   return {
@@ -43,6 +47,7 @@ export default {
   define: {
     "import.meta.env.VITE_BUILD_TIMESTAMP": JSON.stringify(buildTimestamp),
     "import.meta.env.VITE_GIT_HASH": JSON.stringify(gitHashShort),
+    __WASM_WALLET_SIZE__: JSON.stringify(wasmWalletSize),
   },
   worker: {
     format: "es",

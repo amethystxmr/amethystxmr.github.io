@@ -378,6 +378,8 @@ type WasmProgressReporter = (
   bytesTotal: number | null,
 ) => void;
 
+declare const __WASM_WALLET_SIZE__: number;
+
 let module: Module;
 
 /**
@@ -479,18 +481,24 @@ function getWalletWasmUrl() {
   return new URL("wasm_wallet.wasm", import.meta.url).href;
 }
 
+function getWasmProgressTotal(event: ProgressEvent) {
+  // GitHub Pages can gzip the transfer while XHR reports decoded byte counts.
+  // When the browser cannot compute a total, use Vite's build-time raw WASM size
+  // instead of the compressed Content-Length header.
+  return event.lengthComputable ? event.total : __WASM_WALLET_SIZE__;
+}
+
 function fetchWasmBinaryWithProgress(
   url: string,
   onProgress: WasmProgressReporter,
 ): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    let bytesTotal: number | null = null;
     xhr.open("GET", url, true);
     xhr.responseType = "arraybuffer";
 
     xhr.onprogress = (event) => {
-      bytesTotal = event.lengthComputable ? event.total : null;
+      const bytesTotal = getWasmProgressTotal(event);
       onProgress(event.loaded, bytesTotal);
     };
 
@@ -498,7 +506,7 @@ function fetchWasmBinaryWithProgress(
       if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
         const response = xhr.response;
         if (response instanceof ArrayBuffer) {
-          onProgress(response.byteLength, bytesTotal);
+          onProgress(response.byteLength, response.byteLength);
           resolve(response);
           return;
         }
