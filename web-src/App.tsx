@@ -30,11 +30,10 @@ function stringifyError(error: unknown) {
   return String(error);
 }
 
-/**
- * User-facing text for boot phases. Keep English here for now; for i18n, replace
- * this map with `t('boot.phase.preparingModule')` etc. keyed by `progress.phase`.
- */
-function getBootPhaseUiText(progress: BootPhaseProgress): { title: string; barLabel: string } {
+function getBootPhaseUiText(progress: BootPhaseProgress): {
+  title: string;
+  barLabel: string;
+} {
   const title = "Initializing AmethystXMR";
 
   switch (progress.phase) {
@@ -115,11 +114,15 @@ function BootStatusView({
 
   const progressPercent = bootProgressPercent(state.progress);
 
-  const barState = progressPercent !== undefined ? ("progress" as const) : ("loading" as const);
+  const barState =
+    progressPercent !== undefined
+      ? ("progress" as const)
+      : ("loading" as const);
   const barValue = progressPercent ?? 0;
-  const barText = progressPercent !== undefined
-    ? `${uiText.barLabel} ${Math.round(progressPercent)}%`
-    : uiText.barLabel;
+  const barText =
+    progressPercent !== undefined
+      ? `${uiText.barLabel} ${Math.round(progressPercent)}%`
+      : uiText.barLabel;
 
   return (
     <div className="mx-auto max-w-xl space-y-3 px-4 py-12 text-center">
