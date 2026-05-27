@@ -479,12 +479,6 @@ function getWalletWasmUrl() {
   return new URL("wasm_wallet.wasm", import.meta.url).href;
 }
 
-function getXhrContentLength(xhr: XMLHttpRequest) {
-  const header = xhr.getResponseHeader("Content-Length");
-  const parsed = header ? Number.parseInt(header, 10) : Number.NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
 function fetchWasmBinaryWithProgress(
   url: string,
   onProgress: WasmProgressReporter,
@@ -496,7 +490,7 @@ function fetchWasmBinaryWithProgress(
     xhr.responseType = "arraybuffer";
 
     xhr.onprogress = (event) => {
-      bytesTotal = event.lengthComputable ? event.total : getXhrContentLength(xhr);
+      bytesTotal = event.lengthComputable ? event.total : null;
       onProgress(event.loaded, bytesTotal);
     };
 
@@ -504,7 +498,6 @@ function fetchWasmBinaryWithProgress(
       if ((xhr.status >= 200 && xhr.status < 300) || xhr.status === 0) {
         const response = xhr.response;
         if (response instanceof ArrayBuffer) {
-          bytesTotal ??= getXhrContentLength(xhr);
           onProgress(response.byteLength, bytesTotal);
           resolve(response);
           return;
