@@ -350,7 +350,7 @@ type ModuleFactoryOptions = {
       instance: WebAssembly.Instance,
       module: WebAssembly.Module,
     ) => void,
-  ) => void;
+  ) => WebAssembly.Exports | Record<string, never>;
 };
 
 type WasmProgressReporter = (
@@ -547,6 +547,8 @@ export async function initModule(onProgress: ModuleLoadProgressCallback = null) 
         reportWasmProgress,
         failModuleLoad,
       );
+      // Emscripten requires `{}` to mark async instantiation.
+      return {};
     },
     monitorRunDependencies(left) {
       totalRunDependencies = Math.max(totalRunDependencies, left);
