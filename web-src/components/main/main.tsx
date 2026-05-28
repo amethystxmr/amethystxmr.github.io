@@ -632,7 +632,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     currentTotalNonStrictBalance: status?.balance.nonStrict.value ?? null,
     currentUnlockedNonStrictBalance:
       status?.balance.nonStrict.unlocked.balance ?? null,
-    showMultisigActions: isMultisigTabVisible,
+    showMultisigActions: status?.multisigStatus.multisig_is_active ?? false,
     isViewOnly: status?.isViewOnly,
   });
 
