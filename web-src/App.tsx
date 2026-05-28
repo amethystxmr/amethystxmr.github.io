@@ -124,10 +124,7 @@ function BootStatusView({
       ? ("progress" as const)
       : ("loading" as const);
   const barValue = progressPercent ?? 0;
-  const barText =
-    progressPercent !== undefined
-      ? `${uiText.barLabel} ${Math.round(progressPercent)}%`
-      : uiText.barLabel;
+  const barText = uiText.barLabel;
 
   return (
     <div className="mx-auto max-w-xl space-y-3 px-4 py-12 text-center">
