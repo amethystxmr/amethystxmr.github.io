@@ -8,3 +8,6 @@ coverage
 
 # Vendored/native sources are not part of the frontend formatting surface.
 monero-wasm-src
+
+# Generated wasm bindings.
+monero-wasm-module/wasm_wallet.*

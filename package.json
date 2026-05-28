@@ -22,8 +22,8 @@
     "ide:install-clangd": "./scripts/install-clangd.sh",
     "preview": "vite preview",
     "lint": "eslint web-src monero-wasm-module vite.config.js",
-    "format:check": "prettier --check web-src",
-    "format:fix": "prettier --write web-src",
+    "format:check": "prettier --check web-src monero-wasm-module",
+    "format:fix": "prettier --write web-src monero-wasm-module",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "build": {
