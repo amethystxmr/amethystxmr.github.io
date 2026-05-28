@@ -1,7 +1,7 @@
 function getServiceWorkerUrl() {
   const path = window.location.pathname;
   const dirPath = path.endsWith("/") ? path : path.replace(/\/[^/]*$/, "/");
-  return `${window.location.origin}${dirPath}service-worker`;
+  return `${window.location.origin}${dirPath}service-worker.js`;
 }
 
 function isNativeAppRuntime() {
