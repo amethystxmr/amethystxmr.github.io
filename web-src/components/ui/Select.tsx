@@ -56,7 +56,15 @@ function Root({
 
   return (
     <SelectContext.Provider
-      value={{ open, setOpen, value, onValueChange, disabled, contentId, rootRef }}
+      value={{
+        open,
+        setOpen,
+        value,
+        onValueChange,
+        disabled,
+        contentId,
+        rootRef,
+      }}
     >
       <div ref={rootRef} className={clsx("relative", className)}>
         {children}
@@ -93,7 +101,10 @@ function Trigger({
       <span className="min-w-0 truncate">{children}</span>
       <span
         aria-hidden
-        className={clsx("text-white/55 transition-transform", ctx.open && "rotate-180")}
+        className={clsx(
+          "text-white/55 transition-transform",
+          ctx.open && "rotate-180",
+        )}
       >
         ▼
       </span>
@@ -101,7 +112,10 @@ function Trigger({
   );
 }
 
-function Value({ children, className }: React.PropsWithChildren<{ className?: string }>) {
+function Value({
+  children,
+  className,
+}: React.PropsWithChildren<{ className?: string }>) {
   return <span className={clsx("text-white/90", className)}>{children}</span>;
 }
 

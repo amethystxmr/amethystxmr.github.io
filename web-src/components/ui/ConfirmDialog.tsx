@@ -32,7 +32,12 @@ export function ConfirmDialog({
         <div className="text-base font-semibold text-white">{title}</div>
         <div className="text-sm text-white/75">{message}</div>
         <ButtonsHolder>
-          <Button type="button" variant="soft" disabled={busy} onClick={onCancel}>
+          <Button
+            type="button"
+            variant="soft"
+            disabled={busy}
+            onClick={onCancel}
+          >
             {cancelText}
           </Button>
           <Button

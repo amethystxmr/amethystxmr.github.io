@@ -1138,7 +1138,12 @@ function CreateNewWalletView({
         releaseWalletOpenLock = null;
         release();
         void alert(`Wallet with name ${fileName} already exists`);
-        setState({ type: "entering-data", fileName, password, passwordConfirm });
+        setState({
+          type: "entering-data",
+          fileName,
+          password,
+          passwordConfirm,
+        });
         return;
       }
 

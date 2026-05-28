@@ -58,7 +58,12 @@ export function PasswordPromptDialog({
           disabled={busy}
         />
         <ButtonsHolder>
-          <Button type="button" variant="soft" disabled={busy} onClick={onCancel}>
+          <Button
+            type="button"
+            variant="soft"
+            disabled={busy}
+            onClick={onCancel}
+          >
             {cancelText}
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>

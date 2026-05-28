@@ -22,7 +22,10 @@ export function InputWithAction({
   }) {
   return (
     <div className={clsx("relative", wrapperClassName)}>
-      <Input {...inputProps} className={clsx("pr-32", inputClassName, inputProps.className)} />
+      <Input
+        {...inputProps}
+        className={clsx("pr-32", inputClassName, inputProps.className)}
+      />
       <button
         type="button"
         className={clsx(

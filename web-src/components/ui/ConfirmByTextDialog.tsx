@@ -60,10 +60,19 @@ export function ConfirmByTextDialog({
           disabled={busy}
         />
         <ButtonsHolder>
-          <Button type="button" variant="soft" disabled={busy} onClick={onCancel}>
+          <Button
+            type="button"
+            variant="soft"
+            disabled={busy}
+            onClick={onCancel}
+          >
             {cancelText}
           </Button>
-          <Button type="submit" variant="primary" disabled={!canConfirm || busy}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={!canConfirm || busy}
+          >
             {busy ? "Working..." : confirmText}
           </Button>
         </ButtonsHolder>

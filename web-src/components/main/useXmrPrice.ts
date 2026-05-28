@@ -25,14 +25,17 @@ function getCached(): XmrPriceCacheEntry | null {
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
-      const parsed = JSON.parse(cached) as Partial<XmrPriceCacheEntry> & { timestamp?: number };
+      const parsed = JSON.parse(cached) as Partial<XmrPriceCacheEntry> & {
+        timestamp?: number;
+      };
       const fetchedAt = parsed.fetchedAt ?? parsed.timestamp;
       if (
         typeof parsed.price === "number" &&
         typeof fetchedAt === "number" &&
         Date.now() - fetchedAt < CACHE_TTL
       ) {
-        const source = typeof parsed.source === "string" ? parsed.source : "Unknown source";
+        const source =
+          typeof parsed.source === "string" ? parsed.source : "Unknown source";
         console.log("Using cached XMR price:", parsed.price);
         return {
           price: parsed.price,
@@ -51,7 +54,11 @@ function getCached(): XmrPriceCacheEntry | null {
 }
 
 function setCache(newPrice: number, source: string): XmrPriceCacheEntry {
-  const next: XmrPriceCacheEntry = { price: newPrice, source, fetchedAt: Date.now() };
+  const next: XmrPriceCacheEntry = {
+    price: newPrice,
+    source,
+    fetchedAt: Date.now(),
+  };
   localStorage.setItem(CACHE_KEY, JSON.stringify(next));
   window.dispatchEvent(new Event(XMR_PRICE_CACHE_UPDATED_EVENT));
   return next;
@@ -75,7 +82,9 @@ async function fetchPriceCoinGecko() {
 }
 
 async function fetchPriceCryptoCompare() {
-  const response = await fetch("https://min-api.cryptocompare.com/data/price?fsym=XMR&tsyms=EUR");
+  const response = await fetch(
+    "https://min-api.cryptocompare.com/data/price?fsym=XMR&tsyms=EUR",
+  );
   const data = await response.json();
   const newPrice = data.EUR;
   if (typeof newPrice !== "number") {
@@ -103,8 +112,15 @@ export function useXmrPrice() {
       setPriceInfo(null);
       setReloadCounter((x) => x + 1);
     };
-    window.addEventListener(XMR_PRICE_REFRESH_REQUESTED_EVENT, onRefreshRequested);
-    return () => window.removeEventListener(XMR_PRICE_REFRESH_REQUESTED_EVENT, onRefreshRequested);
+    window.addEventListener(
+      XMR_PRICE_REFRESH_REQUESTED_EVENT,
+      onRefreshRequested,
+    );
+    return () =>
+      window.removeEventListener(
+        XMR_PRICE_REFRESH_REQUESTED_EVENT,
+        onRefreshRequested,
+      );
   }, []);
 
   useEffect(() => {
@@ -133,7 +149,10 @@ export function useXmrPrice() {
             return; // Stop after the first successful fetch
           }
         } catch (error) {
-          console.error("Failed to fetch price from one of the sources:", error);
+          console.error(
+            "Failed to fetch price from one of the sources:",
+            error,
+          );
         }
       }
       console.error("All price fetchers failed");

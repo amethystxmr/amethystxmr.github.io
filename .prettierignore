@@ -1,0 +1,10 @@
+node_modules
+built-web
+dist
+dist-native
+playwright-report
+test-results
+coverage
+
+# Vendored/native sources are not part of the frontend formatting surface.
+monero-wasm-src

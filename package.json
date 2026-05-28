@@ -22,6 +22,8 @@
     "ide:install-clangd": "./scripts/install-clangd.sh",
     "preview": "vite preview",
     "lint": "eslint web-src monero-wasm-module vite.config.js",
+    "format:check": "prettier --check web-src",
+    "format:fix": "prettier --write web-src",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "build": {
@@ -81,6 +83,7 @@
     "eslint": "^9.39.3",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.26",
+    "prettier": "^3.8.3",
     "typescript-eslint": "^8.56.0"
   }
 }

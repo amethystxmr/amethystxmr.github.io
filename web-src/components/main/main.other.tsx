@@ -6,7 +6,7 @@ import {
   PaymentDetails,
   TransferItem,
   WalletKeys,
-  api
+  api,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 
 import { options } from "../options";
@@ -241,7 +241,9 @@ export function OtherTab({
     }
 
     if (multisigStatus.multisig_is_active && !multisigStatus.is_ready) {
-      await alert("Unable to show seed/keys while multisig setup is in progress.");
+      await alert(
+        "Unable to show seed/keys while multisig setup is in progress.",
+      );
       return;
     }
 
@@ -891,8 +893,8 @@ export function OtherTab({
                       isReadyMultisigWallet
                         ? "(This key is distributed between multisig participants)"
                         : seedState.keys.spendKey.private
-                        ? bytesToHex(seedState.keys.spendKey.private)
-                        : "(Not available)"
+                          ? bytesToHex(seedState.keys.spendKey.private)
+                          : "(Not available)"
                     }
                   />
 

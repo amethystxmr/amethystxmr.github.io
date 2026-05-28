@@ -213,7 +213,8 @@ function MultisigDataOverlayDialog({
 
   const rightButtonText = isExport ? "Close" : hasInput ? "Import" : "Close";
   const leftFileButtonText = isExport ? "Save to file" : "Import from file";
-  const exportAction = request.type === "export" ? request.options.action : null;
+  const exportAction =
+    request.type === "export" ? request.options.action : null;
 
   const handleFileButtonClick = () => {
     if (isExport) {

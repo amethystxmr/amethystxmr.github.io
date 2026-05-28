@@ -28,7 +28,9 @@ export function NiceTabs({
     [tabs],
   );
 
-  const [activeKey, setActiveKey] = useState<string>(initialKey ?? firstEnabledKey);
+  const [activeKey, setActiveKey] = useState<string>(
+    initialKey ?? firstEnabledKey,
+  );
 
   const setActiveTab = (key: string) => {
     setActiveKey(key);
@@ -122,7 +124,9 @@ export function NiceTabs({
                   : "bg-transparent",
               ].join(" ")}
             >
-              <span className="inline-flex items-center justify-center gap-2">{t.label}</span>
+              <span className="inline-flex items-center justify-center gap-2">
+                {t.label}
+              </span>
               {selected && (
                 <span className="pointer-events-none absolute inset-0 rounded-lg shadow-[0_0_20px_rgba(170,130,255,0.18)]" />
               )}
