@@ -11,6 +11,8 @@ Report only meaningful problems:
 
 Do not fail the review for style preferences, naming preferences, or speculative refactors.
 
+When editing frontend files under `web-src` or TypeScript wallet API files under `monero-wasm-module`, run `npm run format:fix` before completing the task. Generated `monero-wasm-module/wasm_wallet.*` files are excluded from formatting.
+
 Always verify the full wallet API mapping surface, even if the diff only changes one side of it:
 - Keep the C++ Embind surface in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp` aligned with the TypeScript API surface in `monero-wasm-module/walletApi.ts`.
 - Also verify related worker exposure stays aligned across `monero-wasm-module/walletApi.worker.ts` and `monero-wasm-module/walletApi.workerClient.ts`.
