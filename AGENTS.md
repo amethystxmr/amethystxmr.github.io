@@ -1,8 +1,15 @@
 # Agent Instructions
 
-## Formatting
+## Coding
+
+### Formatting
 
 When editing frontend files under `web-src` or TypeScript wallet API files under `monero-wasm-module`, run `npm run format:fix` before completing the task. Generated `monero-wasm-module/wasm_wallet.*` files are excluded from formatting.
+
+### TypeScript And React
+
+- Always try to avoid typecasting.
+- Follow this repository's existing code style for React components and state.
 
 ## Review Instructions
 
