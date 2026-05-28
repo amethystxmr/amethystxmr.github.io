@@ -4,7 +4,7 @@
 
 ### Formatting
 
-When editing frontend files under `web-src` or TypeScript wallet API files under `monero-wasm-module`, run `npm run format:fix` before completing the task. Generated `monero-wasm-module/wasm_wallet.*` files are excluded from formatting.
+When editing frontend files under `web-src` or TypeScript wallet API files under `monero-wasm-module`, run Prettier on the changed files before completing the task. Use the full `npm run format:fix` script only when a broad reformat is intended. Generated `monero-wasm-module/wasm_wallet.*` files are excluded from formatting.
 
 ### TypeScript And React
 
