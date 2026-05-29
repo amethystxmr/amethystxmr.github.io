@@ -102,7 +102,15 @@ function AddressRow({
             variant="primary"
             className="!flex-none rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            {isQrOpen ? <><span aria-hidden="true">✖</span>{" "}Hide QR</> : <><span aria-hidden="true">▣</span>{" "}QR</>}
+            {isQrOpen ? (
+              <>
+                <span aria-hidden="true">✖</span> Hide QR
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">▣</span> QR
+              </>
+            )}
           </Button>
           <Button
             type="button"
@@ -110,11 +118,19 @@ function AddressRow({
             variant="primary"
             className="!flex-none rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            {copied === "ok"
-              ? <><span aria-hidden="true">✓</span>{" "}Copied</>
-              : copied === "fail"
-                ? <><span aria-hidden="true">✖</span>{" "}Copy failed</>
-                : <><span aria-hidden="true">⎘</span>{" "}Copy</>}
+            {copied === "ok" ? (
+              <>
+                <span aria-hidden="true">✓</span> Copied
+              </>
+            ) : copied === "fail" ? (
+              <>
+                <span aria-hidden="true">✖</span> Copy failed
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">⎘</span> Copy
+              </>
+            )}
           </Button>
         </div>
       </div>

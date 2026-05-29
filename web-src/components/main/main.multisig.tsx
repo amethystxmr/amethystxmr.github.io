@@ -94,7 +94,7 @@ export function MultisigTab({
   const isPrepareBlockedByPayments = hasAnyPayments;
   const isPrepareBlockedBySync = isWalletSyncing && !allowPrepareWhileSyncing;
 
-  const requestValidWalletPassword = React.useCallback(async () => {    
+  const requestValidWalletPassword = React.useCallback(async () => {
     if (await wallet.verify_password("")) {
       return "";
     }
@@ -418,13 +418,15 @@ export function MultisigTab({
                       </div>
                     </Hint>
                   </div>
-                <TextArea
-                  aria-label="Multisig round 1 message"
-                  data-ready={myRound1Message.type === "ready" ? "true" : "false"}
-                  aria-busy={myRound1Message.type === "loading"}
-                  readOnly
-                  rows={1}
-                  className={`resize-none overflow-hidden [field-sizing:content] ${myRound1Message.type === "error" ? "border border-red-400/60" : ""}`}
+                  <TextArea
+                    aria-label="Multisig round 1 message"
+                    data-ready={
+                      myRound1Message.type === "ready" ? "true" : "false"
+                    }
+                    aria-busy={myRound1Message.type === "loading"}
+                    readOnly
+                    rows={1}
+                    className={`resize-none overflow-hidden [field-sizing:content] ${myRound1Message.type === "error" ? "border border-red-400/60" : ""}`}
                     value={
                       myRound1Message.type === "loading"
                         ? "Loading..."
@@ -569,7 +571,8 @@ export function MultisigTab({
             <TextArea
               aria-label="Multisig current round message"
               data-ready={
-                myLastKexMessage.type === "ready" && myLastKexMessage.value !== ""
+                myLastKexMessage.type === "ready" &&
+                myLastKexMessage.value !== ""
                   ? "true"
                   : "false"
               }
@@ -704,7 +707,14 @@ function MultisigReady({
     } finally {
       setBusyAction("idle");
     }
-  }, [alert, importOverlay, isBusy, multisigStatus.threshold, onRefresh, wallet]);
+  }, [
+    alert,
+    importOverlay,
+    isBusy,
+    multisigStatus.threshold,
+    onRefresh,
+    wallet,
+  ]);
 
   return (
     <>

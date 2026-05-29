@@ -632,7 +632,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
     currentTotalNonStrictBalance: status?.balance.nonStrict.value ?? null,
     currentUnlockedNonStrictBalance:
       status?.balance.nonStrict.unlocked.balance ?? null,
-    showMultisigActions: isMultisigTabVisible,
+    showMultisigActions: status?.multisigStatus.multisig_is_active ?? false,
     isViewOnly: status?.isViewOnly,
   });
 
@@ -699,8 +699,8 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                 )}
               </div>
               {progressBarCompact}
-              {syncNoSleepMessage && (
-                isNoSleepEnabled ? (
+              {syncNoSleepMessage &&
+                (isNoSleepEnabled ? (
                   <div className="text-center text-[11px] whitespace-nowrap text-amber-200/95">
                     {syncNoSleepMessage}
                   </div>
@@ -712,8 +712,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
                   >
                     {syncNoSleepMessage}
                   </button>
-                )
-              )}
+                ))}
             </div>
           </div>
 

@@ -64,11 +64,15 @@ export function Hint({
     const centeredLeft = rect.left + rect.width / 2;
     const clampedLeft = Math.max(
       horizontalPadding + maxWidth / 2,
-      Math.min(centeredLeft, window.innerWidth - horizontalPadding - maxWidth / 2),
+      Math.min(
+        centeredLeft,
+        window.innerWidth - horizontalPadding - maxWidth / 2,
+      ),
     );
     const estimatedTooltipHeight = 120;
     const shouldPlaceAbove =
-      rect.bottom + 12 + estimatedTooltipHeight > window.innerHeight && rect.top > 160;
+      rect.bottom + 12 + estimatedTooltipHeight > window.innerHeight &&
+      rect.top > 160;
     setPlaceAbove(shouldPlaceAbove);
     setTooltipStyle({
       top: shouldPlaceAbove ? rect.top - 8 : rect.bottom + 8,
@@ -122,7 +126,9 @@ export function Hint({
               top: tooltipStyle.top,
               left: tooltipStyle.left,
               width: tooltipStyle.width,
-              transform: placeAbove ? "translate(-50%, -100%)" : "translateX(-50%)",
+              transform: placeAbove
+                ? "translate(-50%, -100%)"
+                : "translateX(-50%)",
             }}
           >
             {children}

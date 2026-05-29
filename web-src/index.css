@@ -66,13 +66,21 @@
   }
 
   .scrollbar-glass::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, rgba(175, 139, 245, 0.85), rgba(116, 85, 196, 0.85));
+    background: linear-gradient(
+      180deg,
+      rgba(175, 139, 245, 0.85),
+      rgba(116, 85, 196, 0.85)
+    );
     border-radius: 9999px;
     border: 2px solid rgba(255, 255, 255, 0.08);
   }
 
   .scrollbar-glass::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, rgba(190, 154, 255, 0.95), rgba(126, 95, 210, 0.95));
+    background: linear-gradient(
+      180deg,
+      rgba(190, 154, 255, 0.95),
+      rgba(126, 95, 210, 0.95)
+    );
   }
 
   @keyframes slow-blink {
@@ -121,9 +129,21 @@
     inset: -18%;
     pointer-events: none;
     background:
-      radial-gradient(circle at 14% 18%, rgba(198, 162, 255, 0.2), transparent 42%),
-      radial-gradient(circle at 82% 15%, rgba(104, 198, 255, 0.09), transparent 40%),
-      radial-gradient(circle at 85% 88%, rgba(250, 144, 208, 0.13), transparent 42%);
+      radial-gradient(
+        circle at 14% 18%,
+        rgba(198, 162, 255, 0.2),
+        transparent 42%
+      ),
+      radial-gradient(
+        circle at 82% 15%,
+        rgba(104, 198, 255, 0.09),
+        transparent 40%
+      ),
+      radial-gradient(
+        circle at 85% 88%,
+        rgba(250, 144, 208, 0.13),
+        transparent 42%
+      );
     filter: saturate(112%);
     animation: ambient-drift 15s ease-in-out infinite;
   }

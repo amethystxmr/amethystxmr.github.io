@@ -10,7 +10,12 @@ interface ProgressBarProps {
   size?: "md" | "sm";
 }
 
-export function ProgressBar({ value = 0, state, text, size = "md" }: ProgressBarProps) {
+export function ProgressBar({
+  value = 0,
+  state,
+  text,
+  size = "md",
+}: ProgressBarProps) {
   const isLoading = state === "loading";
   const isProgress = state === "progress";
   const isError = state === "error";
@@ -23,7 +28,9 @@ export function ProgressBar({ value = 0, state, text, size = "md" }: ProgressBar
           size === "sm" ? "h-7" : "h-10",
         )}
       >
-        {isLoading && <div className="absolute inset-0 animate-pulse bg-[#4b2f8a]/60" />}
+        {isLoading && (
+          <div className="absolute inset-0 animate-pulse bg-[#4b2f8a]/60" />
+        )}
 
         {/* Progress / Error fill */}
         {(isProgress || isError) && (

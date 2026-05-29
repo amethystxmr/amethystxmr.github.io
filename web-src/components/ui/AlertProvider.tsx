@@ -8,7 +8,9 @@ type AlertRequest = {
 };
 
 export function AlertProvider({ children }: React.PropsWithChildren) {
-  const [queue, setQueue] = React.useState<Array<AlertRequest & { resolve: () => void }>>([]);
+  const [queue, setQueue] = React.useState<
+    Array<AlertRequest & { resolve: () => void }>
+  >([]);
 
   const showAlert = React.useCallback((message: string, title?: string) => {
     return new Promise<void>((resolve) => {

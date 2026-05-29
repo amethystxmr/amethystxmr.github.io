@@ -47,7 +47,7 @@ export function CenteredOverlayBackdrop({
 
   const portalRoot = isMobileView
     ? document.body
-    : appOverlayRoot ?? document.body;
+    : (appOverlayRoot ?? document.body);
   const positionClass = !isMobileView && appOverlayRoot ? "absolute" : "fixed";
 
   return createPortal(
@@ -72,7 +72,7 @@ export function AppFullscreenOverlay({ children }: React.PropsWithChildren) {
 
   const portalRoot = isMobileView
     ? document.body
-    : appOverlayRoot ?? document.body;
+    : (appOverlayRoot ?? document.body);
   const positionClass = !isMobileView && appOverlayRoot ? "absolute" : "fixed";
   const zIndexClass = isMobileView ? "z-[70]" : "z-[60]";
 

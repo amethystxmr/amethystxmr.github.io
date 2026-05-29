@@ -1243,7 +1243,8 @@ export function SendTab({
           })}
           {hasAllRecipient && (
             <div className="rounded-xl bg-white/6 px-3 py-2 text-xs text-white/70 ring-1 ring-white/10">
-              Amount ALL only supports one destination. Add destination is disabled until ALL is cleared.
+              Amount ALL only supports one destination. Add destination is
+              disabled until ALL is cleared.
             </div>
           )}
 
@@ -1384,7 +1385,8 @@ export function SendTab({
                             </div>
                             {price && (
                               <div className="text-xs text-white/50">
-                                ≈ {toFiat(balanceAfterSending, price).toFixed(2)}{" "}
+                                ≈{" "}
+                                {toFiat(balanceAfterSending, price).toFixed(2)}{" "}
                                 EUR
                               </div>
                             )}
@@ -1407,7 +1409,8 @@ export function SendTab({
                             </div>
                             {price && (
                               <div className="text-xs text-white/50">
-                                ≈ {toFiat(immediatelyUnlocked, price).toFixed(2)}{" "}
+                                ≈{" "}
+                                {toFiat(immediatelyUnlocked, price).toFixed(2)}{" "}
                                 EUR
                               </div>
                             )}
@@ -1498,7 +1501,7 @@ export function SendTab({
           )}
 
           {/* SENT */}
-          {state.type === "sent" && (
+          {state.type === "sent" &&
             (() => {
               const summary = summarizeTransfers(state.info);
               return (
@@ -1531,8 +1534,7 @@ export function SendTab({
                   </Button>
                 </div>
               );
-            })()
-          )}
+            })()}
 
           {/* ERROR */}
           {state.type === "error" && (
