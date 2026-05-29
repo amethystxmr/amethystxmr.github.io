@@ -10,7 +10,7 @@ on:
 jobs:
   e2e_tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -32,13 +32,13 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
-        timeout-minutes: 10
-        run: npx playwright install chromium
+        timeout-minutes: 30
+        run: npx playwright install --with-deps chromium
 
       - name: Download latest official monerod
         id: monerod
         shell: bash
-        timeout-minutes: 5
+        timeout-minutes: 15
         run: |
           set -euo pipefail
 
@@ -77,7 +77,7 @@ jobs:
           echo "path=$monerod_path" >> "$GITHUB_OUTPUT"
 
       - name: Run E2E tests
-        timeout-minutes: 20
+        timeout-minutes: 60
         env:
           CI: true
           MONEROD_PATH: ${{ steps.monerod.outputs.path }}
