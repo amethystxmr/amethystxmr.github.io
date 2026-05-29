@@ -2,7 +2,7 @@
 
 ## Coding
 
-Be consistent with the code in this repository in all aspects: structure, naming, formatting, error handling, comments, helper usage, abstraction level, and simplicity. Always try to find similar places and reuse the same pattern.
+Be consistent with the code in this repository in all aspects, including structure, naming, formatting, error handling, comments, helper usage, abstraction level, simplicity, and similar conventions. Always try to find similar places and reuse the same pattern.
 
 ### Formatting
 
