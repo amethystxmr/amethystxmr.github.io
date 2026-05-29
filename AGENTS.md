@@ -2,9 +2,13 @@
 
 ## Coding
 
+Be consistent with the code in this repository in all aspects: structure, naming, formatting, error handling, comments, helper usage, abstraction level, and simplicity. Always try to find similar places and reuse the same pattern.
+
 ### Formatting
 
 When editing frontend files under `web-src` or TypeScript wallet API files under `monero-wasm-module`, run Prettier on the changed files before completing the task. Use the full `npm run format:fix` script only when a broad reformat is intended. Generated `monero-wasm-module/wasm_wallet.*` files are excluded from formatting.
+
+When editing C++ Embind glue code in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp`, follow the style already used in that file for wrapper functions, naming, binding declarations, value conversions, and comments.
 
 ### TypeScript And React
 
