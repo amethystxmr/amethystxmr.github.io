@@ -33,6 +33,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install Playwright Chromium
+        timeout-minutes: 10
+        run: npx playwright install chromium
+
       - name: Download latest official monerod
         id: monerod
         shell: bash
