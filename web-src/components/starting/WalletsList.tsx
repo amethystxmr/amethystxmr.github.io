@@ -705,6 +705,9 @@ function RestoreView({
 
       let restoreHeight: bigint | null = null;
       let polyseedPrivateKey: Uint8Array | null = null;
+      let birthdayYear = 0;
+      let birthdayMonth = 0;
+      let birthdayDay = 0;
 
       if (
         seedType === "monero-25" ||
@@ -712,9 +715,6 @@ function RestoreView({
         seedType === "from-keys"
       ) {
         const trimmed = startingHeight.trim();
-        if (trimmed === "error") {
-          throw new Error("Invalid starting height");
-        }
         if (trimmed !== "") {
           try {
             restoreHeight = BigInt(trimmed);
@@ -722,12 +722,7 @@ function RestoreView({
             throw new Error("Invalid starting height");
           }
         }
-      }
-
-      wallet = await createWalletUsingCurrentOptions();
-      await wallet.init();
-
-      if (seedType === "cake-16") {
+      } else {
         const normalizedCakeSeed = normalizeSeedPhrase(cakeSeed);
         const decoded = await walletApi.decodePolyseed(normalizedCakeSeed);
         if (!decoded.privateKey || decoded.privateKey.length !== 32) {
@@ -743,10 +738,19 @@ function RestoreView({
         if (isNaN(birthdayDate.getTime())) {
           throw new Error("Invalid Cake seed: birthday date is invalid");
         }
+        birthdayYear = birthdayDate.getUTCFullYear();
+        birthdayMonth = birthdayDate.getUTCMonth() + 1;
+        birthdayDay = birthdayDate.getUTCDate();
+      }
+
+      wallet = await createWalletUsingCurrentOptions();
+      await wallet.init();
+
+      if (seedType === "cake-16") {
         restoreHeight = await wallet.get_blockchain_height_by_date(
-          birthdayDate.getUTCFullYear(),
-          birthdayDate.getUTCMonth() + 1,
-          birthdayDate.getUTCDate(),
+          birthdayYear,
+          birthdayMonth,
+          birthdayDay,
         );
         if (isUnmountedRef.current) {
           releaseWalletOpenLock?.();
@@ -808,9 +812,9 @@ function RestoreView({
           await wallet.generate(fileName, password, secret32, true, false);
         }
         await wallet.set_explicit_refresh_from_block_height(true);
-        const refreshFromHeight =
-          restoreHeight ?? (await wallet.get_daemon_blockchain_height());
-        await wallet.set_refresh_from_block_height(refreshFromHeight);
+        await wallet.set_refresh_from_block_height(
+          restoreHeight ?? (await wallet.get_daemon_blockchain_height()),
+        );
         await wallet.rewrite(fileName, password);
         await wallet.store();
       });
@@ -902,14 +906,12 @@ function RestoreView({
         />
         <Input
           type="date"
-          lang="en-GB"
           disabled={restoring}
           onChange={(e) => onDateChange(e.target.value)}
         />
       </div>
       <div className="mt-1 text-[11px] text-white/50">
-        Or pick a date to auto-fill block height. Leave height empty to use the
-        current blockchain height.
+        Or pick a date to auto-fill block height.
       </div>
     </FormRow>
   );
