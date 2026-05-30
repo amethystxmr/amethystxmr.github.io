@@ -560,6 +560,57 @@ async function getBlockchainHeightByDateUsingTempWallet(
   }
 }
 
+function parseEuDateString(
+  value: string,
+): { year: number; month: number; day: number } | null {
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (
+    !Number.isInteger(day) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(year) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    year < 1970
+  ) {
+    return null;
+  }
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() + 1 !== month ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { year, month, day };
+}
+
+async function resolveRestoreHeightFromInput(
+  startingHeight: string,
+  wallet: MoneroWasmWallet,
+): Promise<bigint> {
+  const trimmed = startingHeight.trim();
+  if (trimmed === "error") {
+    throw new Error("Invalid starting height");
+  }
+  if (trimmed === "") {
+    return await wallet.get_daemon_blockchain_height();
+  }
+  try {
+    return BigInt(trimmed);
+  } catch {
+    throw new Error("Invalid starting height");
+  }
+}
+
 function DoublePasswordInput({
   password,
   passwordConfirm,
@@ -634,7 +685,8 @@ function RestoreView({
   const [password, setPassword] = React.useState("");
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
 
-  const [startingHeight, setStartingHeight] = React.useState("3603563");
+  const [startingHeight, setStartingHeight] = React.useState("");
+  const [restoreDate, setRestoreDate] = React.useState("");
   const [loadingHeight, setLoadingHeight] = React.useState(false);
   const [seedType, setSeedType] = React.useState<
     "monero-25" | "cake-16" | "multisig" | "from-keys"
@@ -706,16 +758,18 @@ function RestoreView({
       let restoreHeight: bigint;
       let polyseedPrivateKey: Uint8Array | null = null;
 
+      wallet = await createWalletUsingCurrentOptions();
+      await wallet.init();
+
       if (
         seedType === "monero-25" ||
         seedType === "multisig" ||
         seedType === "from-keys"
       ) {
-        try {
-          restoreHeight = BigInt(startingHeight);
-        } catch {
-          throw new Error("Invalid starting height");
-        }
+        restoreHeight = await resolveRestoreHeightFromInput(
+          startingHeight,
+          wallet,
+        );
       } else {
         const normalizedCakeSeed = normalizeSeedPhrase(cakeSeed);
         const decoded = await walletApi.decodePolyseed(normalizedCakeSeed);
@@ -748,8 +802,6 @@ function RestoreView({
         setStartingHeight(restoreHeight.toString());
       }
 
-      wallet = await createWalletUsingCurrentOptions();
-      await wallet.init();
       await withFsLock(async () => {
         if (!wallet) {
           throw new Error("Wallet was unexpectedly undefined");
@@ -849,16 +901,13 @@ function RestoreView({
     });
   };
 
-  const onDateChange = (value: string) => {
-    const d = new Date(value);
-    if (isNaN(d.getTime())) {
+  const onRestoreDateChange = (value: string) => {
+    setRestoreDate(value);
+    const parsed = parseEuDateString(value);
+    if (!parsed) {
       return;
     }
-    const { year, month, day } = {
-      year: d.getUTCFullYear(),
-      month: d.getUTCMonth() + 1,
-      day: d.getUTCDate(),
-    };
+    const { year, month, day } = parsed;
     setLoadingHeight(true);
     getBlockchainHeightByDateUsingTempWallet(year, month, day)
       .then((height) => {
@@ -893,13 +942,15 @@ function RestoreView({
           disabled={loadingHeight || restoring}
         />
         <Input
-          type="date"
-          disabled={restoring}
-          onChange={(e) => onDateChange(e.target.value)}
+          value={restoreDate}
+          placeholder="DD/MM/YYYY"
+          disabled={restoring || loadingHeight}
+          onChange={(e) => onRestoreDateChange(e.target.value)}
         />
       </div>
       <div className="mt-1 text-[11px] text-white/50">
-        Or pick a date to auto-fill block height.
+        Or enter a date (DD/MM/YYYY) to auto-fill block height. Leave height
+        empty to use the current blockchain height.
       </div>
     </FormRow>
   );
