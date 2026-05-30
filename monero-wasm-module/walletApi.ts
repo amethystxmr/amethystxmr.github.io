@@ -308,6 +308,30 @@ export interface TransferDestinationInfo {
   dspAmount: bigint;
 }
 
+export interface DecodedPolyseed {
+  birthday: bigint;
+  features: number;
+  privateKey: Uint8Array;
+  storage: PolyseedStorage;
+  langStr: string;
+}
+
+export interface PolyseedStorage {
+  birthday: bigint;
+  features: number;
+  secret: Uint8Array;
+}
+
+export interface EncodablePolyseed {
+  storage: PolyseedStorage;
+  langStr: string;
+}
+
+export interface GeneratePolyseedStorageOptions {
+  birthday?: bigint;
+  features?: number;
+}
+
 interface Module {
   /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
   getExceptionMessage?(exn: number): [string, string];
@@ -333,13 +357,11 @@ interface Module {
   get_monero_version_full(): string;
   /**
    * `birthday` is `polyseed_get_birthday` (wallet birthday height index), a small
-   * integer from WASM — not a Unix timestamp. Typed as `number` (Embind `val(u32)`).
+   * integer from WASM — not a Unix timestamp. Typed as `bigint` because this
+   * module is built with `-sWASM_BIGINT`.
    */
-  decodePolyseed(moneroPolyseed: string): {
-    birthday: number;
-    privateKey: Uint8Array;
-    langStr: string;
-  };
+  decodePolyseed(moneroPolyseed: string): DecodedPolyseed;
+  encodePolyseed(decodedPolyseed: EncodablePolyseed): string;
 }
 
 export type ModuleLoadProgress =
@@ -634,11 +656,37 @@ export function setWalletNewBlockCallback(
   return wallet.set_on_new_block_callback(callback);
 }
 
-export function decodePolyseed(moneroPolyseed: string) {
+export function decodePolyseed(moneroPolyseed: string): DecodedPolyseed {
   if (!module) {
     throw new Error("Module not initialized");
   }
   return module.decodePolyseed(moneroPolyseed);
+}
+
+export function encodePolyseed(decodedPolyseed: EncodablePolyseed): string {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.encodePolyseed(decodedPolyseed);
+}
+
+export function generatePolyseedStorage(
+  options: GeneratePolyseedStorageOptions = {},
+): PolyseedStorage {
+  const features = options.features ?? 0;
+  if (!Number.isInteger(features) || features < 0 || features > 7) {
+    throw new Error("Polyseed features must be an integer from 0 to 7");
+  }
+
+  const secret = new Uint8Array(19);
+  globalThis.crypto.getRandomValues(secret);
+  secret[secret.length - 1] &= 0x3f;
+
+  return {
+    birthday: options.birthday ?? BigInt(Math.floor(Date.now() / 1000)),
+    features,
+    secret,
+  };
 }
 
 export function getMoneroVersionFull() {

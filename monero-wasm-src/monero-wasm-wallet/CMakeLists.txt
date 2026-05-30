@@ -38,6 +38,7 @@ target_compile_definitions(monero-wasm-wallet PRIVATE _LIBCPP_ENABLE_CXX17_REMOV
 target_include_directories(monero-wasm-wallet
     PRIVATE
     ${polyseed_SOURCE_DIR}/include
+    ${polyseed_SOURCE_DIR}/src
 )
 
 

@@ -1,12 +1,18 @@
 #include <stdio.h>
 #include <emscripten.h>
 #include <emscripten/bind.h>
-#include "emscripten/proxying.h"
 #include <algorithm>
 #include <sodium/core.h>
 #include <sodium/utils.h>
 #include <sodium/randombytes.h>
 #include <polyseed.h>
+extern "C"
+{
+#include "birthday.h"
+#include "features.h"
+#include "gf.h"
+#include "storage.h"
+}
 
 #include <string.h>
 
@@ -158,6 +164,7 @@ public:
         pd.free = nullptr;
 
         polyseed_inject(&pd);
+        polyseed_enable_features(7);
 
         printf("Initialized\n");
     }
@@ -190,6 +197,96 @@ static const char *polyseedStatusToHumanText(polyseed_status status)
     }
 }
 
+static unsigned getPolyseedFeatures(const polyseed_data *seed)
+{
+    unsigned features = 0;
+    for (unsigned mask = 1; mask <= 4; mask <<= 1)
+    {
+        if (polyseed_get_feature(seed, mask))
+        {
+            features |= mask;
+        }
+    }
+    return features;
+}
+
+static emscripten::val makeUint8Array(const uint8_t *data, size_t size)
+{
+    auto out = emscripten::val::global("Uint8Array").new_(size);
+    for (size_t i = 0; i < size; ++i)
+    {
+        out.set(i, data[i]);
+    }
+    return out;
+}
+
+static emscripten::val makePolyseedStorageObject(const polyseed_data *seed)
+{
+    auto secret = makeUint8Array(seed->secret, SECRET_SIZE);
+    secret.set(SECRET_SIZE - 1, seed->secret[SECRET_SIZE - 1] & CLEAR_MASK);
+
+    emscripten::val out = emscripten::val::object();
+    out.set("birthday", emscripten::val(polyseed_get_birthday(seed)));
+    out.set("features", emscripten::val(getPolyseedFeatures(seed)));
+    out.set("secret", secret);
+    return out;
+}
+
+static polyseed_data makePolyseedDataFromStorageObject(emscripten::val storageValue)
+{
+    auto secretValue = storageValue["secret"];
+    auto secretLength = secretValue["length"].as<size_t>();
+    if (secretLength != SECRET_SIZE)
+    {
+        throw std::runtime_error("Polyseed storage secret must be 19 bytes");
+    }
+
+    auto features = storageValue["features"].as<unsigned>();
+    if (features & ~USER_FEATURES_MASK)
+    {
+        throw std::runtime_error("Polyseed storage features must fit in 3 bits");
+    }
+
+    polyseed_data seed = {};
+    seed.birthday = birthday_encode(storageValue["birthday"].as<uint64_t>());
+    seed.features = make_features(features);
+    if (!polyseed_features_supported(seed.features))
+    {
+        throw std::runtime_error("Unsupported polyseed features");
+    }
+
+    for (size_t i = 0; i < SECRET_SIZE; ++i)
+    {
+        seed.secret[i] = secretValue[i].as<uint8_t>();
+    }
+    if (seed.secret[SECRET_SIZE - 1] & ~CLEAR_MASK)
+    {
+        throw std::runtime_error("Polyseed secret has non-zero unused bits");
+    }
+
+    gf_poly poly = {0};
+    polyseed_data_to_poly(&seed, &poly);
+    gf_poly_encode(&poly);
+    seed.checksum = poly.coeff[0];
+    memwipe(&poly, sizeof(poly));
+
+    return seed;
+}
+
+static const polyseed_lang *getPolyseedLangByEnglishName(const std::string &langStr)
+{
+    int numLangs = polyseed_get_num_langs();
+    for (int i = 0; i < numLangs; ++i)
+    {
+        const polyseed_lang *lang = polyseed_get_lang(i);
+        if (langStr == polyseed_get_lang_name_en(lang))
+        {
+            return lang;
+        }
+    }
+    throw std::runtime_error("Unsupported polyseed language: " + langStr);
+}
+
 emscripten::val decodePolyseed(std::string moneroPolyseed)
 {
     polyseed_data *seed2;
@@ -216,15 +313,14 @@ emscripten::val decodePolyseed(std::string moneroPolyseed)
     auto birthday = polyseed_get_birthday(seed2);
     // printf("Birthday: %u\n", birthday);
 
-    auto privateKey = emscripten::val::global("Uint8Array").new_(32);
-    for (size_t i = 0; i < sizeof(key2); ++i)
-    {
-        privateKey.set(i, key2[i]);
-    }
+    auto privateKey = makeUint8Array(key2, sizeof(key2));
+    auto storage = makePolyseedStorageObject(seed2);
 
     emscripten::val out = emscripten::val::object();
     out.set("birthday", emscripten::val(birthday));
+    out.set("features", emscripten::val(getPolyseedFeatures(seed2)));
     out.set("privateKey", privateKey);
+    out.set("storage", storage);
     out.set("langStr", emscripten::val(langStr));
 
     memwipe(key2, sizeof(key2));
@@ -232,8 +328,23 @@ emscripten::val decodePolyseed(std::string moneroPolyseed)
     return out;
 }
 
+std::string encodePolyseed(emscripten::val decodedPolyseed)
+{
+    auto lang = getPolyseedLangByEnglishName(decodedPolyseed["langStr"].as<std::string>());
+    auto seed = makePolyseedDataFromStorageObject(decodedPolyseed["storage"]);
+
+    polyseed_str moneroPolyseed;
+    polyseed_encode(&seed, lang, POLYSEED_MONERO, moneroPolyseed);
+
+    std::string out(moneroPolyseed);
+    memwipe(&seed, sizeof(seed));
+    return out;
+}
+
 EMSCRIPTEN_BINDINGS(monero_wasm_wallet_polyseed)
 {
     emscripten::function(
         "decodePolyseed", &decodePolyseed);
+    emscripten::function(
+        "encodePolyseed", &encodePolyseed);
 }
