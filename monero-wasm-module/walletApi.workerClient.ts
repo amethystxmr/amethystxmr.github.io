@@ -22,6 +22,9 @@ export {
 export type FeePriority = FeePriorityType;
 
 export type {
+  DecodedPolyseed,
+  EncodablePolyseed,
+  GeneratePolyseedStorageOptions,
   KeyImagesImportResult,
   MaybePromise,
   ModuleLoadProgress,
@@ -29,6 +32,7 @@ export type {
   MultisigAccountStatus,
   NetworkType,
   PaymentDetails,
+  PolyseedStorage,
   TransferInfoItem,
   TransferItem,
   WalletAddress,
