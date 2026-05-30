@@ -634,7 +634,7 @@ function RestoreView({
   const [password, setPassword] = React.useState("");
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
 
-  const [startingHeight, setStartingHeight] = React.useState("3603563");
+  const [startingHeight, setStartingHeight] = React.useState("");
   const [loadingHeight, setLoadingHeight] = React.useState(false);
   const [seedType, setSeedType] = React.useState<
     "monero-25" | "cake-16" | "multisig" | "from-keys"
@@ -703,7 +703,7 @@ function RestoreView({
         );
       }
 
-      let restoreHeight: bigint;
+      let restoreHeight: bigint | null = null;
       let polyseedPrivateKey: Uint8Array | null = null;
 
       if (
@@ -711,10 +711,13 @@ function RestoreView({
         seedType === "multisig" ||
         seedType === "from-keys"
       ) {
-        try {
-          restoreHeight = BigInt(startingHeight);
-        } catch {
-          throw new Error("Invalid starting height");
+        const trimmed = startingHeight.trim();
+        if (trimmed !== "") {
+          try {
+            restoreHeight = BigInt(trimmed);
+          } catch {
+            throw new Error("Invalid starting height");
+          }
         }
       } else {
         const normalizedCakeSeed = normalizeSeedPhrase(cakeSeed);
@@ -802,7 +805,9 @@ function RestoreView({
           await wallet.generate(fileName, password, secret32, true, false);
         }
         await wallet.set_explicit_refresh_from_block_height(true);
-        await wallet.set_refresh_from_block_height(restoreHeight);
+        await wallet.set_refresh_from_block_height(
+          restoreHeight ?? (await wallet.get_daemon_blockchain_height()),
+        );
         await wallet.rewrite(fileName, password);
         await wallet.store();
       });

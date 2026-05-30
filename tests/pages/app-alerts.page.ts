@@ -5,12 +5,16 @@ export class AppAlertsPage {
   constructor(private readonly page: Page) {}
 
   async dismissNoticeMatching(pattern: RegExp): Promise<void> {
-    await expect(this.page.getByText(pattern)).toBeVisible({ timeout: 120_000 });
+    await expect(this.page.getByText(pattern)).toBeVisible({
+      timeout: 120_000,
+    });
     await this.page.getByRole("button", { name: /^OK$/ }).click();
   }
 
   /** After importing a zip whose wallet already exists on disk (manage Import). */
-  async dismissImportCompletedExpectingSkippedWallet(walletName: string): Promise<void> {
+  async dismissImportCompletedExpectingSkippedWallet(
+    walletName: string,
+  ): Promise<void> {
     const escaped = walletName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     await expect(
       this.page.getByText(

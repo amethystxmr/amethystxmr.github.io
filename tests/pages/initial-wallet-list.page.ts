@@ -6,11 +6,16 @@ export class InitialWalletListPage {
     return new Proxy(this, {
       get: (target, prop, receiver) => {
         const value = Reflect.get(target, prop, receiver);
-        if (typeof prop !== "string" || typeof value !== "function" || prop === "constructor") {
+        if (
+          typeof prop !== "string" ||
+          typeof value !== "function" ||
+          prop === "constructor"
+        ) {
           return value;
         }
         return (...args: unknown[]) =>
-          test.step(`${target.constructor.name}.${prop}`, async () => value.apply(target, args));
+          test.step(`${target.constructor.name}.${prop}`, async () =>
+            value.apply(target, args));
       },
     }) as this;
   }
@@ -41,7 +46,9 @@ export class InitialWalletListPage {
   }
 
   async openRestoreWallet(): Promise<void> {
-    await this.page.getByRole("button", { name: this.restoreButtonName }).click();
+    await this.page
+      .getByRole("button", { name: this.restoreButtonName })
+      .click();
     await expect(
       this.page.getByRole("heading", { name: /restore wallet/i }),
     ).toBeVisible();
@@ -81,7 +88,9 @@ export class InitialWalletListPage {
   }
 
   async expectWalletNotOnList(walletName: string): Promise<void> {
-    await expect(this.page.getByRole("button", { name: walletName })).toHaveCount(0);
+    await expect(
+      this.page.getByRole("button", { name: walletName }),
+    ).toHaveCount(0);
   }
 
   async restoreWallet(params: {
@@ -129,7 +138,9 @@ export class InitialWalletListPage {
     await this.page.getByRole("button", { name: /restore wallet/i }).click();
   }
 
-  async createNewWallet(params: { walletName: string }): Promise<WalletMainPage> {
+  async createNewWallet(params: {
+    walletName: string;
+  }): Promise<WalletMainPage> {
     await this.walletNameInput().fill(params.walletName);
     await this.page.getByRole("button", { name: /create wallet/i }).click();
     await this.page.getByRole("button", { name: /open wallet/i }).click();
