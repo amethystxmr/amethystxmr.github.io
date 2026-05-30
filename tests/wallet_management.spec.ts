@@ -57,9 +57,7 @@ test("wallet management cross-tab locks, rename, export, remove, import", async 
     await manage1.expectLoaded();
     await manage1.exportWalletToPath(preflightWalletName, preflightZipPath);
     await manage1.importZipFromPath(preflightZipPath);
-    await alerts1.dismissImportCompletedExpectingSkippedWallet(
-      preflightWalletName,
-    );
+    await alerts1.dismissImportCompletedExpectingSkippedWallet(preflightWalletName);
     await manage1.backToWalletList();
     await initial.expectMainHomeVisible();
   });

@@ -43,12 +43,9 @@ export async function generateBlocks(
   walletAddress: string,
   amountOfBlocks: number,
 ): Promise<string[]> {
-  const result = await callMoneroJsonRpc<{ blocks: string[] }>(
-    "generateblocks",
-    {
-      wallet_address: walletAddress,
-      amount_of_blocks: amountOfBlocks,
-    },
-  );
+  const result = await callMoneroJsonRpc<{ blocks: string[] }>("generateblocks", {
+    wallet_address: walletAddress,
+    amount_of_blocks: amountOfBlocks,
+  });
   return result.blocks;
 }

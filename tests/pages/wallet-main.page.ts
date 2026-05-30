@@ -10,31 +10,21 @@ export class WalletMainPage {
     return new Proxy(this, {
       get: (target, prop, receiver) => {
         const value = Reflect.get(target, prop, receiver);
-        if (
-          typeof prop !== "string" ||
-          typeof value !== "function" ||
-          prop === "constructor"
-        ) {
+        if (typeof prop !== "string" || typeof value !== "function" || prop === "constructor") {
           return value;
         }
-        if (
-          prop.startsWith("readDownloadToUint8Array") ||
-          prop.startsWith("parseXmrTextToAtomic")
-        ) {
+        if (prop.startsWith("readDownloadToUint8Array") || prop.startsWith("parseXmrTextToAtomic")) {
           return value;
         }
         return (...args: unknown[]) =>
-          test.step(`${target.constructor.name}.${prop}`, async () =>
-            value.apply(target, args));
+          test.step(`${target.constructor.name}.${prop}`, async () => value.apply(target, args));
       },
     }) as this;
   }
 
   private static readonly ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
 
-  async openTab(
-    name: "receive" | "send" | "transactions" | "multisig" | "other",
-  ): Promise<void> {
+  async openTab(name: "receive" | "send" | "transactions" | "multisig" | "other"): Promise<void> {
     const tab = this.page.getByRole("tab", { name: new RegExp(name, "i") });
     for (let attempt = 0; attempt < 5; attempt++) {
       await this.waitForBlockingOverlayToDisappear();
@@ -54,9 +44,7 @@ export class WalletMainPage {
   }
 
   async waitUntilLoaded(timeoutMs = 60_000): Promise<void> {
-    await expect(
-      this.page.getByRole("tab", { name: /receive/i }),
-    ).toBeVisible();
+    await expect(this.page.getByRole("tab", { name: /receive/i })).toBeVisible();
 
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
@@ -66,9 +54,7 @@ export class WalletMainPage {
       }
       await this.page.waitForTimeout(500);
     }
-    throw new Error(
-      `Wallet main view did not show XMR balance within ${timeoutMs}ms`,
-    );
+    throw new Error(`Wallet main view did not show XMR balance within ${timeoutMs}ms`);
   }
 
   async reloadAndWaitForWallet(): Promise<void> {
@@ -86,9 +72,7 @@ export class WalletMainPage {
     await this.openTab("other");
     await this.page.getByRole("button", { name: /refresh wallet/i }).click();
     const refreshingLabel = this.page.getByText(/Refreshing\.\.\./i);
-    const isRefreshingVisible = await refreshingLabel
-      .isVisible()
-      .catch(() => false);
+    const isRefreshingVisible = await refreshingLabel.isVisible().catch(() => false);
     if (isRefreshingVisible) {
       await refreshingLabel.waitFor({ state: "hidden", timeout: 120_000 });
     }
@@ -108,9 +92,7 @@ export class WalletMainPage {
     await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
     await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
 
-    await this.page
-      .getByRole("button", { name: /review transaction/i })
-      .click();
+    await this.page.getByRole("button", { name: /review transaction/i }).click();
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
     await this.page.getByRole("button", { name: /send another/i }).click();
@@ -121,28 +103,19 @@ export class WalletMainPage {
     await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
     await this.page.getByRole("button", { name: /^All$/i }).click();
 
-    await this.page
-      .getByRole("button", { name: /review transaction/i })
-      .click();
+    await this.page.getByRole("button", { name: /review transaction/i }).click();
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
     await this.page.getByRole("button", { name: /send another/i }).click();
   }
 
-  async waitForMultisigInProgress(
-    threshold: number,
-    total: number,
-    timeoutMs = 180_000,
-  ): Promise<void> {
+  async waitForMultisigInProgress(threshold: number, total: number, timeoutMs = 180_000): Promise<void> {
     const startedAt = Date.now();
     const setupHeader = this.page.getByText(
       new RegExp(`Setting up\\s+${threshold}-of-${total}\\s+multisig`, "i"),
     );
     const readyHeader = this.page.getByText(
-      new RegExp(
-        `Multisig\\s+${threshold}-of-${total}\\s+is\\s+ready\\s+to\\s+use`,
-        "i",
-      ),
+      new RegExp(`Multisig\\s+${threshold}-of-${total}\\s+is\\s+ready\\s+to\\s+use`, "i"),
     );
     const exchangeButton = this.page.getByRole("button", {
       name: /exchange multisig keys/i,
@@ -162,29 +135,18 @@ export class WalletMainPage {
       await this.page.waitForTimeout(500);
     }
 
-    throw new Error(
-      `Multisig did not reach in-progress state within ${timeoutMs}ms`,
-    );
+    throw new Error(`Multisig did not reach in-progress state within ${timeoutMs}ms`);
   }
 
-  async waitForMultisigReady(
-    threshold: number,
-    total: number,
-    timeoutMs = 180_000,
-  ): Promise<void> {
+  async waitForMultisigReady(threshold: number, total: number, timeoutMs = 180_000): Promise<void> {
     const startedAt = Date.now();
     const readyHeader = this.page.getByText(
-      new RegExp(
-        `Multisig\\s+${threshold}-of-${total}\\s+is\\s+ready\\s+to\\s+use`,
-        "i",
-      ),
+      new RegExp(`Multisig\\s+${threshold}-of-${total}\\s+is\\s+ready\\s+to\\s+use`, "i"),
     );
     const exportButton = this.page.getByRole("button", {
       name: /export latest multisig data/i,
     });
-    const readyStatus = this.page.getByText(
-      /status:\s*ready to create or sign transactions/i,
-    );
+    const readyStatus = this.page.getByText(/status:\s*ready to create or sign transactions/i);
 
     while (Date.now() - startedAt < timeoutMs) {
       await this.openTab("multisig");
@@ -202,9 +164,7 @@ export class WalletMainPage {
     throw new Error(`Multisig did not become ready within ${timeoutMs}ms`);
   }
 
-  async prepareMultisigAndGetRound1Message(
-    timeoutMs = 60_000,
-  ): Promise<string> {
+  async prepareMultisigAndGetRound1Message(timeoutMs = 60_000): Promise<string> {
     await this.openTab("multisig");
     await this.page.getByRole("button", { name: /prepare multisig/i }).click();
     const messageField = this.page.getByRole("textbox", {
@@ -218,11 +178,7 @@ export class WalletMainPage {
     return (await messageField.inputValue()).trim();
   }
 
-  async makeMultisig(
-    threshold: number,
-    participants: number,
-    allRoundMessages: string,
-  ): Promise<void> {
+  async makeMultisig(threshold: number, participants: number, allRoundMessages: string): Promise<void> {
     await this.openTab("multisig");
     if (participants > 4) {
       const moreButton = this.page.getByRole("button", { name: /^More$/i });
@@ -230,32 +186,19 @@ export class WalletMainPage {
         await moreButton.click();
       }
     }
+    await this.page.getByRole("button", { name: `Multisig participants ${participants}` }).click();
+    await this.page.getByRole("button", { name: `Multisig threshold ${threshold}` }).click();
     await this.page
-      .getByRole("button", { name: `Multisig participants ${participants}` })
-      .click();
-    await this.page
-      .getByRole("button", { name: `Multisig threshold ${threshold}` })
-      .click();
-    await this.page
-      .getByRole("textbox", {
-        name: "Multisig round 1 messages input",
-        exact: true,
-      })
+      .getByRole("textbox", { name: "Multisig round 1 messages input", exact: true })
       .fill(allRoundMessages);
     await this.page
-      .getByRole("button", {
-        name: new RegExp(
-          `make\\s+${threshold}\\/${participants}\\s+multisig`,
-          "i",
-        ),
-      })
+      .getByRole("button", { name: new RegExp(`make\\s+${threshold}\\/${participants}\\s+multisig`, "i") })
       .click();
   }
 
   async isMultisigReady(): Promise<boolean> {
     await this.openTab("multisig");
-    return await this.page
-      .getByRole("button", { name: /export latest multisig data/i })
+    return await this.page.getByRole("button", { name: /export latest multisig data/i })
       .isVisible()
       .catch(() => false);
   }
@@ -277,9 +220,7 @@ export class WalletMainPage {
   async waitForMultisigRound(round: number, timeoutMs = 60_000): Promise<void> {
     await this.openTab("multisig");
     await expect(
-      this.page.getByText(
-        new RegExp(`All participants round\\s+${round}\\s+messages`, "i"),
-      ),
+      this.page.getByText(new RegExp(`All participants round\\s+${round}\\s+messages`, "i")),
     ).toBeVisible({ timeout: timeoutMs });
   }
 
@@ -301,9 +242,7 @@ export class WalletMainPage {
     await expect(input).toBeVisible();
     await input.fill(messages);
     await exchangeButton.click({ timeout: 5_000 });
-    const exchangeErrorNotice = this.page.getByText(
-      /Failed to exchange multisig keys:/i,
-    );
+    const exchangeErrorNotice = this.page.getByText(/Failed to exchange multisig keys:/i);
     const hasError = await exchangeErrorNotice
       .waitFor({ state: "visible", timeout: 5_000 })
       .then(() => true)
@@ -311,33 +250,23 @@ export class WalletMainPage {
     if (!hasError) {
       return;
     }
-    const errorText =
-      (await exchangeErrorNotice.textContent())?.trim() || "unknown error";
+    const errorText = (await exchangeErrorNotice.textContent())?.trim() || "unknown error";
     await this.page.getByRole("button", { name: /^OK$/i }).click();
     throw new Error(errorText);
   }
 
-  async createMultisigTransactionAndExport(
-    destinationAddress: string,
-    amountXmr: string,
-  ): Promise<Uint8Array> {
+  async createMultisigTransactionAndExport(destinationAddress: string, amountXmr: string): Promise<Uint8Array> {
     await this.openTab("send");
     await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
     await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
-    await this.page
-      .getByRole("button", { name: /review transaction/i })
-      .click();
+    await this.page.getByRole("button", { name: /review transaction/i }).click();
     await this.page.getByRole("button", { name: /^✓\s*Confirm$/i }).click();
-    return await this.downloadFromExportOverlay(
-      /Partially signed transaction/i,
-    );
+    return await this.downloadFromExportOverlay(/Partially signed transaction/i);
   }
 
   async exportLatestMultisigData(): Promise<Uint8Array> {
     await this.openTab("multisig");
-    await this.page
-      .getByRole("button", { name: /export latest multisig data/i })
-      .click();
+    await this.page.getByRole("button", { name: /export latest multisig data/i }).click();
     await this.page.getByRole("button", { name: /yes,\s*export/i }).click();
     await expect(this.page.getByText(/Your multisig data/i)).toBeVisible();
     const downloadPromise = this.page.waitForEvent("download");
@@ -348,12 +277,8 @@ export class WalletMainPage {
 
   async importParticipantMultisigData(files: Uint8Array[]): Promise<void> {
     await this.openTab("multisig");
-    await this.page
-      .getByRole("button", { name: /import participant data/i })
-      .click();
-    await expect(
-      this.page.getByText(/paste data from others here/i),
-    ).toBeVisible();
+    await this.page.getByRole("button", { name: /import participant data/i }).click();
+    await expect(this.page.getByText(/paste data from others here/i)).toBeVisible();
     const fileInput = this.page.locator('input[type="file"]');
     await fileInput.setInputFiles(
       files.map((buffer, index) => ({
@@ -363,28 +288,17 @@ export class WalletMainPage {
       })),
     );
     const successAlert = this.page.getByText(/Multisig info imported/i);
-    const errorAlert = this.page.getByText(
-      /Wrong number of multisig sources|Failed to import/i,
-    );
+    const errorAlert = this.page.getByText(/Wrong number of multisig sources|Failed to import/i);
     const hasSuccess = await successAlert
       .waitFor({ state: "visible", timeout: 60_000 })
       .then(() => true)
       .catch(() => false);
     if (!hasSuccess) {
-      const errorText = (
-        (await errorAlert.textContent().catch(() => "")) || ""
-      ).trim();
-      if (
-        await this.page
-          .getByRole("button", { name: /^OK$/i })
-          .isVisible()
-          .catch(() => false)
-      ) {
+      const errorText = ((await errorAlert.textContent().catch(() => "")) || "").trim();
+      if (await this.page.getByRole("button", { name: /^OK$/i }).isVisible().catch(() => false)) {
         await this.page.getByRole("button", { name: /^OK$/i }).click();
       }
-      throw new Error(
-        `Failed to import multisig participant data: ${errorText || "unknown error"}`,
-      );
+      throw new Error(`Failed to import multisig participant data: ${errorText || "unknown error"}`);
     }
     await this.page.getByRole("button", { name: /^OK$/i }).click();
   }
@@ -404,16 +318,10 @@ export class WalletMainPage {
     await this.page.getByRole("button", { name: /sign multisig tx/i }).click();
     await this.importMultisigTxDataFromFile(importData);
 
-    const finalizeButton = this.page.getByRole("button", {
-      name: /^✓\s*Finalize\s*&\s*Send$/i,
-    });
-    const confirmButton = this.page.getByRole("button", {
-      name: /^✓\s*Confirm$/i,
-    });
+    const finalizeButton = this.page.getByRole("button", { name: /^✓\s*Finalize\s*&\s*Send$/i });
+    const confirmButton = this.page.getByRole("button", { name: /^✓\s*Confirm$/i });
     await expect(
-      this.page.getByRole("button", {
-        name: /^✓\s*(Confirm|Finalize\s*&\s*Send)$/i,
-      }),
+      this.page.getByRole("button", { name: /^✓\s*(Confirm|Finalize\s*&\s*Send)$/i }),
     ).toBeVisible();
     const isFinalSigner = await finalizeButton.isVisible().catch(() => false);
     if (isFinalSigner) {
@@ -423,15 +331,12 @@ export class WalletMainPage {
     }
 
     await confirmButton.click();
-    const exportedData =
-      await this.downloadFromExportOverlay(/Signed multisig tx/i);
+    const exportedData = await this.downloadFromExportOverlay(/Signed multisig tx/i);
     return { exportedData, sent: false };
   }
 
   private async importMultisigTxDataFromFile(data: Uint8Array): Promise<void> {
-    await expect(
-      this.page.getByText(/paste multisig tx data here/i),
-    ).toBeVisible();
+    await expect(this.page.getByText(/paste multisig tx data here/i)).toBeVisible();
     const fileInput = this.page.locator('input[type="file"]');
     await fileInput.setInputFiles({
       name: "partially-signed-multisig.bin",
@@ -440,9 +345,7 @@ export class WalletMainPage {
     });
   }
 
-  private async downloadFromExportOverlay(
-    headerPattern: RegExp,
-  ): Promise<Uint8Array> {
+  private async downloadFromExportOverlay(headerPattern: RegExp): Promise<Uint8Array> {
     await expect(this.page.getByText(headerPattern)).toBeVisible();
     const downloadPromise = this.page.waitForEvent("download");
     await this.page.getByRole("button", { name: /^Save to file$/i }).click();
@@ -450,9 +353,7 @@ export class WalletMainPage {
     return await this.readDownloadToUint8Array(download);
   }
 
-  private async readDownloadToUint8Array(
-    download: Download,
-  ): Promise<Uint8Array> {
+  private async readDownloadToUint8Array(download: Download): Promise<Uint8Array> {
     const stream = await download.createReadStream();
     if (!stream) {
       throw new Error("Failed to read downloaded multisig data");
@@ -483,12 +384,8 @@ export class WalletMainPage {
   async getPaymentTypeCounts(): Promise<Record<string, number>> {
     await this.openTab("transactions");
     const mined = await this.page.getByLabel("Transaction type: Mined").count();
-    const pending = await this.page
-      .getByLabel("Transaction type: Pending")
-      .count();
-    const mempool = await this.page
-      .getByLabel("Transaction type: Mempool In")
-      .count();
+    const pending = await this.page.getByLabel("Transaction type: Pending").count();
+    const mempool = await this.page.getByLabel("Transaction type: Mempool In").count();
     return {
       block: mined,
       pending,
@@ -525,11 +422,7 @@ export class WalletMainPage {
   }
 
   async getUnlockedBalanceAtomic(): Promise<bigint | null> {
-    const text =
-      (await this.page
-        .getByLabel("XMR available value")
-        .first()
-        .textContent()) ?? "";
+    const text = (await this.page.getByLabel("XMR available value").first().textContent()) ?? "";
     const parsed = WalletMainPage.parseXmrTextToAtomic(text);
     return parsed;
   }
@@ -557,12 +450,7 @@ export class WalletMainPage {
         // Wallet may still be refreshing, retry.
       }
       try {
-        lastUi = (
-          (await this.page
-            .getByLabel("XMR available value")
-            .first()
-            .textContent()) ?? ""
-        ).trim();
+        lastUi = ((await this.page.getByLabel("XMR available value").first().textContent()) ?? "").trim();
       } catch {
         // Ignore UI probe errors.
       }
@@ -574,10 +462,7 @@ export class WalletMainPage {
     );
   }
 
-  async waitForExactSyncedHeight(
-    expectedHeight: number,
-    timeoutMs = 120_000,
-  ): Promise<void> {
+  async waitForExactSyncedHeight(expectedHeight: number, timeoutMs = 120_000): Promise<void> {
     await this.reloadAndWaitForWallet();
     const startedAt = Date.now();
     let lastWalletHeightText = "";
@@ -589,15 +474,9 @@ export class WalletMainPage {
       try {
         await this.clickRefreshWallet();
         const walletHeightText =
-          (await this.page
-            .getByLabel("Wallet current height")
-            .first()
-            .textContent()) ?? "";
+          (await this.page.getByLabel("Wallet current height").first().textContent()) ?? "";
         const daemonHeightText =
-          (await this.page
-            .getByLabel("Daemon current height")
-            .first()
-            .textContent()) ?? "";
+          (await this.page.getByLabel("Daemon current height").first().textContent()) ?? "";
         lastWalletHeightText = walletHeightText.trim();
         lastDaemonHeightText = daemonHeightText.trim();
 
@@ -611,10 +490,7 @@ export class WalletMainPage {
           lastDaemonHeight = daemonHeight;
         }
 
-        if (
-          walletHeight === expectedHeight &&
-          daemonHeight === expectedHeight
-        ) {
+        if (walletHeight === expectedHeight && daemonHeight === expectedHeight) {
           return;
         }
       } catch {
@@ -625,8 +501,8 @@ export class WalletMainPage {
 
     throw new Error(
       `Wallet did not reach exact synced height ${expectedHeight}/${expectedHeight}. ` +
-        `Last wallet height: ${lastWalletHeight ?? "NaN"} (UI text: "${lastWalletHeightText}"), ` +
-        `last daemon height: ${lastDaemonHeight ?? "NaN"} (UI text: "${lastDaemonHeightText}")`,
+      `Last wallet height: ${lastWalletHeight ?? "NaN"} (UI text: "${lastWalletHeightText}"), ` +
+      `last daemon height: ${lastDaemonHeight ?? "NaN"} (UI text: "${lastDaemonHeightText}")`,
     );
   }
 
@@ -644,21 +520,15 @@ export class WalletMainPage {
     return whole * WalletMainPage.ATOMIC_UNITS_PER_XMR + fraction;
   }
 
-  private async waitForBlockingOverlayToDisappear(
-    timeoutMs = 30_000,
-  ): Promise<void> {
+  private async waitForBlockingOverlayToDisappear(timeoutMs = 30_000): Promise<void> {
     const blockingOverlay = this.page.locator(
       "div[class*='inset-0'][class*='z-[70]']",
     );
-    const hasVisibleOverlay = await blockingOverlay
-      .first()
-      .isVisible()
-      .catch(() => false);
+    const hasVisibleOverlay = await blockingOverlay.first().isVisible().catch(() => false);
     if (!hasVisibleOverlay) {
       return;
     }
-    await blockingOverlay
-      .first()
-      .waitFor({ state: "hidden", timeout: timeoutMs });
+    await blockingOverlay.first().waitFor({ state: "hidden", timeout: timeoutMs });
   }
+
 }

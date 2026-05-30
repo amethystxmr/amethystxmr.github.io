@@ -98,10 +98,9 @@ function readMonerodState(): { pid: number; dataDir?: string } | null {
     return null;
   }
   try {
-    return JSON.parse(fs.readFileSync(MONEROD_STATE_PATH, "utf8")) as {
-      pid: number;
-      dataDir?: string;
-    };
+    return JSON.parse(
+      fs.readFileSync(MONEROD_STATE_PATH, "utf8"),
+    ) as { pid: number; dataDir?: string };
   } catch {
     return null;
   }
@@ -177,10 +176,7 @@ export async function startMonerod(): Promise<void> {
   await waitForMonerodReady(60_000);
 }
 
-async function waitForProcessExit(
-  pid: number,
-  timeoutMs: number,
-): Promise<boolean> {
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {

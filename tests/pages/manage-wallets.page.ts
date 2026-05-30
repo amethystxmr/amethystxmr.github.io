@@ -1,26 +1,15 @@
-import {
-  expect,
-  test,
-  type Download,
-  type Locator,
-  type Page,
-} from "@playwright/test";
+import { expect, test, type Download, type Locator, type Page } from "@playwright/test";
 
 export class ManageWalletsPage {
   constructor(private readonly page: Page) {
     return new Proxy(this, {
       get: (target, prop, receiver) => {
         const value = Reflect.get(target, prop, receiver);
-        if (
-          typeof prop !== "string" ||
-          typeof value !== "function" ||
-          prop === "constructor"
-        ) {
+        if (typeof prop !== "string" || typeof value !== "function" || prop === "constructor") {
           return value;
         }
         return (...args: unknown[]) =>
-          test.step(`${target.constructor.name}.${prop}`, async () =>
-            value.apply(target, args));
+          test.step(`${target.constructor.name}.${prop}`, async () => value.apply(target, args));
       },
     }) as this;
   }
@@ -34,9 +23,7 @@ export class ManageWalletsPage {
   }
 
   async expectLoaded(): Promise<void> {
-    await expect(
-      this.page.getByRole("heading", { name: /manage wallets/i }),
-    ).toBeVisible();
+    await expect(this.page.getByRole("heading", { name: /manage wallets/i })).toBeVisible();
   }
 
   async expectWalletRowVisible(walletName: string): Promise<void> {
@@ -44,15 +31,11 @@ export class ManageWalletsPage {
   }
 
   async expectEmptyState(): Promise<void> {
-    await expect(this.page.getByText(/No wallets available/i)).toBeVisible({
-      timeout: 120_000,
-    });
+    await expect(this.page.getByText(/No wallets available/i)).toBeVisible({ timeout: 120_000 });
   }
 
   async startRemoveForWallet(walletName: string): Promise<void> {
-    await this.walletCard(walletName)
-      .getByRole("button", { name: "🗑 Remove" })
-      .click();
+    await this.walletCard(walletName).getByRole("button", { name: "🗑 Remove" }).click();
   }
 
   async confirmRemoveDialog(walletNameToType: string): Promise<void> {
@@ -61,35 +44,24 @@ export class ManageWalletsPage {
   }
 
   async startRenameForWallet(walletName: string): Promise<void> {
-    await this.walletCard(walletName)
-      .getByRole("button", { name: "✎ Rename" })
-      .click();
+    await this.walletCard(walletName).getByRole("button", { name: "✎ Rename" }).click();
   }
 
   async submitRenameDialog(newWalletName: string): Promise<void> {
-    const renameForm = this.page
-      .locator("form")
-      .filter({ hasText: /Enter new name for/i });
+    const renameForm = this.page.locator("form").filter({ hasText: /Enter new name for/i });
     await renameForm.locator("input").fill(newWalletName);
     await renameForm.getByRole("button", { name: /rename wallet/i }).click();
   }
 
-  async exportWalletToPath(
-    walletName: string,
-    absolutePath: string,
-  ): Promise<void> {
+  async exportWalletToPath(walletName: string, absolutePath: string): Promise<void> {
     const downloadPromise = this.page.waitForEvent("download");
-    await this.walletCard(walletName)
-      .getByRole("button", { name: "⬇︎ Export" })
-      .click();
+    await this.walletCard(walletName).getByRole("button", { name: "⬇︎ Export" }).click();
     const download: Download = await downloadPromise;
     await download.saveAs(absolutePath);
   }
 
   async importZipFromPath(zipPath: string): Promise<void> {
-    await this.page
-      .locator('input[type="file"][accept*="zip"]')
-      .setInputFiles(zipPath);
+    await this.page.locator('input[type="file"][accept*="zip"]').setInputFiles(zipPath);
   }
 
   async backToWalletList(): Promise<void> {
