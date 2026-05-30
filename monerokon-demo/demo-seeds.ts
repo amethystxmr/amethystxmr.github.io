@@ -9,37 +9,103 @@ export const DEMO_SEED_FILLER_WORD = "zero";
 /** Number of filler words after the index marker in the 24 data words. */
 export const DEMO_SEED_TRAILING_FILLER_COUNT = 23;
 
-/** Supported demo wallet indexes (0..8). */
-export const DEMO_SEED_INDEX_COUNT = 9;
+/** Demo seeds per multisig set. */
+export const DEMO_SEED_SET_SIZE = 3;
+
+/** Number of themed demo seed sets. */
+export const DEMO_SEED_SET_COUNT = 4;
+
+/** Total demo seed indexes (0..11). */
+export const DEMO_SEED_INDEX_COUNT =
+  DEMO_SEED_SET_COUNT * DEMO_SEED_SET_SIZE;
 
 /**
- * Preferred index marker words for MoneroKon demo wallets (travel / conference theme).
- * If a word would make the checksum non-filler, the next candidate is tried.
+ * Themed demo seed sets. Each seed is `{marker} zero zero ... zero` (25 words).
+ * Every set shares the same filler/checksum word (`zero`).
  */
-export const DEMO_SEED_INDEX_WORDS = [
-  "hotel",
-  "airport",
-  "metro",
-  "taxi",
-  "ticket",
-  "coffee",
-  "pizza",
-  "phone",
-  "video",
+export const DEMO_SEED_SETS = [
+  {
+    theme: "animals",
+    words: ["dogs", "wolf", "foxes"],
+  },
+  {
+    theme: "food",
+    words: ["coffee", "pizza", "lemon"],
+  },
+  {
+    theme: "travel",
+    words: ["hotel", "airport", "taxi"],
+  },
+  {
+    theme: "nature",
+    words: ["moon", "earth", "water"],
+  },
 ] as const;
 
-/** Extra fallback markers, tried after the travel words. */
+/** Flat list of preferred index marker words, derived from `DEMO_SEED_SETS`. */
+export const DEMO_SEED_INDEX_WORDS = DEMO_SEED_SETS.flatMap(
+  (set) => set.words,
+) as unknown as readonly [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
+
+/** Extra fallback markers, tried after themed words in the same set. */
 const DEMO_SEED_FALLBACK_INDEX_WORDS = [
-  "money",
-  "water",
-  "paper",
+  "hawk",
+  "owls",
+  "fruit",
+  "metro",
+  "ticket",
+  "phone",
+  "video",
+  "autumn",
   "robot",
+  "paper",
+  "money",
   "lucky",
-  "earth",
-  "moon",
-  "omega",
-  "second",
 ] as const;
+
+export function getDemoSeedSetIndex(seedIndex: number): number {
+  if (
+    !Number.isInteger(seedIndex) ||
+    seedIndex < 0 ||
+    seedIndex >= DEMO_SEED_INDEX_COUNT
+  ) {
+    throw new Error(
+      `Demo seed index must be an integer from 0 to ${DEMO_SEED_INDEX_COUNT - 1}`,
+    );
+  }
+  return Math.floor(seedIndex / DEMO_SEED_SET_SIZE);
+}
+
+export function getDemoSeedIndexInSet(seedIndex: number): number {
+  getDemoSeedSetIndex(seedIndex);
+  return seedIndex % DEMO_SEED_SET_SIZE;
+}
+
+export function getDemoSeedSet(seedSetIndex: number) {
+  if (
+    !Number.isInteger(seedSetIndex) ||
+    seedSetIndex < 0 ||
+    seedSetIndex >= DEMO_SEED_SET_COUNT
+  ) {
+    throw new Error(
+      `Demo seed set index must be an integer from 0 to ${DEMO_SEED_SET_COUNT - 1}`,
+    );
+  }
+  return DEMO_SEED_SETS[seedSetIndex];
+}
 
 function buildDataWords(indexWord: string, fillerWord: string): string[] {
   return [
@@ -57,13 +123,15 @@ function checksumWordForDataWords(
   return checksumWord === fillerWord ? checksumWord : null;
 }
 
-function indexWordCandidates(index: number): string[] {
-  const preferred = DEMO_SEED_INDEX_WORDS[index];
+function indexWordCandidates(seedIndex: number): string[] {
+  const set = getDemoSeedSet(getDemoSeedSetIndex(seedIndex));
+  const preferred = set.words[getDemoSeedIndexInSet(seedIndex)];
   const seen = new Set<string>();
   const candidates: string[] = [];
 
   for (const word of [
     preferred,
+    ...set.words,
     ...DEMO_SEED_INDEX_WORDS,
     ...DEMO_SEED_FALLBACK_INDEX_WORDS,
   ]) {
@@ -78,10 +146,10 @@ function indexWordCandidates(index: number): string[] {
 }
 
 export function resolveDemoIndexWord(
-  index: number,
+  seedIndex: number,
   fillerWord: string = DEMO_SEED_FILLER_WORD,
 ): string {
-  for (const indexWord of indexWordCandidates(index)) {
+  for (const indexWord of indexWordCandidates(seedIndex)) {
     const dataWords = buildDataWords(indexWord, fillerWord);
     if (checksumWordForDataWords(dataWords, fillerWord) !== null) {
       return indexWord;
@@ -89,22 +157,18 @@ export function resolveDemoIndexWord(
   }
 
   throw new Error(
-    `No index marker word found for demo seed ${index} with filler "${fillerWord}"`,
+    `No index marker word found for demo seed ${seedIndex} with filler "${fillerWord}"`,
   );
 }
 
 export function getDemoSeed(
-  index: number,
+  seedIndex: number,
   options: { fillerWord?: string } = {},
 ): string {
-  if (!Number.isInteger(index) || index < 0 || index >= DEMO_SEED_INDEX_COUNT) {
-    throw new Error(
-      `Demo seed index must be an integer from 0 to ${DEMO_SEED_INDEX_COUNT - 1}`,
-    );
-  }
+  getDemoSeedSetIndex(seedIndex);
 
   const fillerWord = options.fillerWord ?? DEMO_SEED_FILLER_WORD;
-  const indexWord = resolveDemoIndexWord(index, fillerWord);
+  const indexWord = resolveDemoIndexWord(seedIndex, fillerWord);
   const dataWords = buildDataWords(indexWord, fillerWord);
 
   return withMoneroChecksum(dataWords).join(" ");
@@ -119,9 +183,15 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
-  for (let index = 0; index < DEMO_SEED_INDEX_COUNT; index += 1) {
-    console.log(`${index}:`);
-    console.log(getDemoSeed(index));
-    console.log("");
+  for (let setIndex = 0; setIndex < DEMO_SEED_SET_COUNT; setIndex += 1) {
+    const set = getDemoSeedSet(setIndex);
+    console.log(`Set #${setIndex} (${set.theme}):`);
+
+    for (let offset = 0; offset < DEMO_SEED_SET_SIZE; offset += 1) {
+      const seedIndex = setIndex * DEMO_SEED_SET_SIZE + offset;
+      console.log(`${seedIndex}:`);
+      console.log(getDemoSeed(seedIndex));
+      console.log("");
+    }
   }
 }

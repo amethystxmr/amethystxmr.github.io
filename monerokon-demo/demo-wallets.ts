@@ -1,10 +1,15 @@
-import { getDemoSeed } from "./demo-seeds.ts";
+import {
+  DEMO_SEED_SET_COUNT,
+  DEMO_SEED_SET_SIZE,
+  getDemoSeed,
+  getDemoSeedSet,
+} from "./demo-seeds.ts";
 import { loadWalletApi } from "./wallet-shims.ts";
 
 const DEMO_WALLET_PASSWORD = "";
 const MULTISIG_THRESHOLD = 2;
 const MULTISIG_PARTICIPANTS = 3;
-const MULTISIG_SET_COUNT = 3;
+const MULTISIG_SET_COUNT = DEMO_SEED_SET_COUNT;
 
 type WalletApi = Awaited<ReturnType<typeof loadWalletApi>>;
 type MoneroWasmWallet = Awaited<
@@ -12,7 +17,7 @@ type MoneroWasmWallet = Awaited<
 >;
 
 function seedIndexesForSet(setIndex: number): [number, number, number] {
-  const base = setIndex * MULTISIG_PARTICIPANTS;
+  const base = setIndex * DEMO_SEED_SET_SIZE;
   return [base, base + 1, base + 2];
 }
 
@@ -173,8 +178,9 @@ function formatDemoMultisigSetOutput(
   seeds: readonly [string, string, string],
   address: string,
 ): string[] {
+  const { theme } = getDemoSeedSet(setIndex);
   return [
-    `Set #${setIndex}:`,
+    `Set #${setIndex} (${theme}):`,
     seeds[0],
     seeds[1],
     seeds[2],
