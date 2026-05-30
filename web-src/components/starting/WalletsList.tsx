@@ -560,24 +560,6 @@ async function getBlockchainHeightByDateUsingTempWallet(
   }
 }
 
-async function resolveRestoreHeightFromInput(
-  startingHeight: string,
-  wallet: MoneroWasmWallet,
-): Promise<bigint> {
-  const trimmed = startingHeight.trim();
-  if (trimmed === "error") {
-    throw new Error("Invalid starting height");
-  }
-  if (trimmed === "") {
-    return await wallet.get_daemon_blockchain_height();
-  }
-  try {
-    return BigInt(trimmed);
-  } catch {
-    throw new Error("Invalid starting height");
-  }
-}
-
 function DoublePasswordInput({
   password,
   passwordConfirm,
@@ -721,21 +703,27 @@ function RestoreView({
         );
       }
 
-      let restoreHeight: bigint;
+      let restoreHeight: bigint | null = null;
       let polyseedPrivateKey: Uint8Array | null = null;
-
-      wallet = await createWalletUsingCurrentOptions();
-      await wallet.init();
+      let cakeBirthday: { year: number; month: number; day: number } | null =
+        null;
 
       if (
         seedType === "monero-25" ||
         seedType === "multisig" ||
         seedType === "from-keys"
       ) {
-        restoreHeight = await resolveRestoreHeightFromInput(
-          startingHeight,
-          wallet,
-        );
+        const trimmed = startingHeight.trim();
+        if (trimmed === "error") {
+          throw new Error("Invalid starting height");
+        }
+        if (trimmed !== "") {
+          try {
+            restoreHeight = BigInt(trimmed);
+          } catch {
+            throw new Error("Invalid starting height");
+          }
+        }
       } else {
         const normalizedCakeSeed = normalizeSeedPhrase(cakeSeed);
         const decoded = await walletApi.decodePolyseed(normalizedCakeSeed);
@@ -752,13 +740,21 @@ function RestoreView({
         if (isNaN(birthdayDate.getTime())) {
           throw new Error("Invalid Cake seed: birthday date is invalid");
         }
-        const year = birthdayDate.getUTCFullYear();
-        const month = birthdayDate.getUTCMonth() + 1;
-        const day = birthdayDate.getUTCDate();
-        restoreHeight = await getBlockchainHeightByDateUsingTempWallet(
-          year,
-          month,
-          day,
+        cakeBirthday = {
+          year: birthdayDate.getUTCFullYear(),
+          month: birthdayDate.getUTCMonth() + 1,
+          day: birthdayDate.getUTCDate(),
+        };
+      }
+
+      wallet = await createWalletUsingCurrentOptions();
+      await wallet.init();
+
+      if (cakeBirthday) {
+        restoreHeight = await wallet.get_blockchain_height_by_date(
+          cakeBirthday.year,
+          cakeBirthday.month,
+          cakeBirthday.day,
         );
         if (isUnmountedRef.current) {
           releaseWalletOpenLock?.();
@@ -820,7 +816,9 @@ function RestoreView({
           await wallet.generate(fileName, password, secret32, true, false);
         }
         await wallet.set_explicit_refresh_from_block_height(true);
-        await wallet.set_refresh_from_block_height(restoreHeight);
+        const refreshFromHeight =
+          restoreHeight ?? (await wallet.get_daemon_blockchain_height());
+        await wallet.set_refresh_from_block_height(refreshFromHeight);
         await wallet.rewrite(fileName, password);
         await wallet.store();
       });
