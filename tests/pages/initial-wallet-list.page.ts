@@ -87,23 +87,32 @@ export class InitialWalletListPage {
   async restoreWallet(params: {
     walletName: string;
     seed: string;
+    seedType?: "monero-25" | "cake-16";
     startingHeight?: string;
   }): Promise<WalletMainPage> {
-    const startingHeightInput = this.page
-      .locator("div")
-      .filter({ hasText: /^Starting height/ })
-      .locator("input")
-      .first();
+    const seedType = params.seedType ?? "monero-25";
 
     await this.walletNameInput().fill(params.walletName);
+    if (seedType === "cake-16") {
+      await this.page.getByRole("button", { name: /cake 16 words/i }).click();
+    }
     await this.page
       .locator("div")
       .filter({ hasText: /^Seed phrase/ })
       .locator("textarea")
       .first()
       .fill(params.seed);
-    await startingHeightInput.fill(params.startingHeight ?? "0");
-    await expect(startingHeightInput).toHaveValue(params.startingHeight ?? "0");
+    if (seedType === "monero-25") {
+      const startingHeightInput = this.page
+        .locator("div")
+        .filter({ hasText: /^Starting height/ })
+        .locator("input")
+        .first();
+      await startingHeightInput.fill(params.startingHeight ?? "0");
+      await expect(startingHeightInput).toHaveValue(
+        params.startingHeight ?? "0",
+      );
+    }
 
     await this.page.getByRole("button", { name: /restore wallet/i }).click();
 
