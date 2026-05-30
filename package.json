@@ -25,7 +25,8 @@
     "format:check": "prettier --check web-src monero-wasm-module",
     "format:fix": "prettier --write web-src monero-wasm-module",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "monerokon-demo-seeds": "ts-node-esm monerokon-demo/demo-seeds.ts"
+    "monerokon-demo-seeds": "ts-node-esm monerokon-demo/demo-seeds.ts",
+    "monerokon-demo-wallets": "ts-node-esm monerokon-demo/demo-wallets.ts"
   },
   "build": {
     "appId": "org.amethystxmr.wallet",
