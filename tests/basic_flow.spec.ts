@@ -1,8 +1,5 @@
 import { test, expect } from "@playwright/test";
-import {
-  MONERO_MINING_ADDRESS,
-  MONERO_RESTORE_SEED,
-} from "./constants";
+import { MONERO_MINING_ADDRESS, MONERO_RESTORE_SEED } from "./constants";
 import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
@@ -49,9 +46,9 @@ test("basic flow", async ({ page, context }) => {
   });
 
   await test.step("Dev server has no COOP/COEP; SharedArrayBuffer unavailable", async () => {
-    await expect(
-      page.evaluate(() => typeof SharedArrayBuffer),
-    ).resolves.toBe("undefined");
+    await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
+      "undefined",
+    );
   });
 
   await test.step("Verify restored wallet has mined transactions", async () => {
