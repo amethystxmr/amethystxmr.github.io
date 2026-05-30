@@ -705,8 +705,6 @@ function RestoreView({
 
       let restoreHeight: bigint | null = null;
       let polyseedPrivateKey: Uint8Array | null = null;
-      let cakeBirthday: { year: number; month: number; day: number } | null =
-        null;
 
       if (
         seedType === "monero-25" ||
@@ -724,7 +722,12 @@ function RestoreView({
             throw new Error("Invalid starting height");
           }
         }
-      } else {
+      }
+
+      wallet = await createWalletUsingCurrentOptions();
+      await wallet.init();
+
+      if (seedType === "cake-16") {
         const normalizedCakeSeed = normalizeSeedPhrase(cakeSeed);
         const decoded = await walletApi.decodePolyseed(normalizedCakeSeed);
         if (!decoded.privateKey || decoded.privateKey.length !== 32) {
@@ -740,21 +743,10 @@ function RestoreView({
         if (isNaN(birthdayDate.getTime())) {
           throw new Error("Invalid Cake seed: birthday date is invalid");
         }
-        cakeBirthday = {
-          year: birthdayDate.getUTCFullYear(),
-          month: birthdayDate.getUTCMonth() + 1,
-          day: birthdayDate.getUTCDate(),
-        };
-      }
-
-      wallet = await createWalletUsingCurrentOptions();
-      await wallet.init();
-
-      if (cakeBirthday) {
         restoreHeight = await wallet.get_blockchain_height_by_date(
-          cakeBirthday.year,
-          cakeBirthday.month,
-          cakeBirthday.day,
+          birthdayDate.getUTCFullYear(),
+          birthdayDate.getUTCMonth() + 1,
+          birthdayDate.getUTCDate(),
         );
         if (isUnmountedRef.current) {
           releaseWalletOpenLock?.();
