@@ -4,7 +4,10 @@ import { generateBlocks } from "./helpers/moneroRpc";
 import { startMonerod } from "./helpers/monerod";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
-import { type MultisigSignResult, WalletMainPage } from "./pages/wallet-main.page";
+import {
+  type MultisigSignResult,
+  WalletMainPage,
+} from "./pages/wallet-main.page";
 
 const TRANSFER_AMOUNT_XMR = "3";
 const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
@@ -25,7 +28,10 @@ test.describe("multisig flow", () => {
   });
 
   for (const { threshold, members } of CASES) {
-    test(`${threshold}-of-${members} full kex and send`, async ({ page, context }) => {
+    test(`${threshold}-of-${members} full kex and send`, async ({
+      page,
+      context,
+    }) => {
       test.setTimeout(900_000);
 
       let multisigWallets: WalletMainPage[] = [];
@@ -40,33 +46,46 @@ test.describe("multisig flow", () => {
 
       await test.step("Prepare multisig round 1 messages and create multisig wallets", async () => {
         const round1Messages: string[] = [];
-        for (let walletIndex = 0; walletIndex < multisigWallets.length; walletIndex++) {
-          await test.step(
-            `Prepare round 1 message wallet [${walletIndex + 1}/${multisigWallets.length}]`,
-            async () => {
-              const message = await multisigWallets[walletIndex].prepareMultisigAndGetRound1Message();
-              round1Messages.push(message);
-            },
-          );
+        for (
+          let walletIndex = 0;
+          walletIndex < multisigWallets.length;
+          walletIndex++
+        ) {
+          await test.step(`Prepare round 1 message wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
+            const message =
+              await multisigWallets[
+                walletIndex
+              ].prepareMultisigAndGetRound1Message();
+            round1Messages.push(message);
+          });
         }
 
         const allRound1Messages = round1Messages.join("\n");
-        for (let walletIndex = 0; walletIndex < multisigWallets.length; walletIndex++) {
-          await test.step(
-            `Make multisig wallet [${walletIndex + 1}/${multisigWallets.length}]`,
-            async () => {
-              await multisigWallets[walletIndex].makeMultisig(threshold, members, allRound1Messages);
-            },
-          );
+        for (
+          let walletIndex = 0;
+          walletIndex < multisigWallets.length;
+          walletIndex++
+        ) {
+          await test.step(`Make multisig wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
+            await multisigWallets[walletIndex].makeMultisig(
+              threshold,
+              members,
+              allRound1Messages,
+            );
+          });
         }
 
-        for (let walletIndex = 0; walletIndex < multisigWallets.length; walletIndex++) {
-          await test.step(
-            `Wait multisig in-progress wallet [${walletIndex + 1}/${multisigWallets.length}]`,
-            async () => {
-              await multisigWallets[walletIndex].waitForMultisigInProgress(threshold, members);
-            },
-          );
+        for (
+          let walletIndex = 0;
+          walletIndex < multisigWallets.length;
+          walletIndex++
+        ) {
+          await test.step(`Wait multisig in-progress wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
+            await multisigWallets[walletIndex].waitForMultisigInProgress(
+              threshold,
+              members,
+            );
+          });
         }
       });
 
@@ -75,43 +94,56 @@ test.describe("multisig flow", () => {
         for (let round = 0; round < exchangeRounds; round++) {
           await test.step(`KEX round [${round + 1}/${exchangeRounds}]`, async () => {
             const expectedRound = round + 2;
-            for (let walletIndex = 0; walletIndex < multisigWallets.length; walletIndex++) {
-              await test.step(
-                `Wait expected round ${expectedRound} wallet [${walletIndex + 1}/${multisigWallets.length}]`,
-                async () => {
-                  await multisigWallets[walletIndex].waitForMultisigRound(expectedRound);
-                },
-              );
+            for (
+              let walletIndex = 0;
+              walletIndex < multisigWallets.length;
+              walletIndex++
+            ) {
+              await test.step(`Wait expected round ${expectedRound} wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
+                await multisigWallets[walletIndex].waitForMultisigRound(
+                  expectedRound,
+                );
+              });
             }
 
             const currentMessages: string[] = [];
-            for (let walletIndex = 0; walletIndex < multisigWallets.length; walletIndex++) {
-              await test.step(
-                `Read round message wallet [${walletIndex + 1}/${multisigWallets.length}]`,
-                async () => {
-                  const message = await multisigWallets[walletIndex].getCurrentMultisigRoundMessage();
-                  currentMessages.push(message);
-                },
-              );
+            for (
+              let walletIndex = 0;
+              walletIndex < multisigWallets.length;
+              walletIndex++
+            ) {
+              await test.step(`Read round message wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
+                const message =
+                  await multisigWallets[
+                    walletIndex
+                  ].getCurrentMultisigRoundMessage();
+                currentMessages.push(message);
+              });
             }
             const joinedMessages = currentMessages.join("\n");
-            for (let walletIndex = 0; walletIndex < multisigWallets.length; walletIndex++) {
-              await test.step(
-                `Exchange messages wallet [${walletIndex + 1}/${multisigWallets.length}]`,
-                async () => {
-                  await multisigWallets[walletIndex].exchangeMultisigRoundMessages(joinedMessages);
-                },
-              );
+            for (
+              let walletIndex = 0;
+              walletIndex < multisigWallets.length;
+              walletIndex++
+            ) {
+              await test.step(`Exchange messages wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
+                await multisigWallets[
+                  walletIndex
+                ].exchangeMultisigRoundMessages(joinedMessages);
+              });
             }
 
             if (round < exchangeRounds - 1) {
-              for (let walletIndex = 0; walletIndex < multisigWallets.length; walletIndex++) {
-                await test.step(
-                  `Wait next round ${expectedRound + 1} wallet [${walletIndex + 1}/${multisigWallets.length}]`,
-                  async () => {
-                    await multisigWallets[walletIndex].waitForMultisigRound(expectedRound + 1);
-                  },
-                );
+              for (
+                let walletIndex = 0;
+                walletIndex < multisigWallets.length;
+                walletIndex++
+              ) {
+                await test.step(`Wait next round ${expectedRound + 1} wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
+                  await multisigWallets[walletIndex].waitForMultisigRound(
+                    expectedRound + 1,
+                  );
+                });
               }
             }
           });
@@ -119,13 +151,17 @@ test.describe("multisig flow", () => {
       });
 
       await test.step("Wait for multisig ready state and fund it", async () => {
-        for (let walletIndex = 0; walletIndex < multisigWallets.length; walletIndex++) {
-          await test.step(
-            `Wait multisig ready wallet [${walletIndex + 1}/${multisigWallets.length}]`,
-            async () => {
-              await multisigWallets[walletIndex].waitForMultisigReady(threshold, members);
-            },
-          );
+        for (
+          let walletIndex = 0;
+          walletIndex < multisigWallets.length;
+          walletIndex++
+        ) {
+          await test.step(`Wait multisig ready wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
+            await multisigWallets[walletIndex].waitForMultisigReady(
+              threshold,
+              members,
+            );
+          });
         }
 
         const multisigAddress = await multisigWallets[0].getPrimaryAddress();
@@ -136,12 +172,17 @@ test.describe("multisig flow", () => {
           INITIAL_MINED_BLOCKS + 1,
         );
         await assertAllWalletsHavePartialKeyImages(multisigWallets);
-        await synchronizeMultisigParticipantData(multisigWallets.slice(0, threshold));
-        const multisigUnlocked = await multisigWallets[0].waitForUnlockedBalanceAtLeast(
-          MIN_EXPECTED_UNLOCKED_BALANCE,
-          300_000,
+        await synchronizeMultisigParticipantData(
+          multisigWallets.slice(0, threshold),
         );
-        expect(multisigUnlocked).toBeGreaterThanOrEqual(MIN_EXPECTED_UNLOCKED_BALANCE);
+        const multisigUnlocked =
+          await multisigWallets[0].waitForUnlockedBalanceAtLeast(
+            MIN_EXPECTED_UNLOCKED_BALANCE,
+            300_000,
+          );
+        expect(multisigUnlocked).toBeGreaterThanOrEqual(
+          MIN_EXPECTED_UNLOCKED_BALANCE,
+        );
       });
 
       let recipientWallet: WalletMainPage;
@@ -158,45 +199,52 @@ test.describe("multisig flow", () => {
       });
 
       await test.step("Create, sign, and send multisig transaction", async () => {
-        let partialData = await multisigWallets[0].createMultisigTransactionAndExport(
-          recipientAddress,
-          TRANSFER_AMOUNT_XMR,
-        );
+        let partialData =
+          await multisigWallets[0].createMultisigTransactionAndExport(
+            recipientAddress,
+            TRANSFER_AMOUNT_XMR,
+          );
         for (let signer = 1; signer < threshold; signer++) {
           await test.step(`Signer [${signer + 1}/${threshold}] sign pass`, async () => {
-            const result: MultisigSignResult = await multisigWallets[signer].signMultisigTransactionAndContinue(partialData);
+            const result: MultisigSignResult =
+              await multisigWallets[signer].signMultisigTransactionAndContinue(
+                partialData,
+              );
             if (signer < threshold - 1) {
               if (result.sent) {
-                throw new Error(`Signer ${signer + 1} unexpectedly finalized transaction early`);
+                throw new Error(
+                  `Signer ${signer + 1} unexpectedly finalized transaction early`,
+                );
               }
               partialData = result.exportedData;
             } else if (!result.sent) {
-              throw new Error(`Final signer ${signer + 1} did not finalize multisig transaction`);
+              throw new Error(
+                `Final signer ${signer + 1} did not finalize multisig transaction`,
+              );
             }
           });
         }
       });
 
       await test.step("Verify pending and mempool statuses", async () => {
-        const pendingCount = await multisigWallets[0].waitForPaymentTypeCountAtLeast(
-          "pending",
-          1,
-        );
+        const pendingCount =
+          await multisigWallets[0].waitForPaymentTypeCountAtLeast("pending", 1);
         expect(pendingCount).toBeGreaterThan(0);
-        const mempoolCount = await recipientWallet.waitForPaymentTypeCountAtLeast(
-          "mempool",
-          1,
-        );
+        const mempoolCount =
+          await recipientWallet.waitForPaymentTypeCountAtLeast("mempool", 1);
         expect(mempoolCount).toBeGreaterThan(0);
       });
 
       await test.step("Mine unlock blocks and verify recipient unlocked balance", async () => {
         await generateBlocks(MONERO_MINING_ADDRESS, POST_SEND_MINED_BLOCKS);
-        const recipientUnlocked = await recipientWallet.waitForUnlockedBalanceAtLeast(
+        const recipientUnlocked =
+          await recipientWallet.waitForUnlockedBalanceAtLeast(
+            MIN_EXPECTED_UNLOCKED_BALANCE,
+            300_000,
+          );
+        expect(recipientUnlocked).toBeGreaterThanOrEqual(
           MIN_EXPECTED_UNLOCKED_BALANCE,
-          300_000,
         );
-        expect(recipientUnlocked).toBeGreaterThanOrEqual(MIN_EXPECTED_UNLOCKED_BALANCE);
       });
     });
   }
@@ -223,7 +271,10 @@ async function createParticipantWallets(params: {
   return wallets;
 }
 
-async function createWalletOnPage(page: Page, walletName: string): Promise<WalletMainPage> {
+async function createWalletOnPage(
+  page: Page,
+  walletName: string,
+): Promise<WalletMainPage> {
   const initial = new InitialWalletListPage(page);
   await initial.goto();
   await initial.waitUntilLoaded();
@@ -231,7 +282,9 @@ async function createWalletOnPage(page: Page, walletName: string): Promise<Walle
   return initial.createNewWallet({ walletName });
 }
 
-async function synchronizeMultisigParticipantData(wallets: WalletMainPage[]): Promise<void> {
+async function synchronizeMultisigParticipantData(
+  wallets: WalletMainPage[],
+): Promise<void> {
   const exportedData: Uint8Array[] = [];
   for (let i = 0; i < wallets.length; i++) {
     await test.step(`Export multisig data wallet [${i + 1}/${wallets.length}]`, async () => {
@@ -242,8 +295,9 @@ async function synchronizeMultisigParticipantData(wallets: WalletMainPage[]): Pr
 
   for (let i = 0; i < wallets.length; i++) {
     await test.step(`Import participant data wallet [${i + 1}/${wallets.length}]`, async () => {
-      const dataFromOthers = exportedData
-        .filter((_, dataIndex) => dataIndex !== i);
+      const dataFromOthers = exportedData.filter(
+        (_, dataIndex) => dataIndex !== i,
+      );
       await wallets[i].importParticipantMultisigData(dataFromOthers);
     });
   }
@@ -256,11 +310,15 @@ async function synchronizeMultisigParticipantData(wallets: WalletMainPage[]): Pr
     });
   }
   if (warnings.some(Boolean)) {
-    throw new Error("Multisig wallets still report partial key images after one synchronization pass");
+    throw new Error(
+      "Multisig wallets still report partial key images after one synchronization pass",
+    );
   }
 }
 
-async function assertAllWalletsHavePartialKeyImages(wallets: WalletMainPage[]): Promise<void> {
+async function assertAllWalletsHavePartialKeyImages(
+  wallets: WalletMainPage[],
+): Promise<void> {
   const warnings: boolean[] = [];
   for (let i = 0; i < wallets.length; i++) {
     await test.step(`Assert partial key images present wallet [${i + 1}/${wallets.length}]`, async () => {
@@ -280,11 +338,8 @@ async function waitForWalletsAtExactSyncedHeight(
   expectedHeight: number,
 ): Promise<void> {
   for (let i = 0; i < wallets.length; i++) {
-    await test.step(
-      `Wait exact synced height ${expectedHeight} wallet [${i + 1}/${wallets.length}]`,
-      async () => {
-        await wallets[i].waitForExactSyncedHeight(expectedHeight);
-      },
-    );
+    await test.step(`Wait exact synced height ${expectedHeight} wallet [${i + 1}/${wallets.length}]`, async () => {
+      await wallets[i].waitForExactSyncedHeight(expectedHeight);
+    });
   }
 }

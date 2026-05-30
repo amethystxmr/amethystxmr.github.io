@@ -560,39 +560,6 @@ async function getBlockchainHeightByDateUsingTempWallet(
   }
 }
 
-function parseEuDateString(
-  value: string,
-): { year: number; month: number; day: number } | null {
-  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim());
-  if (!match) {
-    return null;
-  }
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  if (
-    !Number.isInteger(day) ||
-    !Number.isInteger(month) ||
-    !Number.isInteger(year) ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31 ||
-    year < 1970
-  ) {
-    return null;
-  }
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() + 1 !== month ||
-    date.getUTCDate() !== day
-  ) {
-    return null;
-  }
-  return { year, month, day };
-}
-
 async function resolveRestoreHeightFromInput(
   startingHeight: string,
   wallet: MoneroWasmWallet,
@@ -686,7 +653,6 @@ function RestoreView({
   const [passwordConfirm, setPasswordConfirm] = React.useState("");
 
   const [startingHeight, setStartingHeight] = React.useState("");
-  const [restoreDate, setRestoreDate] = React.useState("");
   const [loadingHeight, setLoadingHeight] = React.useState(false);
   const [seedType, setSeedType] = React.useState<
     "monero-25" | "cake-16" | "multisig" | "from-keys"
@@ -901,13 +867,16 @@ function RestoreView({
     });
   };
 
-  const onRestoreDateChange = (value: string) => {
-    setRestoreDate(value);
-    const parsed = parseEuDateString(value);
-    if (!parsed) {
+  const onDateChange = (value: string) => {
+    const d = new Date(value);
+    if (isNaN(d.getTime())) {
       return;
     }
-    const { year, month, day } = parsed;
+    const { year, month, day } = {
+      year: d.getUTCFullYear(),
+      month: d.getUTCMonth() + 1,
+      day: d.getUTCDate(),
+    };
     setLoadingHeight(true);
     getBlockchainHeightByDateUsingTempWallet(year, month, day)
       .then((height) => {
@@ -942,15 +911,15 @@ function RestoreView({
           disabled={loadingHeight || restoring}
         />
         <Input
-          value={restoreDate}
-          placeholder="DD/MM/YYYY"
-          disabled={restoring || loadingHeight}
-          onChange={(e) => onRestoreDateChange(e.target.value)}
+          type="date"
+          lang="en-GB"
+          disabled={restoring}
+          onChange={(e) => onDateChange(e.target.value)}
         />
       </div>
       <div className="mt-1 text-[11px] text-white/50">
-        Or enter a date (DD/MM/YYYY) to auto-fill block height. Leave height
-        empty to use the current blockchain height.
+        Or pick a date to auto-fill block height. Leave height empty to use the
+        current blockchain height.
       </div>
     </FormRow>
   );
