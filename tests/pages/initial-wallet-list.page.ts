@@ -94,7 +94,7 @@ export class InitialWalletListPage {
 
     await this.walletNameInput().fill(params.walletName);
     if (seedType === "cake-16") {
-      await this.page.getByRole("button", { name: /cake 16 words/i }).click();
+      await this.page.getByRole("tab", { name: /cake 16 words/i }).click();
     }
     await this.page
       .locator("div")

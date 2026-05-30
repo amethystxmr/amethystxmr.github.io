@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { MONERO_MINING_ADDRESS } from "./constants";
+import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 
@@ -14,6 +16,8 @@ test.beforeEach(async ({ page }) => {
 
 test("restore wallet from Cake 16-word polyseed", async ({ page }) => {
   test.setTimeout(300_000);
+
+  await generateBlocks(MONERO_MINING_ADDRESS, 1);
 
   const initial = new InitialWalletListPage(page);
   await initial.goto();

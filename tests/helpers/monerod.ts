@@ -145,6 +145,8 @@ export async function startMonerod(): Promise<void> {
       MONEROD_RPC_HOST,
       "--p2p-bind-port",
       String(MONEROD_P2P_PORT),
+      "--zmq-rpc-bind-port",
+      String(MONEROD_RPC_PORT + 1),
       "--data-dir",
       dataDir,
       "--non-interactive",
