@@ -705,9 +705,6 @@ function RestoreView({
 
       let restoreHeight: bigint | null = null;
       let polyseedPrivateKey: Uint8Array | null = null;
-      let birthdayYear = 0;
-      let birthdayMonth = 0;
-      let birthdayDay = 0;
 
       if (
         seedType === "monero-25" ||
@@ -738,19 +735,13 @@ function RestoreView({
         if (isNaN(birthdayDate.getTime())) {
           throw new Error("Invalid Cake seed: birthday date is invalid");
         }
-        birthdayYear = birthdayDate.getUTCFullYear();
-        birthdayMonth = birthdayDate.getUTCMonth() + 1;
-        birthdayDay = birthdayDate.getUTCDate();
-      }
-
-      wallet = await createWalletUsingCurrentOptions();
-      await wallet.init();
-
-      if (seedType === "cake-16") {
-        restoreHeight = await wallet.get_blockchain_height_by_date(
-          birthdayYear,
-          birthdayMonth,
-          birthdayDay,
+        const year = birthdayDate.getUTCFullYear();
+        const month = birthdayDate.getUTCMonth() + 1;
+        const day = birthdayDate.getUTCDate();
+        restoreHeight = await getBlockchainHeightByDateUsingTempWallet(
+          year,
+          month,
+          day,
         );
         if (isUnmountedRef.current) {
           releaseWalletOpenLock?.();
@@ -760,6 +751,8 @@ function RestoreView({
         setStartingHeight(restoreHeight.toString());
       }
 
+      wallet = await createWalletUsingCurrentOptions();
+      await wallet.init();
       await withFsLock(async () => {
         if (!wallet) {
           throw new Error("Wallet was unexpectedly undefined");
