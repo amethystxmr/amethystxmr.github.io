@@ -24,7 +24,8 @@
     "lint": "eslint web-src monero-wasm-module vite.config.js",
     "format:check": "prettier --check web-src monero-wasm-module",
     "format:fix": "prettier --write web-src monero-wasm-module",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "monerokon-demo-seeds": "ts-node-esm monerokon-demo/demo-seeds.ts"
   },
   "build": {
     "appId": "org.amethystxmr.wallet",
@@ -84,6 +85,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.26",
     "prettier": "^3.8.3",
+    "ts-node": "^10.9.2",
     "typescript-eslint": "^8.56.0"
   }
 }
