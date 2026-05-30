@@ -28,7 +28,12 @@ import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { DAEMON_PRESET_OPTIONS, options } from "../options";
 import { NiceTabs } from "../main/tabs";
-import { acquireWalletOpenLock, downloadBlob, withFsLock } from "../utils";
+import {
+  acquireWalletOpenLock,
+  downloadBlob,
+  normalizeSeedPhrase,
+  withFsLock,
+} from "../utils";
 
 type OpenedWallet = {
   wallet: MoneroWasmWallet;
@@ -662,7 +667,7 @@ function RestoreView({
         void alert("Please wait until starting height is loaded");
         return;
       }
-      if (seedType === "monero-25" && !moneroSeed) {
+      if (seedType === "monero-25" && !normalizeSeedPhrase(moneroSeed)) {
         void alert("Please enter seed");
         return;
       }
@@ -681,7 +686,7 @@ function RestoreView({
         }
       }
     } else {
-      if (!cakeSeed) {
+      if (!normalizeSeedPhrase(cakeSeed)) {
         void alert("Please enter seed");
         return;
       }
@@ -712,7 +717,8 @@ function RestoreView({
           throw new Error("Invalid starting height");
         }
       } else {
-        const decoded = await walletApi.decodePolyseed(cakeSeed);
+        const normalizedCakeSeed = normalizeSeedPhrase(cakeSeed);
+        const decoded = await walletApi.decodePolyseed(normalizedCakeSeed);
         if (!decoded.privateKey || decoded.privateKey.length !== 32) {
           throw new Error("Invalid Cake seed: decoded private key is invalid");
         }
@@ -758,13 +764,13 @@ function RestoreView({
           );
         } else if (seedType === "from-keys") {
           const normalizedAddress = restoreAddress.trim();
-          const viewKey = parseSecretKeyHex(secretViewKey, "Secret view key");
-          const spendKeyRaw = secretSpendKey.replace(/\s+/g, "");
+          const viewKey = parseSecretKeyHex(
+            secretViewKey.trim(),
+            "Secret view key",
+          );
+          const spendKeyRaw = secretSpendKey.trim();
           if (spendKeyRaw.length > 0) {
-            const spendKey = parseSecretKeyHex(
-              secretSpendKey,
-              "Secret spend key",
-            );
+            const spendKey = parseSecretKeyHex(spendKeyRaw, "Secret spend key");
             await wallet.generate_from_keys(
               fileName,
               password,
@@ -785,7 +791,10 @@ function RestoreView({
         } else {
           const secret32 =
             seedType === "monero-25"
-              ? await wallet.words_to_bytes(moneroSeed, "English")
+              ? await wallet.words_to_bytes(
+                  normalizeSeedPhrase(moneroSeed),
+                  "English",
+                )
               : polyseedPrivateKey;
           if (!secret32 || secret32.length !== 32) {
             throw new Error("Invalid seed phrase provided");

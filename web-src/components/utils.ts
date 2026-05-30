@@ -43,6 +43,11 @@ export function shortenAddress(address: string): string {
   return `${address.slice(0, 8)}...${address.slice(-8)}`;
 }
 
+/** Collapse any whitespace run to a single space; trim ends. */
+export function normalizeSeedPhrase(phrase: string): string {
+  return phrase.trim().replace(/\s+/g, " ");
+}
+
 export function splitAddressBy6(address: string): string {
   const compact = address.replace(/\s+/g, "").trim();
   if (!compact) {

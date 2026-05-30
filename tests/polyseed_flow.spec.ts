@@ -4,9 +4,13 @@ import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 
-const POLYSEED_RESTORE_SEED =
-  // Source: https://github.com/MrCyjaneK/polyseed/blob/bd79f5014c331273357277ed8a3d756fb61b9fa1/tests/tests.c#L42-L44
-  "raven tail swear infant grief assist regular lamp duck valid someone little harsh puppy airport language";
+// Source: https://github.com/MrCyjaneK/polyseed/blob/bd79f5014c331273357277ed8a3d756fb61b9fa1/tests/tests.c#L42-L44
+// Normalized: raven tail swear infant grief assist regular lamp duck valid someone little harsh puppy airport language
+const POLYSEED_RESTORE_SEED_DISTURBED = `
+  raven  tail swear
+  infant grief assist   regular lamp duck valid
+someone little harsh puppy airport language   
+`;
 const POLYSEED_RESTORE_ADDRESS =
   "47AjPj7DVPQVGGXJXbbTMZWcKQDejGHYZChVkeujy8qPLjKkgdsxge4DzvkRMgU4sDUigGLuBN9stKBMowhuXH2HJHWAuRf";
 
@@ -26,7 +30,7 @@ test("restore wallet from Cake 16-word polyseed", async ({ page }) => {
 
   const wallet = await initial.restoreWallet({
     walletName: `polyseed-restore-${Date.now()}`,
-    seed: POLYSEED_RESTORE_SEED,
+    seed: POLYSEED_RESTORE_SEED_DISTURBED,
     seedType: "cake-16",
   });
 
