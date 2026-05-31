@@ -103,6 +103,98 @@ export class WalletMainPage {
     return text;
   }
 
+  private receiveAddressCard(titlePattern: RegExp | string) {
+    return this.page
+      .locator('div[class*="rounded-xl"][class*="ring-1"]')
+      .filter({
+        has: this.page.getByText(titlePattern, { exact: true }),
+      })
+      .first();
+  }
+
+  async addSubaddress(label: string): Promise<void> {
+    await this.openTab("receive");
+    await this.page.getByRole("button", { name: /add subaddress/i }).click();
+    await this.page.getByPlaceholder(/optional label/i).fill(label);
+    await this.page.getByRole("button", { name: /^\+ Create$/i }).click();
+    await expect(this.page.getByText(`${label} (#1)`, { exact: true })).toBeVisible(
+      { timeout: 60_000 },
+    );
+  }
+
+  async expectReceiveRowUnused(title: string): Promise<void> {
+    await this.openTab("receive");
+    const card = this.receiveAddressCard(title);
+    await expect(card.getByText("Unused yet")).toBeVisible();
+  }
+
+  async getAddressFromReceiveRow(title: string): Promise<string> {
+    await this.openTab("receive");
+    const card = this.receiveAddressCard(title);
+    const input = card.locator("input[readonly]").first();
+    await expect(input).toBeVisible();
+    return (await input.inputValue()).replace(/\s+/g, "");
+  }
+
+  async openPrimaryAddressQr(): Promise<void> {
+    await this.openTab("receive");
+    const card = this.receiveAddressCard("Primary address");
+    await card.getByRole("button", { name: /QR/i }).click();
+    await expect(this.page.getByText("Scan to copy address")).toBeVisible();
+  }
+
+  async expectViewOnlyMode(): Promise<void> {
+    await expect(this.page.getByText("View-only", { exact: true })).toBeVisible();
+    await this.openTab("send");
+    await expect(this.page.getByText("Wallet is view-only")).toBeVisible();
+    await expect(this.page.getByLabel("Recipient 1 address")).toHaveCount(0);
+    await expect(
+      this.page.getByRole("button", { name: /review transaction/i }),
+    ).toHaveCount(0);
+  }
+
+  async expectSendReviewDisabled(): Promise<void> {
+    await this.openTab("send");
+    await expect(
+      this.page.getByRole("button", { name: /review transaction/i }),
+    ).toBeDisabled();
+  }
+
+  async fillSendRecipient(address: string, amountXmr: string): Promise<void> {
+    await this.openTab("send");
+    await this.page.getByLabel("Recipient 1 address").fill(address);
+    await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
+  }
+
+  async openSeedKeysOverlay(): Promise<void> {
+    await this.openTab("other");
+    await this.page.getByRole("button", { name: /show seed\/keys/i }).click();
+    await expect(this.page.getByText("Seed and keys")).toBeVisible();
+    await expect(this.page.getByText("Loading seed/keys...")).toBeHidden({
+      timeout: 60_000,
+    });
+  }
+
+  async readSeedKeysOverlay(): Promise<{
+    address: string;
+    privateViewKey: string;
+  }> {
+    const textareas = this.page.locator("textarea");
+    const address = (await textareas.nth(1).inputValue()).replace(/\s+/g, "");
+    const privateViewKey = (await textareas.nth(2).inputValue()).replace(
+      /\s+/g,
+      "",
+    );
+    expect(address.length).toBeGreaterThan(20);
+    expect(privateViewKey).toMatch(/^[0-9a-f]{64}$/i);
+    return { address, privateViewKey };
+  }
+
+  async closeSeedKeysOverlay(): Promise<void> {
+    await this.page.getByRole("button", { name: /close/i }).click();
+    await expect(this.page.getByText("Seed and keys")).toBeHidden();
+  }
+
   async reviewSend(
     destinationAddress: string,
     amountXmr: string,

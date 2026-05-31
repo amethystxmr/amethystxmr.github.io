@@ -149,4 +149,50 @@ export class InitialWalletListPage {
     await walletMainPage.waitUntilLoaded();
     return walletMainPage;
   }
+
+  async restoreWalletFromKeys(params: {
+    walletName: string;
+    address: string;
+    secretViewKey: string;
+    secretSpendKey?: string;
+    startingHeight?: string;
+  }): Promise<WalletMainPage> {
+    await this.walletNameInput().fill(params.walletName);
+    await this.page.getByRole("tab", { name: /from keys/i }).click();
+    await this.page
+      .locator("div")
+      .filter({ hasText: /^Address$/ })
+      .locator("input")
+      .first()
+      .fill(params.address);
+    await this.page
+      .locator("div")
+      .filter({ hasText: /^Secret view key/ })
+      .locator("input")
+      .first()
+      .fill(params.secretViewKey);
+    const spendKeyInput = this.page
+      .locator("div")
+      .filter({ hasText: /^Secret spend key/ })
+      .locator("input")
+      .first();
+    if (params.secretSpendKey) {
+      await spendKeyInput.fill(params.secretSpendKey);
+    } else {
+      await spendKeyInput.fill("");
+    }
+    const startingHeightInput = this.page
+      .locator("div")
+      .filter({ hasText: /^Starting height/ })
+      .locator("input")
+      .first();
+    await startingHeightInput.fill(params.startingHeight ?? "0");
+    await expect(startingHeightInput).toHaveValue(params.startingHeight ?? "0");
+
+    await this.page.getByRole("button", { name: /restore wallet/i }).click();
+
+    const walletMainPage = new WalletMainPage(this.page);
+    await walletMainPage.waitUntilLoaded();
+    return walletMainPage;
+  }
 }
