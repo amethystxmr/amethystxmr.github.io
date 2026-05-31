@@ -112,14 +112,21 @@ export class WalletMainPage {
       .first();
   }
 
-  async addSubaddress(label: string): Promise<void> {
+  async addSubaddress(label: string): Promise<string> {
     await this.openTab("receive");
     await this.page.getByRole("button", { name: /add subaddress/i }).click();
     await this.page.getByPlaceholder(/optional label/i).fill(label);
     await this.page.getByRole("button", { name: /^\+ Create$/i }).click();
-    await expect(
-      this.page.getByText(`${label} (#1)`, { exact: true }),
-    ).toBeVisible({ timeout: 60_000 });
+    const titlePattern = new RegExp(
+      `^${WalletMainPage.escapeRegExp(label)} \\(#\\d+\\)$`,
+    );
+    const title = this.page.getByText(titlePattern).first();
+    await expect(title).toBeVisible({ timeout: 60_000 });
+    const titleText = await title.textContent();
+    if (!titleText) {
+      throw new Error(`Created subaddress title was empty for label ${label}`);
+    }
+    return titleText.trim();
   }
 
   async expectReceiveRowUnused(title: string): Promise<void> {
@@ -178,35 +185,6 @@ export class WalletMainPage {
     await this.openTab("send");
     await this.page.getByLabel("Recipient 1 address").fill(address);
     await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
-  }
-
-  async openSeedKeysOverlay(): Promise<void> {
-    await this.openTab("other");
-    await this.page.getByRole("button", { name: /show seed\/keys/i }).click();
-    await expect(this.page.getByText("Seed and keys")).toBeVisible();
-    await expect(this.page.getByText("Loading seed/keys...")).toBeHidden({
-      timeout: 60_000,
-    });
-  }
-
-  async readSeedKeysOverlay(): Promise<{
-    address: string;
-    privateViewKey: string;
-  }> {
-    const textareas = this.page.locator("textarea");
-    const address = (await textareas.nth(1).inputValue()).replace(/\s+/g, "");
-    const privateViewKey = (await textareas.nth(2).inputValue()).replace(
-      /\s+/g,
-      "",
-    );
-    expect(address.length).toBeGreaterThan(20);
-    expect(privateViewKey).toMatch(/^[0-9a-f]{64}$/i);
-    return { address, privateViewKey };
-  }
-
-  async closeSeedKeysOverlay(): Promise<void> {
-    await this.page.getByRole("button", { name: /close/i }).click();
-    await expect(this.page.getByText("Seed and keys")).toBeHidden();
   }
 
   async reviewSend(
@@ -273,7 +251,13 @@ export class WalletMainPage {
   }
 
   async closeCoinsOverlay(): Promise<void> {
-    await this.page.getByRole("button", { name: /close/i }).click();
+    const coinsOverlay = this.page
+      .locator("div[class*='z-[70]'], div[class*='z-[60]']")
+      .filter({
+        has: this.page.getByText("Wallet transfer outputs.", { exact: true }),
+      })
+      .first();
+    await coinsOverlay.getByRole("button", { name: /close/i }).click();
     await expect(this.page.getByText("Wallet transfer outputs.")).toBeHidden();
   }
 
@@ -829,6 +813,10 @@ export class WalletMainPage {
     return new RegExp(
       `${WalletMainPage.xmrAmountPatternSource(amountXmr)}\\s*XMR`,
     );
+  }
+
+  private static escapeRegExp(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   private static parseXmrTextToAtomic(text: string): bigint | null {

@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { MONERO_MINING_ADDRESS, MONERO_RESTORE_SEED } from "./constants";
+import {
+  FROM_KEYS_TEST_ADDRESS,
+  MONERO_MINING_ADDRESS,
+  MONERO_RESTORE_SEED,
+} from "./constants";
 import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
@@ -44,6 +48,7 @@ test("basic flow", async ({ page, context }) => {
       seed: MONERO_RESTORE_SEED,
       startingHeight: "30",
     });
+    expect(await wallet1.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
   });
 
   await test.step("Dev server has no COOP/COEP; SharedArrayBuffer unavailable", async () => {

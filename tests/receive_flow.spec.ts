@@ -25,9 +25,9 @@ test("receive tab subaddress and QR", async ({ page }) => {
   });
 
   await test.step("Add labeled subaddress", async () => {
-    await wallet.addSubaddress("Donations");
-    await wallet.expectReceiveRowUnused("Donations (#1)");
-    const subaddress = await wallet.getAddressFromReceiveRow("Donations (#1)");
+    const subaddressTitle = await wallet.addSubaddress("Donations");
+    await wallet.expectReceiveRowUnused(subaddressTitle);
+    const subaddress = await wallet.getAddressFromReceiveRow(subaddressTitle);
     expect(subaddress.length).toBeGreaterThan(20);
     expect(subaddress).not.toBe(primaryAddress);
   });
