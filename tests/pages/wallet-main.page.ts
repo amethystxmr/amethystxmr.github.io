@@ -117,9 +117,9 @@ export class WalletMainPage {
     await this.page.getByRole("button", { name: /add subaddress/i }).click();
     await this.page.getByPlaceholder(/optional label/i).fill(label);
     await this.page.getByRole("button", { name: /^\+ Create$/i }).click();
-    await expect(this.page.getByText(`${label} (#1)`, { exact: true })).toBeVisible(
-      { timeout: 60_000 },
-    );
+    await expect(
+      this.page.getByText(`${label} (#1)`, { exact: true }),
+    ).toBeVisible({ timeout: 60_000 });
   }
 
   async expectReceiveRowUnused(title: string): Promise<void> {
@@ -144,7 +144,9 @@ export class WalletMainPage {
   }
 
   async expectViewOnlyMode(): Promise<void> {
-    await expect(this.page.getByText("View-only", { exact: true })).toBeVisible();
+    await expect(
+      this.page.getByText("View-only", { exact: true }),
+    ).toBeVisible();
     await this.openTab("send");
     await expect(this.page.getByText("Wallet is view-only")).toBeVisible();
     await expect(this.page.getByLabel("Recipient 1 address")).toHaveCount(0);
@@ -251,7 +253,9 @@ export class WalletMainPage {
   }
 
   async expectUnspentCoinCountAtLeast(minCount: number): Promise<number> {
-    const count = await this.page.getByText("spent: false", { exact: true }).count();
+    const count = await this.page
+      .getByText("spent: false", { exact: true })
+      .count();
     expect(count).toBeGreaterThanOrEqual(minCount);
     return count;
   }
