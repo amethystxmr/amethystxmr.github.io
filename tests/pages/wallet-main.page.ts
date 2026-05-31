@@ -155,6 +155,18 @@ export class WalletMainPage {
     ).toHaveCount(0);
   }
 
+  async expectSpendableWallet(): Promise<void> {
+    await expect(this.page.getByText("View-only", { exact: true })).toHaveCount(
+      0,
+    );
+    await this.openTab("send");
+    await expect(this.page.getByText("Wallet is view-only")).toHaveCount(0);
+    await expect(this.page.getByLabel("Recipient 1 address")).toBeVisible();
+    await expect(
+      this.page.getByRole("button", { name: /review transaction/i }),
+    ).toBeVisible();
+  }
+
   async expectSendReviewDisabled(): Promise<void> {
     await this.openTab("send");
     await expect(
