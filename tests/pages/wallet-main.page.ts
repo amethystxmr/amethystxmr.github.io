@@ -103,17 +103,94 @@ export class WalletMainPage {
     return text;
   }
 
-  async sendXmr(destinationAddress: string, amountXmr: string): Promise<void> {
+  async reviewSend(
+    destinationAddress: string,
+    amountXmr: string,
+  ): Promise<void> {
     await this.openTab("send");
     await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
     await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
-
     await this.page
       .getByRole("button", { name: /review transaction/i })
       .click();
+    await expect(this.page.getByText("Total outgoing")).toBeVisible();
+  }
+
+  async expectSendReviewOutgoing(amountXmr: string): Promise<void> {
+    await expect(
+      this.page.getByText(WalletMainPage.xmrAmountPattern(amountXmr)).first(),
+    ).toBeVisible();
+    await expect(this.page.getByText("Network fee")).toBeVisible();
+  }
+
+  async confirmSend(): Promise<void> {
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
+  }
+
+  async expectSentScreen(totalXmr: string): Promise<void> {
+    await expect(
+      this.page.getByText(
+        new RegExp(
+          `Total sent:\\s*${WalletMainPage.xmrAmountPatternSource(totalXmr)}\\s*XMR`,
+        ),
+      ),
+    ).toBeVisible();
+    await expect(this.page.getByText(/Fee paid:/)).toBeVisible();
+  }
+
+  async dismissSentScreen(): Promise<void> {
     await this.page.getByRole("button", { name: /send another/i }).click();
+  }
+
+  async sendXmr(destinationAddress: string, amountXmr: string): Promise<void> {
+    await this.reviewSend(destinationAddress, amountXmr);
+    await this.confirmSend();
+    await this.dismissSentScreen();
+  }
+
+  async openCoinsOverlay(): Promise<void> {
+    await this.openTab("send");
+    await this.page.getByRole("button", { name: /show coins/i }).click();
+    await expect(this.page.getByText("Coins", { exact: true })).toBeVisible();
+    await expect(this.page.getByText("Loading coins...")).toBeHidden({
+      timeout: 60_000,
+    });
+  }
+
+  async expectUnspentCoinCountAtLeast(minCount: number): Promise<number> {
+    const count = await this.page.getByText("spent: false", { exact: true }).count();
+    expect(count).toBeGreaterThanOrEqual(minCount);
+    return count;
+  }
+
+  async closeCoinsOverlay(): Promise<void> {
+    await this.page.getByRole("button", { name: /close/i }).click();
+    await expect(this.page.getByText("Wallet transfer outputs.")).toBeHidden();
+  }
+
+  async expectLatestTransactionAmount(
+    typeLabel: "Mined" | "Pending" | "Mempool In",
+    amountXmr: string,
+    sign: "+" | "-",
+  ): Promise<void> {
+    await this.openTab("transactions");
+    const typeBadge = this.page
+      .getByLabel(`Transaction type: ${typeLabel}`)
+      .first();
+    await expect(typeBadge).toBeVisible();
+    const card = this.page
+      .locator('div[class*="rounded-xl"][class*="ring-1"]')
+      .filter({ has: typeBadge })
+      .first();
+    const signPattern = sign === "+" ? "\\+" : "-";
+    await expect(
+      card.getByText(
+        new RegExp(
+          `${signPattern}\\s*${WalletMainPage.xmrAmountPatternSource(amountXmr)}\\s*XMR`,
+        ),
+      ),
+    ).toBeVisible();
   }
 
   async sweepAllXmr(destinationAddress: string): Promise<void> {
@@ -627,6 +704,22 @@ export class WalletMainPage {
       `Wallet did not reach exact synced height ${expectedHeight}/${expectedHeight}. ` +
         `Last wallet height: ${lastWalletHeight ?? "NaN"} (UI text: "${lastWalletHeightText}"), ` +
         `last daemon height: ${lastDaemonHeight ?? "NaN"} (UI text: "${lastDaemonHeightText}")`,
+    );
+  }
+
+  private static xmrAmountPatternSource(amountXmr: string): string {
+    const parts = amountXmr.split(".");
+    const whole = parts[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (parts.length > 1) {
+      const fraction = parts[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return `${whole}\\.${fraction}0*`;
+    }
+    return `${whole}(?:\\.0+)?`;
+  }
+
+  private static xmrAmountPattern(amountXmr: string): RegExp {
+    return new RegExp(
+      `${WalletMainPage.xmrAmountPatternSource(amountXmr)}\\s*XMR`,
     );
   }
 
