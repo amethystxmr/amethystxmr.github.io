@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
-import { MONERO_MINING_ADDRESS, MONERO_RESTORE_SEED } from "./constants";
+import {
+  FROM_KEYS_TEST_ADDRESS,
+  MONERO_MINING_ADDRESS,
+  MONERO_RESTORE_SEED,
+} from "./constants";
 import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
@@ -9,6 +13,7 @@ const TRANSFER_AMOUNT_XMR = "3";
 const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
 const MIN_EXPECTED_UNLOCKED_BALANCE =
   BigInt(TRANSFER_AMOUNT_XMR) * XMR_ATOMIC_UNITS_PER_XMR;
+const MIN_FUNDED_BALANCE = 10n * XMR_ATOMIC_UNITS_PER_XMR;
 const INITIAL_MINED_BLOCKS = 140;
 const POST_SEND_MINED_BLOCKS = 70;
 
@@ -43,6 +48,7 @@ test("basic flow", async ({ page, context }) => {
       seed: MONERO_RESTORE_SEED,
       startingHeight: "30",
     });
+    expect(await wallet1.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
   });
 
   await test.step("Dev server has no COOP/COEP; SharedArrayBuffer unavailable", async () => {
@@ -57,6 +63,16 @@ test("basic flow", async ({ page, context }) => {
       1,
     );
     expect(wallet1MinedCount).toBeGreaterThan(0);
+
+    const fundedBalance = await wallet1.getUnlockedBalanceAtomic();
+    expect(fundedBalance).not.toBeNull();
+    expect(fundedBalance).toBeGreaterThanOrEqual(MIN_FUNDED_BALANCE);
+  });
+
+  await test.step("Coins overlay lists unspent outputs", async () => {
+    await wallet1.openCoinsOverlay();
+    await wallet1.expectUnspentCoinCountAtLeast(1);
+    await wallet1.closeCoinsOverlay();
   });
 
   let wallet2: WalletMainPage;
@@ -78,7 +94,11 @@ test("basic flow", async ({ page, context }) => {
   });
 
   await test.step("Send XMR from restored wallet to recipient", async () => {
-    await wallet1.sendXmr(wallet2Address, TRANSFER_AMOUNT_XMR);
+    await wallet1.reviewSend(wallet2Address, TRANSFER_AMOUNT_XMR);
+    await wallet1.expectSendReviewOutgoing(TRANSFER_AMOUNT_XMR);
+    await wallet1.confirmSend();
+    await wallet1.expectSentScreen(TRANSFER_AMOUNT_XMR);
+    await wallet1.dismissSentScreen();
   });
 
   await test.step("Verify pending and mempool transaction states", async () => {
@@ -87,12 +107,22 @@ test("basic flow", async ({ page, context }) => {
       1,
     );
     expect(wallet1PendingCount).toBeGreaterThan(0);
+    await wallet1.expectLatestTransactionAmount(
+      "Pending",
+      TRANSFER_AMOUNT_XMR,
+      "-",
+    );
 
     const wallet2MempoolCount = await wallet2.waitForPaymentTypeCountAtLeast(
       "mempool",
       1,
     );
     expect(wallet2MempoolCount).toBeGreaterThan(0);
+    await wallet2.expectLatestTransactionAmount(
+      "Mempool In",
+      TRANSFER_AMOUNT_XMR,
+      "+",
+    );
   });
 
   await test.step("Mine unlock blocks and verify recipient unlocked balance", async () => {

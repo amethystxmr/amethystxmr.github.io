@@ -6,7 +6,9 @@ Be consistent with the code in this repository in all aspects, including structu
 
 ### Formatting
 
-When editing frontend files under `web-src` or TypeScript wallet API files under `monero-wasm-module`, run Prettier on the changed files before completing the task. Use the full `npm run format:fix` script only when a broad reformat is intended. Generated `monero-wasm-module/wasm_wallet.*` files are excluded from formatting.
+When editing TypeScript under `web-src`, `monero-wasm-module`, or `tests`, run Prettier on the changed files before completing the task. Use the full `npm run format:fix` script only when a broad reformat is intended. Generated `monero-wasm-module/wasm_wallet.*` files are excluded from formatting.
+
+Before finishing work that touches those paths, run `npm run format:check` (or format only the files you changed) so CI does not fail on formatting.
 
 When editing C++ Embind glue code in `monero-wasm-src/monero-wasm-wallet/wasm_wallet_api.cpp`, follow the style already used in that file for wrapper functions, naming, binding declarations, value conversions, and comments.
 

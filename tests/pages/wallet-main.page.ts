@@ -103,17 +103,186 @@ export class WalletMainPage {
     return text;
   }
 
-  async sendXmr(destinationAddress: string, amountXmr: string): Promise<void> {
+  private receiveAddressCard(titlePattern: RegExp | string) {
+    return this.page
+      .locator('div[class*="rounded-xl"][class*="ring-1"]')
+      .filter({
+        has: this.page.getByText(titlePattern, { exact: true }),
+      })
+      .first();
+  }
+
+  async addSubaddress(label: string): Promise<string> {
+    await this.openTab("receive");
+    await this.page.getByRole("button", { name: /add subaddress/i }).click();
+    await this.page.getByPlaceholder(/optional label/i).fill(label);
+    await this.page.getByRole("button", { name: /^\+ Create$/i }).click();
+    const titlePattern = new RegExp(
+      `^${WalletMainPage.escapeRegExp(label)} \\(#\\d+\\)$`,
+    );
+    const title = this.page.getByText(titlePattern).first();
+    await expect(title).toBeVisible({ timeout: 60_000 });
+    const titleText = await title.textContent();
+    if (!titleText) {
+      throw new Error(`Created subaddress title was empty for label ${label}`);
+    }
+    return titleText.trim();
+  }
+
+  async expectReceiveRowUnused(title: string): Promise<void> {
+    await this.openTab("receive");
+    const card = this.receiveAddressCard(title);
+    await expect(card.getByText("Unused yet")).toBeVisible();
+  }
+
+  async getAddressFromReceiveRow(title: string): Promise<string> {
+    await this.openTab("receive");
+    const card = this.receiveAddressCard(title);
+    const input = card.locator("input[readonly]").first();
+    await expect(input).toBeVisible();
+    return (await input.inputValue()).replace(/\s+/g, "");
+  }
+
+  async openPrimaryAddressQr(): Promise<void> {
+    await this.openTab("receive");
+    const card = this.receiveAddressCard("Primary address");
+    await card.getByRole("button", { name: /QR/i }).click();
+    await expect(this.page.getByText("Scan to copy address")).toBeVisible();
+  }
+
+  async expectViewOnlyMode(): Promise<void> {
+    await expect(
+      this.page.getByText("View-only", { exact: true }),
+    ).toBeVisible();
+    await this.openTab("send");
+    await expect(this.page.getByText("Wallet is view-only")).toBeVisible();
+    await expect(this.page.getByLabel("Recipient 1 address")).toHaveCount(0);
+    await expect(
+      this.page.getByRole("button", { name: /review transaction/i }),
+    ).toHaveCount(0);
+  }
+
+  async expectSpendableWallet(): Promise<void> {
+    await expect(this.page.getByText("View-only", { exact: true })).toHaveCount(
+      0,
+    );
+    await this.openTab("send");
+    await expect(this.page.getByText("Wallet is view-only")).toHaveCount(0);
+    await expect(this.page.getByLabel("Recipient 1 address")).toBeVisible();
+    await expect(
+      this.page.getByRole("button", { name: /review transaction/i }),
+    ).toBeVisible();
+  }
+
+  async expectSendReviewDisabled(): Promise<void> {
+    await this.openTab("send");
+    await expect(
+      this.page.getByRole("button", { name: /review transaction/i }),
+    ).toBeDisabled();
+  }
+
+  async fillSendRecipient(address: string, amountXmr: string): Promise<void> {
+    await this.openTab("send");
+    await this.page.getByLabel("Recipient 1 address").fill(address);
+    await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
+  }
+
+  async reviewSend(
+    destinationAddress: string,
+    amountXmr: string,
+  ): Promise<void> {
     await this.openTab("send");
     await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
     await this.page.getByLabel("Recipient 1 amount").fill(amountXmr);
-
     await this.page
       .getByRole("button", { name: /review transaction/i })
       .click();
+    await expect(this.page.getByText("Total outgoing")).toBeVisible();
+  }
+
+  async expectSendReviewOutgoing(amountXmr: string): Promise<void> {
+    await expect(
+      this.page.getByText(WalletMainPage.xmrAmountPattern(amountXmr)).first(),
+    ).toBeVisible();
+    await expect(this.page.getByText("Network fee")).toBeVisible();
+  }
+
+  async confirmSend(): Promise<void> {
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
+  }
+
+  async expectSentScreen(totalXmr: string): Promise<void> {
+    await expect(
+      this.page.getByText(
+        new RegExp(
+          `Total sent:\\s*${WalletMainPage.xmrAmountPatternSource(totalXmr)}\\s*XMR`,
+        ),
+      ),
+    ).toBeVisible();
+    await expect(this.page.getByText(/Fee paid:/)).toBeVisible();
+  }
+
+  async dismissSentScreen(): Promise<void> {
     await this.page.getByRole("button", { name: /send another/i }).click();
+  }
+
+  async sendXmr(destinationAddress: string, amountXmr: string): Promise<void> {
+    await this.reviewSend(destinationAddress, amountXmr);
+    await this.confirmSend();
+    await this.dismissSentScreen();
+  }
+
+  async openCoinsOverlay(): Promise<void> {
+    await this.openTab("send");
+    await this.page.getByRole("button", { name: /show coins/i }).click();
+    await expect(this.page.getByText("Coins", { exact: true })).toBeVisible();
+    await expect(this.page.getByText("Loading coins...")).toBeHidden({
+      timeout: 60_000,
+    });
+  }
+
+  async expectUnspentCoinCountAtLeast(minCount: number): Promise<number> {
+    const count = await this.page
+      .getByText("spent: false", { exact: true })
+      .count();
+    expect(count).toBeGreaterThanOrEqual(minCount);
+    return count;
+  }
+
+  async closeCoinsOverlay(): Promise<void> {
+    const coinsOverlay = this.page
+      .locator("div[class*='z-[70]'], div[class*='z-[60]']")
+      .filter({
+        has: this.page.getByText("Wallet transfer outputs.", { exact: true }),
+      })
+      .first();
+    await coinsOverlay.getByRole("button", { name: /close/i }).click();
+    await expect(this.page.getByText("Wallet transfer outputs.")).toBeHidden();
+  }
+
+  async expectLatestTransactionAmount(
+    typeLabel: "Mined" | "Pending" | "Mempool In",
+    amountXmr: string,
+    sign: "+" | "-",
+  ): Promise<void> {
+    await this.openTab("transactions");
+    const typeBadge = this.page
+      .getByLabel(`Transaction type: ${typeLabel}`)
+      .first();
+    await expect(typeBadge).toBeVisible();
+    const card = this.page
+      .locator('div[class*="rounded-xl"][class*="ring-1"]')
+      .filter({ has: typeBadge })
+      .first();
+    const signPattern = sign === "+" ? "\\+" : "-";
+    await expect(
+      card.getByText(
+        new RegExp(
+          `${signPattern}\\s*${WalletMainPage.xmrAmountPatternSource(amountXmr)}\\s*XMR`,
+        ),
+      ),
+    ).toBeVisible();
   }
 
   async sweepAllXmr(destinationAddress: string): Promise<void> {
@@ -628,6 +797,26 @@ export class WalletMainPage {
         `Last wallet height: ${lastWalletHeight ?? "NaN"} (UI text: "${lastWalletHeightText}"), ` +
         `last daemon height: ${lastDaemonHeight ?? "NaN"} (UI text: "${lastDaemonHeightText}")`,
     );
+  }
+
+  private static xmrAmountPatternSource(amountXmr: string): string {
+    const parts = amountXmr.split(".");
+    const whole = parts[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (parts.length > 1) {
+      const fraction = parts[1].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return `${whole}\\.${fraction}0*`;
+    }
+    return `${whole}(?:\\.0+)?`;
+  }
+
+  private static xmrAmountPattern(amountXmr: string): RegExp {
+    return new RegExp(
+      `${WalletMainPage.xmrAmountPatternSource(amountXmr)}\\s*XMR`,
+    );
+  }
+
+  private static escapeRegExp(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   private static parseXmrTextToAtomic(text: string): bigint | null {
