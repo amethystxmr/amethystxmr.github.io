@@ -2,6 +2,8 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { WalletMainPage } from "./wallet-main.page";
 
 export class InitialWalletListPage {
+  lastResolvedStartingHeight: string | null = null;
+
   constructor(private readonly page: Page) {
     return new Proxy(this, {
       get: (target, prop, receiver) => {
@@ -28,6 +30,18 @@ export class InitialWalletListPage {
       .filter({ hasText: /^Wallet name$/ })
       .locator("input")
       .first();
+  }
+
+  private startingHeightSection(): Locator {
+    return this.page.locator("div").filter({ hasText: /^Starting height/ });
+  }
+
+  private startingHeightInput(): Locator {
+    return this.startingHeightSection().locator("input").first();
+  }
+
+  private startingHeightDateInput(): Locator {
+    return this.startingHeightSection().locator('input[type="date"]');
   }
 
   async goto(): Promise<void> {
@@ -93,11 +107,26 @@ export class InitialWalletListPage {
     ).toHaveCount(0);
   }
 
+  async pickRestoreStartingHeightDate(isoDate: string): Promise<string> {
+    const heightInput = this.startingHeightInput();
+    await this.startingHeightDateInput().fill(isoDate);
+    await expect(heightInput).not.toHaveValue("Loading...", {
+      timeout: 60_000,
+    });
+    await expect(heightInput).not.toHaveValue("error", { timeout: 60_000 });
+    await expect(heightInput).not.toHaveValue("", { timeout: 60_000 });
+    const value = await heightInput.inputValue();
+    expect(value).toMatch(/^\d+$/);
+    this.lastResolvedStartingHeight = value;
+    return value;
+  }
+
   async restoreWallet(params: {
     walletName: string;
     seed: string;
     seedType?: "monero-25" | "cake-16";
     startingHeight?: string;
+    startingHeightDate?: string;
   }): Promise<WalletMainPage> {
     const seedType = params.seedType ?? "monero-25";
 
@@ -112,15 +141,13 @@ export class InitialWalletListPage {
       .first()
       .fill(params.seed);
     if (seedType === "monero-25") {
-      const startingHeightInput = this.page
-        .locator("div")
-        .filter({ hasText: /^Starting height/ })
-        .locator("input")
-        .first();
-      await startingHeightInput.fill(params.startingHeight ?? "0");
-      await expect(startingHeightInput).toHaveValue(
-        params.startingHeight ?? "0",
-      );
+      if (params.startingHeightDate) {
+        await this.pickRestoreStartingHeightDate(params.startingHeightDate);
+      } else {
+        const heightInput = this.startingHeightInput();
+        await heightInput.fill(params.startingHeight ?? "0");
+        await expect(heightInput).toHaveValue(params.startingHeight ?? "0");
+      }
     }
 
     await this.page.getByRole("button", { name: /restore wallet/i }).click();
@@ -156,6 +183,7 @@ export class InitialWalletListPage {
     secretViewKey: string;
     secretSpendKey?: string;
     startingHeight?: string;
+    startingHeightDate?: string;
   }): Promise<WalletMainPage> {
     await this.walletNameInput().fill(params.walletName);
     await this.page.getByRole("tab", { name: /from keys/i }).click();
@@ -181,13 +209,13 @@ export class InitialWalletListPage {
     } else {
       await spendKeyInput.fill("");
     }
-    const startingHeightInput = this.page
-      .locator("div")
-      .filter({ hasText: /^Starting height/ })
-      .locator("input")
-      .first();
-    await startingHeightInput.fill(params.startingHeight ?? "0");
-    await expect(startingHeightInput).toHaveValue(params.startingHeight ?? "0");
+    if (params.startingHeightDate) {
+      await this.pickRestoreStartingHeightDate(params.startingHeightDate);
+    } else {
+      const heightInput = this.startingHeightInput();
+      await heightInput.fill(params.startingHeight ?? "0");
+      await expect(heightInput).toHaveValue(params.startingHeight ?? "0");
+    }
 
     await this.page.getByRole("button", { name: /restore wallet/i }).click();
 
