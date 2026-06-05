@@ -332,10 +332,12 @@ export interface GeneratePolyseedStorageOptions {
   features?: number;
 }
 
+type WasmExceptionValue = number | object;
+
 interface Module {
   /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
-  getExceptionMessage?(exn: number): [string, string];
-  decrementExceptionRefcount?(exn: number): void;
+  getExceptionMessage?(exn: WasmExceptionValue): [string, string];
+  decrementExceptionRefcount?(exn: WasmExceptionValue): void;
   /** Optional Monero logging categories (`mlog_set_categories` from wasm). */
   mlog_set_categories?(categories: string): void;
   FS: {
@@ -404,6 +406,84 @@ declare const __WASM_WALLET_SIZE__: number;
 
 let module: Module;
 
+function getStringProperty(value: object, property: string): string | null {
+  const propertyValue = Reflect.get(value, property);
+  return typeof propertyValue === "string" && propertyValue.length > 0
+    ? propertyValue
+    : null;
+}
+
+function getObjectMessage(value: object): string | null {
+  for (const property of ["message", "reason", "error"]) {
+    const propertyValue = Reflect.get(value, property);
+    if (typeof propertyValue === "string" && propertyValue.length > 0) {
+      return propertyValue;
+    }
+    if (propertyValue instanceof Error) {
+      return propertyValue.message;
+    }
+    if (typeof propertyValue === "object" && propertyValue !== null) {
+      const message = getStringProperty(propertyValue, "message");
+      if (message) {
+        return message;
+      }
+    }
+  }
+  return null;
+}
+
+function stringifyThrownObject(value: object): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function objectThrownValueToError(thrown: object): Error {
+  const error = new Error(
+    getObjectMessage(thrown) ?? stringifyThrownObject(thrown),
+  );
+  const name = getStringProperty(thrown, "name");
+  const stack = getStringProperty(thrown, "stack");
+  if (name) {
+    error.name = name;
+  }
+  if (stack) {
+    error.stack = stack;
+  }
+  return error;
+}
+
+function getWasmExceptionValue(thrown: unknown): WasmExceptionValue | null {
+  if (typeof thrown === "number") {
+    return thrown;
+  }
+  if (typeof thrown !== "object" || thrown === null) {
+    return null;
+  }
+  const excPtr = Reflect.get(thrown, "excPtr");
+  return typeof excPtr === "number" ? thrown : null;
+}
+
+function getWasmExceptionDecodeCandidates(
+  value: WasmExceptionValue,
+): WasmExceptionValue[] {
+  if (typeof value === "number") {
+    return [value];
+  }
+  const excPtr = Reflect.get(value, "excPtr");
+  return typeof excPtr === "number" ? [value, excPtr] : [value];
+}
+
+function getWasmExceptionLocation(value: WasmExceptionValue): string {
+  if (typeof value === "number") {
+    return `pointer ${value}`;
+  }
+  const excPtr = Reflect.get(value, "excPtr");
+  return typeof excPtr === "number" ? `pointer ${excPtr}` : "unknown pointer";
+}
+
 /**
  * Emscripten/embind often rejects with a **numeric** value: the WASM C++ exception
  * pointer (`throw exceptionLast`). It is **not** a wallet/daemon error code; the
@@ -416,37 +496,60 @@ export function wasmThrownValueToError(thrown: unknown): Error {
     return thrown;
   }
 
-  if (typeof thrown !== "number") {
+  const wasmException = getWasmExceptionValue(thrown);
+
+  if (!wasmException) {
+    if (typeof thrown === "object" && thrown !== null) {
+      return objectThrownValueToError(thrown);
+    }
     return new Error(String(thrown));
   }
 
-  const ptr = thrown;
-
   if (!module.getExceptionMessage || !module.decrementExceptionRefcount) {
     return new Error(
-      "WASM raised a C++ exception (shown as a numeric pointer in the console - not an application error code). " +
+      `WASM raised a C++ exception (${getWasmExceptionLocation(wasmException)} in the console - not an application error code). ` +
         "Rebuild monero-wasm with `getExceptionMessage` + `decrementExceptionRefcount` in EXPORTED_RUNTIME_METHODS to decode the message.",
     );
   }
 
+  const decodeCandidates = getWasmExceptionDecodeCandidates(wasmException);
+  let cleanupCandidate: WasmExceptionValue = decodeCandidates[0];
+
   try {
-    const [type, rawMessage] = module.getExceptionMessage(ptr);
-    const message =
-      rawMessage && rawMessage.length > 0
-        ? rawMessage
-        : type && type.length > 0
-          ? type
-          : "C++ exception (empty what())";
-    return new Error(message);
+    for (const candidate of decodeCandidates) {
+      try {
+        const [type, rawMessage] = module.getExceptionMessage(candidate);
+        cleanupCandidate = candidate;
+        const message =
+          rawMessage && rawMessage.length > 0
+            ? rawMessage
+            : type && type.length > 0
+              ? type
+              : "C++ exception (empty what())";
+        return new Error(message);
+      } catch {
+        // Some Emscripten builds expect the CppException object, others work
+        // with the raw pointer. Try both before falling back to a generic error.
+      }
+    }
+    return new Error(
+      `Could not decode WASM exception at ${getWasmExceptionLocation(wasmException)} (heap addresses differ each run).`,
+    );
   } catch {
     return new Error(
-      `Could not decode WASM exception at pointer ${ptr} (heap addresses differ each run).`,
+      `Could not decode WASM exception at ${getWasmExceptionLocation(wasmException)} (heap addresses differ each run).`,
     );
   } finally {
-    try {
-      module.decrementExceptionRefcount(ptr);
-    } catch {
-      // Best-effort cleanup; ignore if pointer was already released.
+    for (const candidate of [
+      cleanupCandidate,
+      ...decodeCandidates.filter((candidate) => candidate !== cleanupCandidate),
+    ]) {
+      try {
+        module.decrementExceptionRefcount(candidate);
+        break;
+      } catch {
+        // Best-effort cleanup; ignore if this build does not accept the shape.
+      }
     }
   }
 }

@@ -22,6 +22,51 @@ import { MultisigTab } from "./main.multisig";
 
 const SYNC_NO_SLEEP_HINT_DELAY_MS = 60_000;
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  if (typeof error === "object" && error !== null) {
+    const message = Reflect.get(error, "message");
+    if (typeof message === "string" && message.length > 0) {
+      return message;
+    }
+  }
+  return String(error);
+}
+
+function errorToConsoleValue(error: unknown): Error | unknown {
+  if (error instanceof Error) {
+    return error;
+  }
+  if (typeof error === "object" && error !== null) {
+    const message = getErrorMessage(error);
+    const normalizedError = new Error(message);
+    const name = Reflect.get(error, "name");
+    const stack = Reflect.get(error, "stack");
+    if (typeof name === "string" && name.length > 0) {
+      normalizedError.name = name;
+    }
+    if (typeof stack === "string" && stack.length > 0) {
+      normalizedError.stack = stack;
+    }
+    return normalizedError;
+  }
+  return error;
+}
+
+function logRefreshError(label: string, error: unknown): string {
+  const consoleValue = errorToConsoleValue(error);
+  console.error(label, consoleValue);
+  if (consoleValue instanceof Error && consoleValue.stack) {
+    console.error(`${label} stack:\n${consoleValue.stack}`);
+  }
+  return getErrorMessage(consoleValue) || "Unknown error";
+}
+
 export function WalletMain({
   wallet,
   onExit,
@@ -269,15 +314,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
         if (cancelled) {
           return;
         }
-        console.error("Error during refresh:", e);
-        const message =
-          e instanceof Error
-            ? e.message
-            : typeof e === "number"
-              ? "WASM error (raw exception pointer; worker should decode — see walletApi.worker ensureSequential)."
-              : typeof e === "string"
-                ? e
-                : String(e);
+        const message = logRefreshError("Error during refresh:", e);
         setRefreshError(message || "Unknown error");
         setRefreshing(false);
       }
@@ -371,8 +408,9 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
           if (cancelled) {
             return;
           }
-          console.error("Error while updating wallet/daemon status:", e);
-          setRefreshError((e as Error).message || "Unknown error");
+          setRefreshError(
+            logRefreshError("Error while updating wallet/daemon status:", e),
+          );
           await interruptableDelay(30_000);
           continue;
         }
@@ -444,8 +482,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      console.error("Refresh worker throw:", e);
-      setRefreshError((e as Error).message || "Unknown error");
+      setRefreshError(logRefreshError("Refresh worker throw:", e));
     });
     return () => {
       cancelled = true;

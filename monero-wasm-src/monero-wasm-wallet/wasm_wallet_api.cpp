@@ -1271,15 +1271,29 @@ public:
 private:
     MultisigStatus get_multisig_status_compat() const
     {
-        const auto state = m_wallet.get_multisig_wallet_state();
+        bool ready = false;
         uint32_t threshold = 0;
         uint32_t total = 0;
-        const bool multisig = m_wallet.multisig(nullptr, &threshold, &total);
+        const bool multisig = m_wallet.multisig(&ready, &threshold, &total);
+        uint32_t multisig_rounds_passed = 0;
+        if (multisig)
+        {
+            if (ready)
+            {
+                multisig_rounds_passed = multisig::multisig_setup_rounds_required(total, threshold);
+            }
+            else
+            {
+                const auto state = m_wallet.get_multisig_wallet_state();
+                multisig_rounds_passed = state.multisig_rounds_passed;
+                ready = state.multisig_is_ready;
+            }
+        }
         return MultisigStatus{
             multisig,
-            state.multisig_rounds_passed > 0,
-            state.multisig_is_ready,
-            state.multisig_rounds_passed,
+            multisig_rounds_passed > 0,
+            ready,
+            multisig_rounds_passed,
             threshold,
             total,
         };

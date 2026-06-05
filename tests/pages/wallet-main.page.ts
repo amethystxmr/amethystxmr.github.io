@@ -301,11 +301,16 @@ export class WalletMainPage {
   async waitForMultisigInProgress(
     threshold: number,
     total: number,
+    round = 2,
     timeoutMs = 180_000,
   ): Promise<void> {
     const startedAt = Date.now();
+    const totalRounds = total - threshold + 2;
     const setupHeader = this.page.getByText(
-      new RegExp(`Setting up\\s+${threshold}-of-${total}\\s+multisig`, "i"),
+      new RegExp(
+        `Setting up\\s+${threshold}-of-${total}\\s+multisig,\\s+round\\s+${round}\\s+from\\s+${totalRounds}`,
+        "i",
+      ),
     );
     const readyHeader = this.page.getByText(
       new RegExp(
@@ -326,6 +331,12 @@ export class WalletMainPage {
         (await setupHeader.isVisible().catch(() => false)) &&
         (await exchangeButton.isVisible().catch(() => false))
       ) {
+        await expect(
+          this.page.getByText(/Multisig in progress/i),
+        ).toBeVisible();
+        await expect(
+          this.page.getByText(/\(kex exchange in progress\)/i),
+        ).toBeVisible();
         return;
       }
       await this.page.waitForTimeout(500);
@@ -363,6 +374,12 @@ export class WalletMainPage {
         await expect(readyHeader).toBeVisible();
         await expect(exportButton).toBeVisible();
         await expect(readyStatus).toBeVisible();
+        await expect(
+          this.page.getByText(
+            new RegExp(`Now only\\s+${threshold}\\s+participants`, "i"),
+          ),
+        ).toBeVisible();
+        await expect(this.page.getByText(/^Multisig$/i).first()).toBeVisible();
         return;
       }
       await this.page.waitForTimeout(500);
@@ -443,13 +460,43 @@ export class WalletMainPage {
     return (await messageField.inputValue()).trim();
   }
 
-  async waitForMultisigRound(round: number, timeoutMs = 60_000): Promise<void> {
+  async waitForMultisigRound(
+    round: number,
+    threshold: number,
+    total: number,
+    timeoutMs = 60_000,
+  ): Promise<void> {
     await this.openTab("multisig");
+    const totalRounds = total - threshold + 2;
+    await expect(
+      this.page.getByText(
+        new RegExp(
+          `Setting up\\s+${threshold}-of-${total}\\s+multisig,\\s+round\\s+${round}\\s+from\\s+${totalRounds}`,
+          "i",
+        ),
+      ),
+    ).toBeVisible({ timeout: timeoutMs });
     await expect(
       this.page.getByText(
         new RegExp(`All participants round\\s+${round}\\s+messages`, "i"),
       ),
     ).toBeVisible({ timeout: timeoutMs });
+  }
+
+  async revealMultisigSeedHex(): Promise<string> {
+    await this.openTab("other");
+    await this.page.getByRole("button", { name: /show seed\/keys/i }).click();
+    await expect(this.page.getByText(/Multisig address/i)).toBeVisible();
+    const seedField = this.page.locator("textarea[readonly]").first();
+    await expect(seedField).toBeVisible();
+    await expect(seedField).not.toHaveValue("", { timeout: 60_000 });
+    const seed = (await seedField.inputValue()).replace(/\s+/g, "");
+    expect(seed).toMatch(/^[0-9a-f]+$/i);
+    return seed;
+  }
+
+  async closePage(): Promise<void> {
+    await this.page.close();
   }
 
   async exchangeMultisigRoundMessages(messages: string): Promise<void> {
