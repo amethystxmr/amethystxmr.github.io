@@ -404,6 +404,55 @@ declare const __WASM_WALLET_SIZE__: number;
 
 let module: Module;
 
+function getStringProperty(value: object, property: string): string | null {
+  const propertyValue = Reflect.get(value, property);
+  return typeof propertyValue === "string" && propertyValue.length > 0
+    ? propertyValue
+    : null;
+}
+
+function getObjectMessage(value: object): string | null {
+  for (const property of ["message", "reason", "error"]) {
+    const propertyValue = Reflect.get(value, property);
+    if (typeof propertyValue === "string" && propertyValue.length > 0) {
+      return propertyValue;
+    }
+    if (propertyValue instanceof Error) {
+      return propertyValue.message;
+    }
+    if (typeof propertyValue === "object" && propertyValue !== null) {
+      const message = getStringProperty(propertyValue, "message");
+      if (message) {
+        return message;
+      }
+    }
+  }
+  return null;
+}
+
+function stringifyThrownObject(value: object): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function objectThrownValueToError(thrown: object): Error {
+  const error = new Error(
+    getObjectMessage(thrown) ?? stringifyThrownObject(thrown),
+  );
+  const name = getStringProperty(thrown, "name");
+  const stack = getStringProperty(thrown, "stack");
+  if (name) {
+    error.name = name;
+  }
+  if (stack) {
+    error.stack = stack;
+  }
+  return error;
+}
+
 /**
  * Emscripten/embind often rejects with a **numeric** value: the WASM C++ exception
  * pointer (`throw exceptionLast`). It is **not** a wallet/daemon error code; the
@@ -414,6 +463,10 @@ let module: Module;
 export function wasmThrownValueToError(thrown: unknown): Error {
   if (thrown instanceof Error) {
     return thrown;
+  }
+
+  if (typeof thrown === "object" && thrown !== null) {
+    return objectThrownValueToError(thrown);
   }
 
   if (typeof thrown !== "number") {
