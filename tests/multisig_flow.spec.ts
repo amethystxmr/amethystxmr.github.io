@@ -84,6 +84,7 @@ test.describe("multisig flow", () => {
             await multisigWallets[walletIndex].waitForMultisigInProgress(
               threshold,
               members,
+              2,
             );
           });
         }
@@ -102,6 +103,8 @@ test.describe("multisig flow", () => {
               await test.step(`Wait expected round ${expectedRound} wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
                 await multisigWallets[walletIndex].waitForMultisigRound(
                   expectedRound,
+                  threshold,
+                  members,
                 );
               });
             }
@@ -142,6 +145,8 @@ test.describe("multisig flow", () => {
                 await test.step(`Wait next round ${expectedRound + 1} wallet [${walletIndex + 1}/${multisigWallets.length}]`, async () => {
                   await multisigWallets[walletIndex].waitForMultisigRound(
                     expectedRound + 1,
+                    threshold,
+                    members,
                   );
                 });
               }
@@ -163,6 +168,25 @@ test.describe("multisig flow", () => {
             );
           });
         }
+
+        await test.step("Restore one participant from multisig seed", async () => {
+          const originalAddress = await multisigWallets[0].getPrimaryAddress();
+          const multisigSeedHex =
+            await multisigWallets[0].revealMultisigSeedHex();
+          const restoredPage = await context.newPage();
+          await initializeAppTestSettings(restoredPage);
+          const restoredWallet = await restoreMultisigWalletOnPage(
+            restoredPage,
+            `restored-${threshold}-of-${members}-${Date.now()}`,
+            multisigSeedHex,
+          );
+          await restoredWallet.waitForMultisigReady(threshold, members);
+          expect(await restoredWallet.getPrimaryAddress()).toBe(
+            originalAddress,
+          );
+          await multisigWallets[0].closePage();
+          multisigWallets[0] = restoredWallet;
+        });
 
         const multisigAddress = await multisigWallets[0].getPrimaryAddress();
         expect(multisigAddress.length).toBeGreaterThan(20);
@@ -280,6 +304,23 @@ async function createWalletOnPage(
   await initial.waitUntilLoaded();
   await initial.openCreateWallet();
   return initial.createNewWallet({ walletName });
+}
+
+async function restoreMultisigWalletOnPage(
+  page: Page,
+  walletName: string,
+  multisigSeedHex: string,
+): Promise<WalletMainPage> {
+  const initial = new InitialWalletListPage(page);
+  await initial.goto();
+  await initial.waitUntilLoaded();
+  await initial.openRestoreWallet();
+  return initial.restoreWallet({
+    walletName,
+    seed: multisigSeedHex,
+    seedType: "multisig",
+    startingHeight: "0",
+  });
 }
 
 async function synchronizeMultisigParticipantData(

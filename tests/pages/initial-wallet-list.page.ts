@@ -124,7 +124,7 @@ export class InitialWalletListPage {
   async restoreWallet(params: {
     walletName: string;
     seed: string;
-    seedType?: "monero-25" | "cake-16";
+    seedType?: "monero-25" | "cake-16" | "multisig";
     startingHeight?: string;
     startingHeightDate?: string;
   }): Promise<WalletMainPage> {
@@ -133,14 +133,19 @@ export class InitialWalletListPage {
     await this.walletNameInput().fill(params.walletName);
     if (seedType === "cake-16") {
       await this.page.getByRole("tab", { name: /cake 16 words/i }).click();
+    } else if (seedType === "multisig") {
+      await this.page.getByRole("tab", { name: /multisig/i }).click();
     }
     await this.page
       .locator("div")
-      .filter({ hasText: /^Seed phrase/ })
+      .filter({
+        hasText:
+          seedType === "multisig" ? /^Multisig seed \(hex\)/ : /^Seed phrase/,
+      })
       .locator("textarea")
       .first()
       .fill(params.seed);
-    if (seedType === "monero-25") {
+    if (seedType === "monero-25" || seedType === "multisig") {
       if (params.startingHeightDate) {
         await this.pickRestoreStartingHeightDate(params.startingHeightDate);
       } else {
