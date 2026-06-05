@@ -466,6 +466,16 @@ function getWasmExceptionValue(thrown: unknown): WasmExceptionValue | null {
   return typeof excPtr === "number" ? thrown : null;
 }
 
+function getWasmExceptionDecodeCandidates(
+  value: WasmExceptionValue,
+): WasmExceptionValue[] {
+  if (typeof value === "number") {
+    return [value];
+  }
+  const excPtr = Reflect.get(value, "excPtr");
+  return typeof excPtr === "number" ? [value, excPtr] : [value];
+}
+
 function getWasmExceptionLocation(value: WasmExceptionValue): string {
   if (typeof value === "number") {
     return `pointer ${value}`;
@@ -502,24 +512,44 @@ export function wasmThrownValueToError(thrown: unknown): Error {
     );
   }
 
+  const decodeCandidates = getWasmExceptionDecodeCandidates(wasmException);
+  let cleanupCandidate: WasmExceptionValue = decodeCandidates[0];
+
   try {
-    const [type, rawMessage] = module.getExceptionMessage(wasmException);
-    const message =
-      rawMessage && rawMessage.length > 0
-        ? rawMessage
-        : type && type.length > 0
-          ? type
-          : "C++ exception (empty what())";
-    return new Error(message);
+    for (const candidate of decodeCandidates) {
+      try {
+        const [type, rawMessage] = module.getExceptionMessage(candidate);
+        cleanupCandidate = candidate;
+        const message =
+          rawMessage && rawMessage.length > 0
+            ? rawMessage
+            : type && type.length > 0
+              ? type
+              : "C++ exception (empty what())";
+        return new Error(message);
+      } catch {
+        // Some Emscripten builds expect the CppException object, others work
+        // with the raw pointer. Try both before falling back to a generic error.
+      }
+    }
+    return new Error(
+      `Could not decode WASM exception at ${getWasmExceptionLocation(wasmException)} (heap addresses differ each run).`,
+    );
   } catch {
     return new Error(
       `Could not decode WASM exception at ${getWasmExceptionLocation(wasmException)} (heap addresses differ each run).`,
     );
   } finally {
-    try {
-      module.decrementExceptionRefcount(wasmException);
-    } catch {
-      // Best-effort cleanup; ignore if pointer was already released.
+    for (const candidate of [
+      cleanupCandidate,
+      ...decodeCandidates.filter((candidate) => candidate !== cleanupCandidate),
+    ]) {
+      try {
+        module.decrementExceptionRefcount(candidate);
+        break;
+      } catch {
+        // Best-effort cleanup; ignore if this build does not accept the shape.
+      }
     }
   }
 }
