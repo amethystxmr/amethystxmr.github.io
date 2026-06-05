@@ -332,10 +332,12 @@ export interface GeneratePolyseedStorageOptions {
   features?: number;
 }
 
+type WasmExceptionValue = number | { excPtr: number };
+
 interface Module {
   /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
-  getExceptionMessage?(exn: number): [string, string];
-  decrementExceptionRefcount?(exn: number): void;
+  getExceptionMessage?(exn: WasmExceptionValue): [string, string];
+  decrementExceptionRefcount?(exn: WasmExceptionValue): void;
   /** Optional Monero logging categories (`mlog_set_categories` from wasm). */
   mlog_set_categories?(categories: string): void;
   FS: {
@@ -453,6 +455,23 @@ function objectThrownValueToError(thrown: object): Error {
   return error;
 }
 
+function getWasmExceptionValue(thrown: unknown): WasmExceptionValue | null {
+  if (typeof thrown === "number") {
+    return thrown;
+  }
+  if (typeof thrown !== "object" || thrown === null) {
+    return null;
+  }
+  const excPtr = Reflect.get(thrown, "excPtr");
+  return typeof excPtr === "number" ? { excPtr } : null;
+}
+
+function getWasmExceptionLocation(value: WasmExceptionValue): string {
+  return typeof value === "number"
+    ? `pointer ${value}`
+    : `pointer ${value.excPtr}`;
+}
+
 /**
  * Emscripten/embind often rejects with a **numeric** value: the WASM C++ exception
  * pointer (`throw exceptionLast`). It is **not** a wallet/daemon error code; the
@@ -465,25 +484,24 @@ export function wasmThrownValueToError(thrown: unknown): Error {
     return thrown;
   }
 
-  if (typeof thrown === "object" && thrown !== null) {
-    return objectThrownValueToError(thrown);
-  }
+  const wasmException = getWasmExceptionValue(thrown);
 
-  if (typeof thrown !== "number") {
+  if (!wasmException) {
+    if (typeof thrown === "object" && thrown !== null) {
+      return objectThrownValueToError(thrown);
+    }
     return new Error(String(thrown));
   }
 
-  const ptr = thrown;
-
   if (!module.getExceptionMessage || !module.decrementExceptionRefcount) {
     return new Error(
-      "WASM raised a C++ exception (shown as a numeric pointer in the console - not an application error code). " +
+      `WASM raised a C++ exception (${getWasmExceptionLocation(wasmException)} in the console - not an application error code). ` +
         "Rebuild monero-wasm with `getExceptionMessage` + `decrementExceptionRefcount` in EXPORTED_RUNTIME_METHODS to decode the message.",
     );
   }
 
   try {
-    const [type, rawMessage] = module.getExceptionMessage(ptr);
+    const [type, rawMessage] = module.getExceptionMessage(wasmException);
     const message =
       rawMessage && rawMessage.length > 0
         ? rawMessage
@@ -493,11 +511,11 @@ export function wasmThrownValueToError(thrown: unknown): Error {
     return new Error(message);
   } catch {
     return new Error(
-      `Could not decode WASM exception at pointer ${ptr} (heap addresses differ each run).`,
+      `Could not decode WASM exception at ${getWasmExceptionLocation(wasmException)} (heap addresses differ each run).`,
     );
   } finally {
     try {
-      module.decrementExceptionRefcount(ptr);
+      module.decrementExceptionRefcount(wasmException);
     } catch {
       // Best-effort cleanup; ignore if pointer was already released.
     }
