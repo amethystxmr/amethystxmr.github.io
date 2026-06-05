@@ -17,7 +17,10 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  reporter: [["html", { open: "never" }], ["list"]],
+  reporter: [
+    ["html", { open: "never" }],
+    ["list", { printSteps: true }],
+  ],
   use: {
     baseURL: APP_URL,
     trace: "on-first-retry",
