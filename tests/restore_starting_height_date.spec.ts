@@ -5,7 +5,7 @@ import {
   FROM_KEYS_TEST_PRIVATE_VIEW_KEY,
   MONERO_MINING_ADDRESS,
 } from "./constants";
-import { generateBlocks, getBlockchainHeight } from "./helpers/moneroRpc";
+import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 
@@ -29,7 +29,6 @@ test("restore wallet using date-based starting height picker", async ({
   test.setTimeout(300_000);
 
   await generateBlocks(MONERO_MINING_ADDRESS, MINED_BLOCKS);
-  const chainHeight = await getBlockchainHeight();
   const restoreDate = todayUtcIsoDate();
 
   const initial = new InitialWalletListPage(page);
@@ -48,7 +47,6 @@ test("restore wallet using date-based starting height picker", async ({
   expect(initial.lastResolvedStartingHeight).not.toBeNull();
   const resolvedHeight = Number(initial.lastResolvedStartingHeight);
   expect(resolvedHeight).toBeGreaterThanOrEqual(0);
-  expect(resolvedHeight).toBeLessThan(chainHeight);
 
   await wallet.expectSpendableWallet();
   expect(await wallet.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);

@@ -63,8 +63,6 @@ function logRefreshError(label: string, error: unknown): string {
   console.error(label, consoleValue);
   if (consoleValue instanceof Error && consoleValue.stack) {
     console.error(`${label} stack:\n${consoleValue.stack}`);
-  } else {
-    console.trace(`${label} call stack`);
   }
   return getErrorMessage(consoleValue) || "Unknown error";
 }

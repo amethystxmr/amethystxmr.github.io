@@ -39,11 +39,6 @@ export async function callMoneroJsonRpc<T>(
   return body.result;
 }
 
-export async function getBlockchainHeight(): Promise<number> {
-  const result = await callMoneroJsonRpc<{ height: number }>("get_info", {});
-  return result.height;
-}
-
 export async function generateBlocks(
   walletAddress: string,
   amountOfBlocks: number,

@@ -41,7 +41,7 @@ export class InitialWalletListPage {
   }
 
   private startingHeightDateInput(): Locator {
-    return this.startingHeightSection().locator('input[type="date"]');
+    return this.startingHeightSection().locator('input[type="date"]').first();
   }
 
   async goto(): Promise<void> {

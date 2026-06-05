@@ -332,7 +332,7 @@ export interface GeneratePolyseedStorageOptions {
   features?: number;
 }
 
-type WasmExceptionValue = number | { excPtr: number };
+type WasmExceptionValue = number | object;
 
 interface Module {
   /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
@@ -463,13 +463,15 @@ function getWasmExceptionValue(thrown: unknown): WasmExceptionValue | null {
     return null;
   }
   const excPtr = Reflect.get(thrown, "excPtr");
-  return typeof excPtr === "number" ? { excPtr } : null;
+  return typeof excPtr === "number" ? thrown : null;
 }
 
 function getWasmExceptionLocation(value: WasmExceptionValue): string {
-  return typeof value === "number"
-    ? `pointer ${value}`
-    : `pointer ${value.excPtr}`;
+  if (typeof value === "number") {
+    return `pointer ${value}`;
+  }
+  const excPtr = Reflect.get(value, "excPtr");
+  return typeof excPtr === "number" ? `pointer ${excPtr}` : "unknown pointer";
 }
 
 /**
