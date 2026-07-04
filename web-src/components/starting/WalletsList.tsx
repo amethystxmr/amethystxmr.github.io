@@ -219,7 +219,7 @@ function getDaemonTestLabel(status: DaemonTestStatus): string {
   if (status === "failed") {
     return "Failed";
   }
-  return "Test";
+  return "Check connection";
 }
 
 function getNetworkTypeSelectValue(networkType: NetworkTypeValue): string {
@@ -1750,6 +1750,37 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   }, [daemonAddress]);
 
   const isCustomDaemonAddress = daemonSelectValue === DAEMON_CUSTOM_OPTION;
+  const testDaemonAddress = async () => {
+    const target = options.getValue("daemonAddress").trim();
+    setDaemonTestStatus("testing");
+    if (!target) {
+      setDaemonTestStatus("failed");
+      return;
+    }
+    try {
+      await testDaemonConnection(target);
+      setDaemonTestStatus("ok");
+    } catch (e) {
+      console.error("Daemon test failed:", e);
+      setDaemonTestStatus("failed");
+    }
+  };
+  const daemonTestButton = (
+    <Button
+      type="button"
+      className={`flex-none! rounded-md px-4 py-1 text-[11px] ${
+        daemonTestStatus === "ok"
+          ? "text-green-300 hover:text-green-200"
+          : daemonTestStatus === "failed"
+            ? "text-red-300 hover:text-red-200"
+            : ""
+      }`}
+      disabled={daemonTestStatus === "testing"}
+      onClick={testDaemonAddress}
+    >
+      {getDaemonTestLabel(daemonTestStatus)}
+    </Button>
+  );
 
   return (
     <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
@@ -1796,7 +1827,12 @@ function OptionsView({ onBack }: { onBack: () => void }) {
           </FormRow>
 
           <FormRow>
-            <Label>Daemon address</Label>
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-gray-300">
+                Daemon address
+              </div>
+              {daemonTestButton}
+            </div>
             <Select.Root
               value={daemonSelectValue}
               onValueChange={(next) => {
@@ -1838,36 +1874,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                 }}
               />
             )}
-            <div className="mt-2 flex justify-end">
-              <Button
-                type="button"
-                className={`!flex-none !px-5 !py-2 text-xs ${
-                  daemonTestStatus === "ok"
-                    ? "text-green-300 hover:text-green-200"
-                    : daemonTestStatus === "failed"
-                      ? "text-red-300 hover:text-red-200"
-                      : ""
-                }`}
-                disabled={daemonTestStatus === "testing"}
-                onClick={async () => {
-                  const target = options.getValue("daemonAddress").trim();
-                  setDaemonTestStatus("testing");
-                  if (!target) {
-                    setDaemonTestStatus("failed");
-                    return;
-                  }
-                  try {
-                    await testDaemonConnection(target);
-                    setDaemonTestStatus("ok");
-                  } catch (e) {
-                    console.error("Daemon test failed:", e);
-                    setDaemonTestStatus("failed");
-                  }
-                }}
-              >
-                {getDaemonTestLabel(daemonTestStatus)}
-              </Button>
-            </div>
           </FormRow>
 
           <ProjectSupportCard />
