@@ -27,21 +27,21 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("loads expected WASM variant and restores funded wallet", async ({
-  context,
   page,
 }, testInfo) => {
   test.setTimeout(600_000);
 
   const expectedVariant = getExpectedVariant(testInfo.project.name);
-  const expectedSharedArrayBuffer =
-    expectedVariant === "threads" ? "function" : "undefined";
   const initial = new InitialWalletListPage(page);
   const walletName = `variant-${expectedVariant}-${Date.now()}`;
   let restoreStartingHeight = "0";
 
   if (expectedVariant === "asyncify") {
-    await context.addInitScript(() => {
-      Reflect.deleteProperty(globalThis, "SharedArrayBuffer");
+    await page.addInitScript(() => {
+      Object.defineProperty(globalThis, "crossOriginIsolated", {
+        configurable: true,
+        value: false,
+      });
     });
   }
 
@@ -54,9 +54,14 @@ test("loads expected WASM variant and restores funded wallet", async ({
   await test.step("Restore funded wallet", async () => {
     await initial.goto();
     await initial.waitUntilLoaded();
-    await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
-      expectedSharedArrayBuffer,
+    await expect(page.evaluate(() => window.crossOriginIsolated)).resolves.toBe(
+      expectedVariant === "threads",
     );
+    if (expectedVariant === "threads") {
+      await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
+        "function",
+      );
+    }
     await initial.openRestoreWallet();
     const wallet = await initial.restoreWallet({
       walletName,
