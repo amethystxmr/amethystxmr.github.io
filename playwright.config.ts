@@ -7,7 +7,7 @@ import {
 } from "./tests/constants";
 
 const IS_HEADED = process.argv.includes("--headed");
-const VARIANT_MATRIX_SPEC = "wasm_variant_matrix.spec.ts";
+const VARIANT_MATRIX_SPEC = "**/wasm_variant_matrix.spec.ts";
 
 function previewCommand(port: number, env: Record<string, string> = {}) {
   const envPrefix = Object.entries(env)
