@@ -17,7 +17,10 @@ esac
 BUILD_WASM_DIR="built-wasm-$BUILD_TYPE"
 
 EMSDK_DIR=$HOME/emsdk
-EMSCRIPTEN_VERSION="${EMSCRIPTEN_VERSION:-6.0.2}"
+if [ -z "${EMSCRIPTEN_VERSION:-}" ]; then
+  echo "Warning: EMSCRIPTEN_VERSION is not set; using latest"
+  EMSCRIPTEN_VERSION="latest"
+fi
 
 error-beep() {
     # Use this one-liner to play all the sounds
