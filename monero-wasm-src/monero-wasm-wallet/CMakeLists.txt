@@ -85,7 +85,15 @@ target_link_libraries(monero-wasm-wallet
 
 install(TARGETS monero-wasm-wallet DESTINATION bin)
 
+if(AMETHYST_WASM_VARIANT STREQUAL "Threads")
+    set(AMETHYST_WASM_OUTPUT_NAME wasm_wallet_threads)
+elseif(AMETHYST_WASM_VARIANT STREQUAL "Asyncify")
+    set(AMETHYST_WASM_OUTPUT_NAME wasm_wallet_asyncify)
+else()
+    message(FATAL_ERROR "Unknown AMETHYST_WASM_VARIANT='${AMETHYST_WASM_VARIANT}'")
+endif()
+
 set_target_properties(monero-wasm-wallet PROPERTIES
-    OUTPUT_NAME wasm_wallet
+    OUTPUT_NAME ${AMETHYST_WASM_OUTPUT_NAME}
     SUFFIX ".mjs"
 )

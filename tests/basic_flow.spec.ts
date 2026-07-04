@@ -51,9 +51,12 @@ test("basic flow", async ({ page, context }) => {
     expect(await wallet1.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
   });
 
-  await test.step("Dev server has no COOP/COEP; SharedArrayBuffer unavailable", async () => {
+  await test.step("Production preview enables SharedArrayBuffer for threads", async () => {
+    await expect(page.evaluate(() => window.crossOriginIsolated)).resolves.toBe(
+      true,
+    );
     await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
-      "undefined",
+      "function",
     );
   });
 

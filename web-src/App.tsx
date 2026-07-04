@@ -6,9 +6,12 @@ import {
   MultisigDataOverlayProvider,
   ProgressBar,
 } from "./components/ui";
+import { registerPwaServiceWorker } from "./startup/registerPwaServiceWorker";
 
 /** App-only phase after the worker module is ready (dynamic import of wallet UI). */
-type WalletUiBootProgress = { phase: "loadingWalletUi" };
+type WalletUiBootProgress =
+  | { phase: "loadingWalletUi" }
+  | { phase: "waitingForServiceWorker" };
 
 type BootPhaseProgress = ModuleLoadProgress | WalletUiBootProgress;
 
@@ -71,6 +74,11 @@ function getBootPhaseUiText(progress: BootPhaseProgress): {
       return {
         title,
         barLabel: "Loading wallet UI...",
+      };
+    case "waitingForServiceWorker":
+      return {
+        title,
+        barLabel: "Waiting for browser isolation setup...",
       };
     default: {
       const _exhaustive: never = progress;
@@ -150,6 +158,26 @@ export function App() {
         progress: { phase: "preparingModule" },
       });
       try {
+        const serviceWorkerBootstrap = await registerPwaServiceWorker();
+        if (cancelled) {
+          return;
+        }
+        if (
+          serviceWorkerBootstrap.type === "waiting-for-service-worker-control"
+        ) {
+          setBootState({
+            type: "booting",
+            progress: { phase: "waitingForServiceWorker" },
+          });
+          return;
+        }
+        if (serviceWorkerBootstrap.type === "error") {
+          console.warn(
+            serviceWorkerBootstrap.message,
+            serviceWorkerBootstrap.cause,
+          );
+        }
+
         const { initModule } =
           await import("../monero-wasm-module/walletApi.workerClient");
         await initModule((progress) => {

@@ -13,6 +13,7 @@
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
+#include <emscripten/em_js.h>
 #include <emscripten/val.h>
 
 #include "common/util.h"
@@ -40,14 +41,35 @@ static_assert(std::is_same_v<WalletPriorityBacking, unsigned int>,
 
 namespace
 {
-// Wasm is built without `-sUSE_PTHREADS`; cap Boost concurrency before embind.
-// Also call `set_max_concurrency(1)` from `main()` so it runs after all static
-// initializers (see `common/util.cpp` max_concurrency init order across TUs).
+#if defined(AMETHYST_WASM_THREADS)
+EM_JS(unsigned int, amethyst_wasm_max_concurrency, (), {
+    const forced = Module['amethystForceMaxConcurrency'];
+    if (Number.isInteger(forced) && forced > 0)
+      return forced;
+    const hardwareConcurrency = globalThis.navigator && globalThis.navigator.hardwareConcurrency;
+    return Number.isInteger(hardwareConcurrency) && hardwareConcurrency > 0
+      ? hardwareConcurrency
+      : 2;
+});
+#else
+unsigned int amethyst_wasm_max_concurrency()
+{
+    return 1;
+}
+#endif
+
+void set_wasm_wallet_max_concurrency()
+{
+    tools::set_max_concurrency(amethyst_wasm_max_concurrency());
+}
+
+// Cap Boost concurrency before embind. Also call this from `main()` so it runs
+// after all static initializers (see `common/util.cpp` max_concurrency init order across TUs).
 struct WasmWalletConcurrencyInit
 {
     WasmWalletConcurrencyInit()
     {
-        tools::set_max_concurrency(1);
+        set_wasm_wallet_max_concurrency();
     }
 } wasm_wallet_concurrency_init;
 } // namespace
@@ -1613,7 +1635,7 @@ int main()
 {
     std::cout << "Initialing module..." << std::endl;
 
-    tools::set_max_concurrency(1);
+    set_wasm_wallet_max_concurrency();
 
     // mlog_set_categories("*:TRACE");
 

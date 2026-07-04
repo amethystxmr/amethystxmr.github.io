@@ -1724,14 +1724,19 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   }, []);
 
   const [moneroVersionText, setMoneroVersionText] = React.useState("");
+  const [wasmBuildVariantText, setWasmBuildVariantText] = React.useState("");
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      const version = await walletApi.getMoneroVersionFull();
+      const [version, wasmBuildVariant] = await Promise.all([
+        walletApi.getMoneroVersionFull(),
+        walletApi.getWasmBuildVariant(),
+      ]);
       if (cancelled) {
         return;
       }
       setMoneroVersionText(`Monero ${version}`);
+      setWasmBuildVariantText(`WASM ${wasmBuildVariant}`);
     })();
     return () => {
       cancelled = true;
@@ -1883,9 +1888,12 @@ function OptionsView({ onBack }: { onBack: () => void }) {
           <div className="mb-3 px-2 text-center text-[10px] text-white/45">
             <div className="space-y-1 sm:hidden">
               <div>{buildInfoText}</div>
+              <div>{wasmBuildVariantText}</div>
               <div>{moneroVersionText}</div>
             </div>
-            <div className="hidden sm:block">{`${buildInfoText}, ${moneroVersionText}`}</div>
+            <div className="hidden sm:block">
+              {`${buildInfoText}, ${wasmBuildVariantText}, ${moneroVersionText}`}
+            </div>
           </div>
           <ButtonsHolder>
             <Button className="w-full" variant="soft" onClick={onBack}>

@@ -3,18 +3,34 @@ set -e
 
 cd "$(dirname "$0")"
 
-BUILD_TYPE="${1:-Debug}"
+if [ "$#" -ne 2 ]; then
+  echo "Usage: $0 <Debug|Release> <Asyncify|Threads>"
+  exit 1
+fi
+
+BUILD_TYPE="$1"
 case "$BUILD_TYPE" in
   Debug|Release)
     ;;
   *)
     echo "Error: unknown build type '$BUILD_TYPE'"
-    echo "Usage: $0 [Debug|Release]"
+    echo "Usage: $0 <Debug|Release> <Asyncify|Threads>"
     exit 1
     ;;
 esac
 
-BUILD_WASM_DIR="built-wasm-$BUILD_TYPE"
+WASM_BUILD_VARIANT="$2"
+case "$WASM_BUILD_VARIANT" in
+  Asyncify|Threads)
+    ;;
+  *)
+    echo "Error: unknown WASM build variant '$WASM_BUILD_VARIANT'"
+    echo "Usage: $0 <Debug|Release> <Asyncify|Threads>"
+    exit 1
+    ;;
+esac
+
+BUILD_WASM_DIR="built-wasm-$BUILD_TYPE-$WASM_BUILD_VARIANT"
 
 EMSDK_DIR=$HOME/emsdk
 if [ -z "${EMSCRIPTEN_VERSION:-}" ]; then
@@ -29,7 +45,7 @@ error-beep() {
     return 1
 }
 
-echo "====== Building monero-wasm (build type: $BUILD_TYPE) ======"
+echo "====== Building monero-wasm (build type: $BUILD_TYPE, variant: $WASM_BUILD_VARIANT) ======"
 
 
 if [ ! -d "$EMSDK_DIR" ]; then
@@ -39,6 +55,7 @@ if [ ! -d "$EMSDK_DIR" ]; then
     -v $(pwd):$(pwd) \
     -u $(id -u):$(id -g) \
     -e BUILD_TYPE="$BUILD_TYPE" \
+    -e WASM_BUILD_VARIANT="$WASM_BUILD_VARIANT" \
     -w $(pwd) \
     "emscripten/emsdk:$EMSCRIPTEN_VERSION" \
     sh -c "./build-wasm-cmds.sh" || error-beep
@@ -48,13 +65,13 @@ else
   "$EMSDK_DIR/emsdk" install "$EMSCRIPTEN_VERSION"
   "$EMSDK_DIR/emsdk" activate "$EMSCRIPTEN_VERSION"
   source $EMSDK_DIR/emsdk_env.sh
-  BUILD_TYPE="$BUILD_TYPE" ./build-wasm-cmds.sh || error-beep
+  BUILD_TYPE="$BUILD_TYPE" WASM_BUILD_VARIANT="$WASM_BUILD_VARIANT" ./build-wasm-cmds.sh || error-beep
 fi
        
 echo ""
 echo ""
 
-cp -v "$BUILD_WASM_DIR"/bin/wasm_wallet.* ../monero-wasm-module/
+cp -v "$BUILD_WASM_DIR"/bin/wasm_wallet_* ../monero-wasm-module/
 
 # Point clangd at whichever built-wasm-*/compile_commands.json was regenerated
 # most recently (CMake re-runs configure on every invocation, so the freshest

@@ -4,25 +4,122 @@ function getServiceWorkerUrl() {
   return `${window.location.origin}${dirPath}service-worker.js`;
 }
 
-function isNativeAppRuntime() {
+export type PwaServiceWorkerBootstrapResult =
+  | { type: "ready"; sharedArrayBufferAvailable: boolean }
+  | {
+      type: "skipped";
+      reason:
+        | "non-production-build"
+        | "native-app"
+        | "shared-array-buffer-available"
+        | "insecure-context"
+        | "service-worker-unavailable";
+      sharedArrayBufferAvailable: boolean;
+    }
+  | { type: "waiting-for-service-worker-control"; swUrl: string }
+  | {
+      type: "error";
+      reason: "service-worker-registration-failed";
+      message: string;
+      cause: unknown;
+      sharedArrayBufferAvailable: false;
+    };
+
+function isSharedArrayBufferAvailable() {
+  return typeof SharedArrayBuffer === "function";
+}
+
+export function isNativeAppRuntime() {
   return window.amethystRuntime?.isNativeApp === true;
 }
 
-/** Registers a minimal service worker so installability checks can pass. */
-export function registerPwaServiceWorker(): void {
-  if (!import.meta.env.PROD) {
-    return;
+let bootstrapPromise: Promise<PwaServiceWorkerBootstrapResult> | null = null;
+
+/** Registers the production COI service worker when needed for pthread WASM. */
+export function registerPwaServiceWorker(): Promise<PwaServiceWorkerBootstrapResult> {
+  if (bootstrapPromise) {
+    return bootstrapPromise;
   }
 
-  if (isNativeAppRuntime()) {
-    return;
-  }
+  bootstrapPromise = (async () => {
+    if (isSharedArrayBufferAvailable()) {
+      return {
+        type: "skipped",
+        reason: "shared-array-buffer-available",
+        sharedArrayBufferAvailable: true,
+      } as const;
+    }
 
-  if (!window.isSecureContext || !("serviceWorker" in navigator)) {
-    return;
-  }
+    if (!import.meta.env.PROD) {
+      return {
+        type: "skipped",
+        reason: "non-production-build",
+        sharedArrayBufferAvailable: false,
+      } as const;
+    }
 
-  void navigator.serviceWorker.register(getServiceWorkerUrl(), {
-    updateViaCache: "none",
-  });
+    if (isNativeAppRuntime()) {
+      return {
+        type: "skipped",
+        reason: "native-app",
+        sharedArrayBufferAvailable: false,
+      } as const;
+    }
+
+    if (!window.isSecureContext) {
+      return {
+        type: "skipped",
+        reason: "insecure-context",
+        sharedArrayBufferAvailable: false,
+      } as const;
+    }
+
+    if (!("serviceWorker" in navigator)) {
+      return {
+        type: "skipped",
+        reason: "service-worker-unavailable",
+        sharedArrayBufferAvailable: false,
+      } as const;
+    }
+
+    const swUrl = getServiceWorkerUrl();
+    try {
+      const registration = await navigator.serviceWorker.register(swUrl, {
+        updateViaCache: "none",
+      });
+
+      navigator.serviceWorker.addEventListener(
+        "controllerchange",
+        () => {
+          window.location.reload();
+        },
+        { once: true },
+      );
+
+      if (!navigator.serviceWorker.controller) {
+        if (registration.active) {
+          window.location.reload();
+        }
+        return {
+          type: "waiting-for-service-worker-control",
+          swUrl,
+        } as const;
+      }
+
+      return {
+        type: "ready",
+        sharedArrayBufferAvailable: isSharedArrayBufferAvailable(),
+      } as const;
+    } catch (cause) {
+      return {
+        type: "error",
+        reason: "service-worker-registration-failed",
+        message: `Failed to register service worker at ${swUrl}. Falling back to the asyncify WASM build.`,
+        cause,
+        sharedArrayBufferAvailable: false,
+      } as const;
+    }
+  })();
+
+  return bootstrapPromise;
 }

@@ -53,6 +53,7 @@ jobs:
     needs:
       - resolve_build_type
       - wasm_build
+      - web_frontend
     uses: ./.github/workflows/e2e.yml
     with:
       build_type: ${{ needs.resolve_build_type.outputs.build_type }}

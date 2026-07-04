@@ -1,6 +1,3 @@
-// @ts-expect-error Generated wasm JS module has no TypeScript declarations.
-import MoneroWasmWalletModuleFactory from "./wasm_wallet.mjs";
-
 export const NetworkTypes = {
   MAINNET: 0,
   TESTNET: 1,
@@ -9,6 +6,12 @@ export const NetworkTypes = {
 } as const;
 
 export type NetworkType = (typeof NetworkTypes)[keyof typeof NetworkTypes];
+export type WasmBuildVariant = "asyncify" | "threads";
+
+export type InitModuleOptions = {
+  variant: WasmBuildVariant;
+  forceMaxConcurrency?: number | null;
+};
 
 /** Embind + Asyncify may return a plain value (sync path) or a Promise (after a yield). */
 export type MaybePromise<T> = T | Promise<T>;
@@ -387,6 +390,8 @@ export type ModuleLoadProgressCallback =
   | null;
 
 type ModuleFactoryOptions = {
+  amethystForceMaxConcurrency?: number;
+  locateFile?: (path: string, prefix: string) => string;
   monitorRunDependencies?: (left: number) => void;
   instantiateWasm?: (
     imports: WebAssembly.Imports,
@@ -397,14 +402,34 @@ type ModuleFactoryOptions = {
   ) => WebAssembly.Exports | Record<string, never>;
 };
 
+type MoneroWasmWalletModuleFactory = (
+  options: ModuleFactoryOptions,
+) => Promise<Module>;
+
 type WasmProgressReporter = (
   bytesLoaded: number,
   bytesTotal: number | null,
 ) => void;
 
-declare const __WASM_WALLET_SIZE__: number;
+declare const __WASM_WALLET_SIZES__: Record<WasmBuildVariant, number>;
 
 let module: Module;
+let loadedWasmBuildVariant: WasmBuildVariant | null = null;
+
+const wasmUrls: Record<WasmBuildVariant, string> = {
+  asyncify: new URL("./wasm_wallet_asyncify.wasm", import.meta.url).href,
+  threads: new URL("./wasm_wallet_threads.wasm", import.meta.url).href,
+};
+
+async function loadMoneroWasmWalletModuleFactory(
+  variant: WasmBuildVariant,
+): Promise<MoneroWasmWalletModuleFactory> {
+  const factoryModule =
+    variant === "threads"
+      ? await import("./wasm_wallet_threads.mjs")
+      : await import("./wasm_wallet_asyncify.mjs");
+  return factoryModule.default as MoneroWasmWalletModuleFactory;
+}
 
 function getStringProperty(value: object, property: string): string | null {
   const propertyValue = Reflect.get(value, property);
@@ -602,21 +627,18 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
   return runtimeGlobal.globalHttpConfig;
 }
 
-function getWalletWasmUrl() {
-  return new URL("wasm_wallet.wasm", import.meta.url).href;
-}
-
-function getWasmProgressTotal(event: ProgressEvent) {
+function getWasmProgressTotal(event: ProgressEvent, variant: WasmBuildVariant) {
   // If the server sends a usable total, prefer the browser's progress metadata.
   // On GitHub Pages, though, the WASM response may be gzip-compressed in transit:
   // the Content-Length header then describes compressed bytes, while XHR progress
   // events report decoded bytes. When lengthComputable is false, use Vite's
   // build-time raw WASM size so the denominator matches event.loaded.
-  return event.lengthComputable ? event.total : __WASM_WALLET_SIZE__;
+  return event.lengthComputable ? event.total : __WASM_WALLET_SIZES__[variant];
 }
 
 function fetchWasmBinaryWithProgress(
   url: string,
+  variant: WasmBuildVariant,
   onProgress: WasmProgressReporter,
 ): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -625,7 +647,7 @@ function fetchWasmBinaryWithProgress(
     xhr.responseType = "arraybuffer";
 
     xhr.onprogress = (event) => {
-      const bytesTotal = getWasmProgressTotal(event);
+      const bytesTotal = getWasmProgressTotal(event, variant);
       onProgress(event.loaded, bytesTotal);
     };
 
@@ -662,6 +684,7 @@ function fetchWasmBinaryWithProgress(
 }
 
 function instantiateWalletWasmWithProgress(
+  variant: WasmBuildVariant,
   imports: WebAssembly.Imports,
   receiveInstance: (
     instance: WebAssembly.Instance,
@@ -673,7 +696,8 @@ function instantiateWalletWasmWithProgress(
 ): void {
   void (async () => {
     const binary = await fetchWasmBinaryWithProgress(
-      getWalletWasmUrl(),
+      wasmUrls[variant],
+      variant,
       reportProgress,
     );
     onDecoding();
@@ -684,6 +708,7 @@ function instantiateWalletWasmWithProgress(
 
 export async function initModule(
   onProgress: ModuleLoadProgressCallback = null,
+  options: InitModuleOptions,
 ) {
   if (module) {
     onProgress?.({ phase: "moduleReady" });
@@ -691,6 +716,9 @@ export async function initModule(
   }
 
   onProgress?.({ phase: "preparingModule" });
+  const { variant } = options;
+  const MoneroWasmWalletModuleFactory =
+    await loadMoneroWasmWalletModuleFactory(variant);
 
   let totalRunDependencies = 0;
   let failModuleLoad!: (error: unknown) => void;
@@ -705,8 +733,21 @@ export async function initModule(
   };
 
   const moduleLoad = MoneroWasmWalletModuleFactory({
+    ...(options.forceMaxConcurrency
+      ? { amethystForceMaxConcurrency: options.forceMaxConcurrency }
+      : {}),
+    locateFile(path) {
+      if (
+        path === "wasm_wallet_asyncify.wasm" ||
+        path === "wasm_wallet_threads.wasm"
+      ) {
+        return wasmUrls[variant];
+      }
+      return new URL(path, import.meta.url).href;
+    },
     instantiateWasm(imports, receiveInstance) {
       instantiateWalletWasmWithProgress(
+        variant,
         imports,
         receiveInstance,
         reportWasmProgress,
@@ -732,12 +773,20 @@ export async function initModule(
   } satisfies ModuleFactoryOptions) as Promise<Module>;
 
   module = await Promise.race([moduleLoad, moduleLoadFailed]);
+  loadedWasmBuildVariant = variant;
 
   onProgress?.({ phase: "initializingWalletStorage" });
   await initFilesystem();
   getWalletRuntimeGlobal().moneroWalletModule = module;
   ensureGlobalHttpConfig();
   onProgress?.({ phase: "moduleReady" });
+}
+
+export function getWasmBuildVariant(): WasmBuildVariant {
+  if (!loadedWasmBuildVariant) {
+    throw new Error("Module not initialized");
+  }
+  return loadedWasmBuildVariant;
 }
 
 export function setDaemonAddress(daemonAddress: string) {

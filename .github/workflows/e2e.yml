@@ -17,11 +17,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download wasm artifact
+      - name: Download web frontend artifact
         uses: actions/download-artifact@v4
         with:
-          name: monero-wasm-module-${{ inputs.build_type }}
-          path: monero-wasm-module
+          name: web-frontend-${{ inputs.build_type }}
+          path: built-web
 
       - name: Setup Node 24
         uses: actions/setup-node@v4

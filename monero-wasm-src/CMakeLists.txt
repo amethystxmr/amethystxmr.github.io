@@ -17,6 +17,15 @@ message(STATUS "CMAKE_TOOLCHAIN_FILE='${CMAKE_TOOLCHAIN_FILE}'")
 
 
 if(EMSCRIPTEN)
+    set(AMETHYST_WASM_VARIANT "${AMETHYST_WASM_VARIANT}" CACHE STRING "WASM build variant: Asyncify or Threads")
+    if(NOT AMETHYST_WASM_VARIANT)
+        message(FATAL_ERROR "AMETHYST_WASM_VARIANT is required: Asyncify or Threads")
+    endif()
+    if(NOT AMETHYST_WASM_VARIANT STREQUAL "Asyncify" AND NOT AMETHYST_WASM_VARIANT STREQUAL "Threads")
+        message(FATAL_ERROR "Unknown AMETHYST_WASM_VARIANT='${AMETHYST_WASM_VARIANT}', expected Asyncify or Threads")
+    endif()
+    message(STATUS "======================== WASM variant: ${AMETHYST_WASM_VARIANT} ========================")
+
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         message(STATUS "======================== Debug build ========================")
         set(EMSCRIPTEN_COMPILE_OPTIONS -g -O0)
@@ -31,11 +40,32 @@ if(EMSCRIPTEN)
         set(EMSCRIPTEN_DEBUG_OPTIONS_LINKER)
     endif()
 
+    set(AMETHYST_WASM_COMPILE_OPTIONS)
+    set(AMETHYST_WASM_LINK_OPTIONS)
+    if(AMETHYST_WASM_VARIANT STREQUAL "Threads")
+        add_compile_definitions(AMETHYST_WASM_THREADS=1)
+        list(APPEND AMETHYST_WASM_COMPILE_OPTIONS
+            -sUSE_PTHREADS=1
+        )
+        list(APPEND AMETHYST_WASM_LINK_OPTIONS
+            -sUSE_PTHREADS=1
+            "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)"
+            -sPTHREAD_POOL_SIZE_STRICT=1
+        )
+    else()
+        list(APPEND AMETHYST_WASM_LINK_OPTIONS
+            # Async HTTP (XHR) yields via EM_ASYNC_JS; Embind awaits completion (libembind_asyncify).
+            -sASYNCIFY
+            # Wallet/daemon stacks are deep during refresh/RPC chains.
+            -sASYNCIFY_STACK_SIZE=131072
+        )
+    endif()
 
     # pthread API is required for Boost.Asio / threadpool headers even in a
     # single-threaded WASM link (no -sUSE_PTHREADS).
     add_compile_options(
         ${EMSCRIPTEN_COMPILE_OPTIONS}
+        ${AMETHYST_WASM_COMPILE_OPTIONS}
         -pthread
         -sNO_DISABLE_EXCEPTION_CATCHING
     )
@@ -48,10 +78,7 @@ if(EMSCRIPTEN)
         # Do NOT set a huge INITIAL_MEMORY: reserving hundreds of MB at
         # instantiation OOMs/crashes Chrome tabs. Grow from a small heap instead
         # (monero-ts relies on ALLOW_MEMORY_GROWTH without multi-hundred-MB starts).
-        # Async HTTP (XHR) yields via EM_ASYNC_JS; Embind awaits completion (libembind_asyncify).
-        -sASYNCIFY
-        # Wallet/daemon stacks are deep during refresh/RPC chains.
-        -sASYNCIFY_STACK_SIZE=131072
+        ${AMETHYST_WASM_LINK_OPTIONS}
         -sINITIAL_MEMORY=64MB
         -sSTACK_SIZE=5MB
         -sWEBSOCKET_URL=ws://localhost:4444

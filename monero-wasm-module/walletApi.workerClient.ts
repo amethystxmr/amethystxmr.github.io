@@ -6,7 +6,9 @@ import {
   max64,
   NetworkTypes,
   type FeePriority as FeePriorityType,
+  type ModuleLoadProgressCallback,
   type MoneroWasmWallet,
+  type WasmBuildVariant,
   type WalletNewBlockCallback,
 } from "./walletApi";
 
@@ -39,6 +41,7 @@ export type {
   WalletKeys,
   WalletTxHandle,
   MoneroWasmWallet,
+  WasmBuildVariant,
 } from "./walletApi";
 
 export type RemoteApi = Comlink.Remote<typeof exposedApi>;
@@ -49,8 +52,20 @@ const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
 });
 export const api = Comlink.wrap<typeof exposedApi>(worker);
 
-export const initModule: typeof exposedApi.initModule = async (onProgress) => {
-  await api.initModule(onProgress ? Comlink.proxy(onProgress) : null);
+function selectWasmBuildVariant(): WasmBuildVariant {
+  return globalThis.crossOriginIsolated &&
+    typeof SharedArrayBuffer === "function"
+    ? "threads"
+    : "asyncify";
+}
+
+export const initModule = async (
+  onProgress: ModuleLoadProgressCallback = null,
+) => {
+  await api.initModule(onProgress ? Comlink.proxy(onProgress) : null, {
+    variant: selectWasmBuildVariant(),
+    forceMaxConcurrency: import.meta.env.DEV ? 2 : null,
+  });
 };
 
 export async function setWalletNewBlockCallback(
