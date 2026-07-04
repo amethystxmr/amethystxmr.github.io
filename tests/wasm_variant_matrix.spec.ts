@@ -73,6 +73,8 @@ test("loads expected WASM variant and restores funded wallet", async ({
     const wallet = new WalletMainPage(page);
     await wallet.waitUntilLoaded();
     expect(await wallet.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
+    await expectMatrixRuntimeIsolation(page, expectations);
+    await expectMatrixServiceWorkers(page, expectations);
     await wallet.exitFromWallet();
   });
 
