@@ -75,6 +75,6 @@ test("loads expected WASM variant and restores funded wallet", async ({
     await page.getByRole("button", { name: /options/i }).click();
     const desktopBuildInfo = page.locator(".hidden.sm\\:block");
     await expect(desktopBuildInfo).toBeVisible();
-    await expect(desktopBuildInfo).toContainText(`WASM ${expectedVariant}`);
+    await expect(desktopBuildInfo).toContainText(expectedVariant);
   });
 });

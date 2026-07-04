@@ -1736,7 +1736,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
         return;
       }
       setMoneroVersionText(`Monero ${version}`);
-      setWasmBuildVariantText(`WASM ${wasmBuildVariant}`);
+      setWasmBuildVariantText(wasmBuildVariant);
     })();
     return () => {
       cancelled = true;
