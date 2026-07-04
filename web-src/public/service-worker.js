@@ -11,6 +11,12 @@ self.addEventListener("fetch", (event) => {
   if (requestUrl.origin !== self.location.origin) {
     return;
   }
+  if (
+    request.mode !== "navigate" &&
+    !request.headers.get("accept")?.includes("text/html")
+  ) {
+    return;
+  }
   event.respondWith(
     fetch(request).then((response) => {
       if (!response || response.status === 0) {
