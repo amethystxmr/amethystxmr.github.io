@@ -36,6 +36,7 @@ if(EMSCRIPTEN)
     # single-threaded WASM link (no -sUSE_PTHREADS).
     add_compile_options(
         ${EMSCRIPTEN_COMPILE_OPTIONS}
+        -fPIC
         -pthread
         -sNO_DISABLE_EXCEPTION_CATCHING
     )
