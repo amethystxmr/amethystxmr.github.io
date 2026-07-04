@@ -2,6 +2,24 @@ self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) =>
   event.waitUntil(self.clients.claim()),
 );
+
+function shouldAddCrossOriginIsolationHeaders(request) {
+  const requestUrl = new URL(request.url);
+  if (requestUrl.pathname.endsWith(".wasm")) {
+    return false;
+  }
+  if (request.mode === "navigate") {
+    return true;
+  }
+  if (request.headers.get("accept")?.includes("text/html")) {
+    return true;
+  }
+  if (request.destination === "worker" || request.destination === "script") {
+    return true;
+  }
+  return false;
+}
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.cache === "only-if-cached" && request.mode !== "same-origin") {
@@ -11,10 +29,7 @@ self.addEventListener("fetch", (event) => {
   if (requestUrl.origin !== self.location.origin) {
     return;
   }
-  if (
-    request.mode !== "navigate" &&
-    !request.headers.get("accept")?.includes("text/html")
-  ) {
+  if (!shouldAddCrossOriginIsolationHeaders(request)) {
     return;
   }
   event.respondWith(
