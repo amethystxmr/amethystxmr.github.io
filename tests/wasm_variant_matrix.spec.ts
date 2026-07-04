@@ -14,6 +14,7 @@ import {
   getVariantMatrixExpectations,
 } from "./helpers/variantMatrixExpectations";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
+import { WalletMainPage } from "./pages/wallet-main.page";
 
 const INITIAL_MINED_BLOCKS = 80;
 const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
@@ -65,7 +66,13 @@ test("loads expected WASM variant and restores funded wallet", async ({
     expect(await wallet.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
 
     await wallet.waitForUnlockedBalanceAtLeast(MIN_FUNDED_BALANCE);
+  });
 
+  await test.step("Reload and reopen restored wallet", async () => {
+    await page.reload();
+    const wallet = new WalletMainPage(page);
+    await wallet.waitUntilLoaded();
+    expect(await wallet.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
     await wallet.exitFromWallet();
   });
 
