@@ -13,7 +13,26 @@ FetchContent_Declare(
     GIT_TAG bd79f5014c331273357277ed8a3d756fb61b9fa1
     GIT_SHALLOW TRUE
 )
+
+# Polyseed uses the parent STATIC variable to choose between libpolyseed.a and
+# libpolyseed.so. Keep the rest of the build unchanged, but avoid Emscripten's
+# dynamic-linking path for this dependency.
+if(DEFINED STATIC)
+    set(monero_wasm_wallet_had_STATIC TRUE)
+    set(monero_wasm_wallet_saved_STATIC "${STATIC}")
+else()
+    set(monero_wasm_wallet_had_STATIC FALSE)
+endif()
+set(STATIC ON)
 FetchContent_MakeAvailable(polyseed)
+if(TARGET polyseed-tests)
+    set_target_properties(polyseed-tests PROPERTIES EXCLUDE_FROM_ALL TRUE)
+endif()
+if(monero_wasm_wallet_had_STATIC)
+    set(STATIC "${monero_wasm_wallet_saved_STATIC}")
+else()
+    unset(STATIC)
+endif()
 
 set(monero_wasm_wallet_sources
     wasm_wallet_api.cpp

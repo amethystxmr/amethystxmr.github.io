@@ -13,10 +13,10 @@ jobs:
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
       # Use latest by default. We temporarily pinned 6.0.2 while investigating
-      # the PIC linker failure that is fixed by the CMake -fPIC flag.
+      # the dynamic-linking failure that is avoided by building polyseed static.
       EMSCRIPTEN_VERSION: latest
       # Bump both when forcing cold CI caches (restore keys embed these epochs).
-      WASM_CACHE_EPOCH: v16-pic-emscripten
+      WASM_CACHE_EPOCH: v17-static-polyseed
       MONERO_SRC_CACHE_EPOCH: v4-patches-layout
 
     steps:
