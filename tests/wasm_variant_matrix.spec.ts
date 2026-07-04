@@ -6,21 +6,18 @@ import {
 } from "./constants";
 import { callMoneroJsonRpc, generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
+import {
+  expectMatrixRuntimeIsolation,
+  expectMatrixServerCoiHeaders,
+  expectMatrixServiceWorkers,
+  expectPlaywrightProjectMatchesMatrix,
+  getVariantMatrixExpectations,
+} from "./helpers/variantMatrixExpectations";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 
 const INITIAL_MINED_BLOCKS = 80;
 const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
 const MIN_FUNDED_BALANCE = 10n * XMR_ATOMIC_UNITS_PER_XMR;
-
-function getExpectedVariant(projectName: string): "asyncify" | "threads" {
-  if (projectName.includes("threads")) {
-    return "threads";
-  }
-  if (projectName.includes("asyncify")) {
-    return "asyncify";
-  }
-  throw new Error(`Unexpected WASM variant matrix project: ${projectName}`);
-}
 
 test.beforeEach(async ({ page }) => {
   await initializeAppTestSettings(page);
@@ -28,22 +25,14 @@ test.beforeEach(async ({ page }) => {
 
 test("loads expected WASM variant and restores funded wallet", async ({
   page,
+  request,
 }, testInfo) => {
   test.setTimeout(600_000);
 
-  const expectedVariant = getExpectedVariant(testInfo.project.name);
+  const expectations = getVariantMatrixExpectations(testInfo.project.name);
   const initial = new InitialWalletListPage(page);
-  const walletName = `variant-${expectedVariant}-${Date.now()}`;
+  const walletName = `variant-${expectations.expectedVariant}-${Date.now()}`;
   let restoreStartingHeight = "0";
-
-  if (expectedVariant === "asyncify") {
-    await page.addInitScript(() => {
-      Object.defineProperty(globalThis, "crossOriginIsolated", {
-        configurable: true,
-        value: false,
-      });
-    });
-  }
 
   await test.step("Mine initial blocks for restored wallet", async () => {
     const info = await callMoneroJsonRpc<{ height: number }>("get_info", {});
@@ -51,17 +40,22 @@ test("loads expected WASM variant and restores funded wallet", async ({
     await generateBlocks(MONERO_MINING_ADDRESS, INITIAL_MINED_BLOCKS);
   });
 
+  await test.step("Playwright project matches matrix configuration", async () => {
+    expectPlaywrightProjectMatchesMatrix(
+      testInfo.project.use.serviceWorkers,
+      expectations,
+    );
+  });
+
+  await test.step("Preview server COI headers match matrix configuration", async () => {
+    await expectMatrixServerCoiHeaders(request, expectations);
+  });
+
   await test.step("Restore funded wallet", async () => {
     await initial.goto();
     await initial.waitUntilLoaded();
-    await expect(page.evaluate(() => window.crossOriginIsolated)).resolves.toBe(
-      expectedVariant === "threads",
-    );
-    if (expectedVariant === "threads") {
-      await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
-        "function",
-      );
-    }
+    await expectMatrixRuntimeIsolation(page, expectations);
+    await expectMatrixServiceWorkers(page, expectations);
     await initial.openRestoreWallet();
     const wallet = await initial.restoreWallet({
       walletName,
@@ -80,6 +74,6 @@ test("loads expected WASM variant and restores funded wallet", async ({
     await page.getByRole("button", { name: /options/i }).click();
     const desktopBuildInfo = page.locator(".hidden.sm\\:block");
     await expect(desktopBuildInfo).toBeVisible();
-    await expect(desktopBuildInfo).toContainText(expectedVariant);
+    await expect(desktopBuildInfo).toContainText(expectations.expectedVariant);
   });
 });

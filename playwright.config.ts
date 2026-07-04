@@ -54,7 +54,7 @@ export default defineConfig({
       },
     },
     {
-      name: "variant-asyncify-no-sw-no-sab",
+      name: "variant-no-headers-no-sw",
       testMatch: VARIANT_MATRIX_SPEC,
       use: {
         ...devices["Desktop Chrome"],
@@ -67,7 +67,7 @@ export default defineConfig({
       },
     },
     {
-      name: "variant-threads-no-sw-sab",
+      name: "variant-headers-no-sw",
       testMatch: VARIANT_MATRIX_SPEC,
       use: {
         ...devices["Desktop Chrome"],
@@ -80,7 +80,7 @@ export default defineConfig({
       },
     },
     {
-      name: "variant-asyncify-sw-no-sab",
+      name: "variant-no-headers-sw",
       testMatch: VARIANT_MATRIX_SPEC,
       use: {
         ...devices["Desktop Chrome"],
@@ -93,7 +93,7 @@ export default defineConfig({
       },
     },
     {
-      name: "variant-threads-sw-sab",
+      name: "variant-headers-sw",
       testMatch: VARIANT_MATRIX_SPEC,
       use: {
         ...devices["Desktop Chrome"],
@@ -130,15 +130,15 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: previewCommand(APP_PORT + 3, {
-        AMETHYST_E2E_SW_MODE: "claim-only",
-      }),
+      command: previewCommand(APP_PORT + 3),
       url: previewUrl(APP_PORT + 3),
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
-      command: previewCommand(APP_PORT + 4),
+      command: previewCommand(APP_PORT + 4, {
+        AMETHYST_E2E_PREVIEW_COI: "1",
+      }),
       url: previewUrl(APP_PORT + 4),
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

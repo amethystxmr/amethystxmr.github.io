@@ -107,9 +107,10 @@ export default {
     headers: crossOriginIsolationHeaders,
   },
   preview: {
+    // Vite falls back to server.headers when preview.headers is omitted.
     headers:
       process.env.AMETHYST_E2E_PREVIEW_COI === "1"
         ? crossOriginIsolationHeaders
-        : undefined,
+        : {},
   },
 };

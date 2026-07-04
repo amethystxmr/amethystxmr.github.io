@@ -72,12 +72,15 @@ MONEROD_PATH=~/monero-gui-v0.18.4.2/monerod ./node_modules/.bin/playwright test 
 
 (`basic` matches `tests/basic_flow.spec.ts`.)
 
-The WASM variant matrix lives in `tests/wasm_variant_matrix.spec.ts` and checks:
+The WASM variant matrix lives in `tests/wasm_variant_matrix.spec.ts` and checks
+the four preview environments:
 
-- no service worker and no `SharedArrayBuffer`: `Asyncify`
-- no service worker but `SharedArrayBuffer`: `Threads`
-- service worker available but no `SharedArrayBuffer`: `Asyncify`
-- service worker enables `SharedArrayBuffer`: `Threads`
+| Server COI headers | Service workers | Expected WASM variant |
+| ------------------ | --------------- | --------------------- |
+| no                 | blocked         | Asyncify              |
+| yes                | blocked         | Threads               |
+| no                 | allowed         | Threads               |
+| yes                | allowed         | Threads               |
 
 Run only the variant matrix with:
 
