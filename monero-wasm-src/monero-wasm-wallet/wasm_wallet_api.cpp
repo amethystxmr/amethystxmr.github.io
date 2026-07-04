@@ -43,8 +43,11 @@ namespace
 {
 #if defined(AMETHYST_WASM_THREADS)
 EM_JS(unsigned int, amethyst_wasm_max_concurrency, (), {
-    if (import.meta.env && import.meta.env.DEV)
+    if (import.meta.env && import.meta.env.DEV) {
+      // In Vite development, using all CPU cores can be too CPU-consuming on a
+      // developer machine, so cap the wallet concurrency while keeping threads enabled.
       return 2;
+    }
     const hardwareConcurrency = globalThis.navigator && globalThis.navigator.hardwareConcurrency;
     return Number.isInteger(hardwareConcurrency) && hardwareConcurrency > 0
       ? hardwareConcurrency
