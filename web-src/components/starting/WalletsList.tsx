@@ -1,5 +1,6 @@
 import * as React from "react";
 import JSZip from "jszip";
+import { QRCodeSVG } from "qrcode.react";
 import {
   Button,
   ButtonsHolder,
@@ -30,8 +31,10 @@ import { DAEMON_PRESET_OPTIONS, options } from "../options";
 import { NiceTabs } from "../main/tabs";
 import {
   acquireWalletOpenLock,
+  copyToClipboard,
   downloadBlob,
   normalizeSeedPhrase,
+  splitAddressBy6,
   withFsLock,
 } from "../utils";
 
@@ -42,6 +45,10 @@ type OpenedWallet = {
 
 const DAEMON_CUSTOM_OPTION = "__custom__";
 const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
+const PROJECT_GITHUB_URL =
+  "https://github.com/amethystxmr/amethystxmr.github.io";
+const DONATION_ADDRESS =
+  "8C8sVurTyRh9Y2XSon7nbXYg4XTVqzcNoJiTgqxvkbseRRUNpH64Ptu396tTaxKuoPNY6jwUhCfjURpUwrNqe8dn5YUghK2";
 const NETWORK_TYPE_OPTIONS = [
   { value: NetworkTypes.MAINNET, label: "Mainnet" },
   { value: NetworkTypes.TESTNET, label: "Testnet" },
@@ -50,6 +57,99 @@ const NETWORK_TYPE_OPTIONS = [
 ] as const;
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
+
+function ProjectSupportCard() {
+  const [copied, setCopied] = React.useState<"idle" | "ok" | "fail">("idle");
+  const [isQrOpen, setIsQrOpen] = React.useState(false);
+
+  async function onCopyDonationAddress() {
+    setCopied("idle");
+    const ok = await copyToClipboard(DONATION_ADDRESS);
+    setCopied(ok ? "ok" : "fail");
+    window.setTimeout(() => setCopied("idle"), 1200);
+  }
+  const formattedAddress = splitAddressBy6(DONATION_ADDRESS);
+
+  return (
+    <SurfaceCard className="lg:mt-auto">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white/90">
+            Support Amethyst XMR
+          </div>
+          <a
+            href={PROJECT_GITHUB_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-0.5 block truncate text-xs text-white/55 transition hover:text-white/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            Source code and feedback: {PROJECT_GITHUB_URL}
+          </a>
+        </div>
+
+        <div className="flex shrink-0 gap-2">
+          <Button
+            type="button"
+            onClick={() => setIsQrOpen((next) => !next)}
+            variant="primary"
+            className="flex-none! rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            {isQrOpen ? (
+              <>
+                <span aria-hidden="true">✖</span> Hide QR
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">▣</span> QR
+              </>
+            )}
+          </Button>
+          <Button
+            type="button"
+            onClick={onCopyDonationAddress}
+            variant="primary"
+            className="flex-none! rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            {copied === "ok" ? (
+              <>
+                <span aria-hidden="true">✓</span> Copied
+              </>
+            ) : copied === "fail" ? (
+              <>
+                <span aria-hidden="true">✖</span> Copy failed
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true">⎘</span> Copy
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      <div className="relative">
+        <Input
+          aria-label="Donation address"
+          readOnly
+          value={formattedAddress}
+          onFocus={(e) => e.currentTarget.select()}
+          className="overflow-x-auto rounded-lg border-white/10 bg-black/20 py-2 font-mono text-xs whitespace-nowrap text-white/85 focus-visible:ring-white/30"
+        />
+      </div>
+
+      {isQrOpen && (
+        <div className="mt-3 flex flex-col items-center gap-2 rounded-lg bg-black/20 p-3 ring-1 ring-white/10">
+          <div className="rounded-md bg-white p-2">
+            <QRCodeSVG value={DONATION_ADDRESS} size={240} />
+          </div>
+          <div className="text-[11px] text-white/55">
+            Scan to copy donation address
+          </div>
+        </div>
+      )}
+    </SurfaceCard>
+  );
+}
 
 function getWalletNameFromHash(): string | null {
   if (typeof window === "undefined") {
@@ -1656,7 +1756,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       <Header>Options</Header>
 
       <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
-        <div className="space-y-4 scrollbar-glass lg:min-h-0 lg:flex-1 lg:overflow-auto lg:pr-1">
+        <div className="space-y-4 scrollbar-glass lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-auto lg:pr-1">
           <Toggle
             checked={loadLastWallet}
             onChange={(next) => {
@@ -1769,6 +1869,8 @@ function OptionsView({ onBack }: { onBack: () => void }) {
               </Button>
             </div>
           </FormRow>
+
+          <ProjectSupportCard />
         </div>
 
         <div className="mt-2 lg:shrink-0">
