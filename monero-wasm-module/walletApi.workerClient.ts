@@ -6,7 +6,6 @@ import {
   max64,
   NetworkTypes,
   type FeePriority as FeePriorityType,
-  type ModuleLoadProgressCallback,
   type MoneroWasmWallet,
   type WasmBuildVariant,
   type WalletNewBlockCallback,
@@ -59,9 +58,9 @@ function selectWasmBuildVariant(): WasmBuildVariant {
     : "asyncify";
 }
 
-export const initModule = async (
-  onProgress: ModuleLoadProgressCallback = null,
-) => {
+export const initModule: (
+  onProgress?: Parameters<typeof exposedApi.initModule>[0],
+) => ReturnType<typeof exposedApi.initModule> = async (onProgress = null) => {
   await api.initModule(onProgress ? Comlink.proxy(onProgress) : null, {
     variant: selectWasmBuildVariant(),
   });
