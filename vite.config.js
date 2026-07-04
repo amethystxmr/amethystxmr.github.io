@@ -48,29 +48,6 @@ function emitGitHashFile() {
   };
 }
 
-function e2ePreviewServiceWorkerMode() {
-  return {
-    name: "e2e-preview-service-worker-mode",
-    configurePreviewServer(server) {
-      if (process.env.AMETHYST_E2E_SW_MODE !== "claim-only") {
-        return;
-      }
-      server.middlewares.use((req, res, next) => {
-        const url = req.url ? new URL(req.url, "http://127.0.0.1") : null;
-        if (url?.pathname !== "/service-worker.js") {
-          next();
-          return;
-        }
-        res.setHeader("Content-Type", "application/javascript");
-        res.end(
-          "self.addEventListener('install', () => self.skipWaiting());\n" +
-            "self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));\n",
-        );
-      });
-    },
-  };
-}
-
 /** @type {import('vite').UserConfig} */
 export default {
   // config options
@@ -83,7 +60,6 @@ export default {
     react(),
     tailwindcss(),
     emitGitHashFile(),
-    e2ePreviewServiceWorkerMode(),
   ],
   define: {
     "import.meta.env.VITE_BUILD_TIMESTAMP": JSON.stringify(buildTimestamp),
