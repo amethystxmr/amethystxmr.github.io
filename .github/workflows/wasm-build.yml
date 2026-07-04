@@ -12,8 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUILD_TYPE: ${{ inputs.build_type }}
+      # Use latest by default. We temporarily pinned 6.0.2 while investigating
+      # the dynamic-linking failure that is avoided by building polyseed static.
+      EMSCRIPTEN_VERSION: latest
       # Bump both when forcing cold CI caches (restore keys embed these epochs).
-      WASM_CACHE_EPOCH: v15-boost-thread-locale
+      WASM_CACHE_EPOCH: v17-static-polyseed
       MONERO_SRC_CACHE_EPOCH: v4-patches-layout
 
     steps:
@@ -39,15 +42,15 @@ jobs:
             monero-wasm-src/built-wasm-${{ env.BUILD_TYPE }}
             monero-wasm-src/built-wasm-emcache-${{ env.BUILD_TYPE }}
             monero-wasm-src/built-wasm-depends-${{ env.BUILD_TYPE }}
-          key: ${{ runner.os }}-wasm-${{ env.WASM_CACHE_EPOCH }}-${{ env.BUILD_TYPE }}-${{ steps.monero_ref.outputs.sha }}-${{ hashFiles('monero-wasm-src/ContribDepends.cmake', 'monero-wasm-src/build.sh', 'monero-wasm-src/build-wasm-cmds.sh', 'monero-wasm-src/CMakeLists.txt', 'monero-wasm-src/patches/boost/*.patch', 'monero-wasm-src/patches/monero/*.patch', 'monero-wasm-src/monero/contrib/depends/packages/*.mk') }}
+          key: ${{ runner.os }}-wasm-${{ env.WASM_CACHE_EPOCH }}-${{ env.EMSCRIPTEN_VERSION }}-${{ env.BUILD_TYPE }}-${{ steps.monero_ref.outputs.sha }}-${{ hashFiles('monero-wasm-src/ContribDepends.cmake', 'monero-wasm-src/build.sh', 'monero-wasm-src/build-wasm-cmds.sh', 'monero-wasm-src/CMakeLists.txt', 'monero-wasm-src/patches/boost/*.patch', 'monero-wasm-src/patches/monero/*.patch', 'monero-wasm-src/monero/contrib/depends/packages/*.mk') }}
 
-      - name: Setup emsdk (local) # TODO: Fix version
+      - name: Setup emsdk (local)
         run: |
           if [ ! -d "$HOME/emsdk" ]; then
             git clone https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
           fi
-          "$HOME/emsdk/emsdk" install latest
-          "$HOME/emsdk/emsdk" activate latest
+          "$HOME/emsdk/emsdk" install "$EMSCRIPTEN_VERSION"
+          "$HOME/emsdk/emsdk" activate "$EMSCRIPTEN_VERSION"
 
       - name: Configure ccache
         run: |

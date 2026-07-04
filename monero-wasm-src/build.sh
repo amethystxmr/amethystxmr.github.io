@@ -17,6 +17,10 @@ esac
 BUILD_WASM_DIR="built-wasm-$BUILD_TYPE"
 
 EMSDK_DIR=$HOME/emsdk
+if [ -z "${EMSCRIPTEN_VERSION:-}" ]; then
+  echo "Warning: EMSCRIPTEN_VERSION is not set; using latest"
+  EMSCRIPTEN_VERSION="latest"
+fi
 
 error-beep() {
     # Use this one-liner to play all the sounds
@@ -36,11 +40,13 @@ if [ ! -d "$EMSDK_DIR" ]; then
     -u $(id -u):$(id -g) \
     -e BUILD_TYPE="$BUILD_TYPE" \
     -w $(pwd) \
-    emscripten/emsdk \
+    "emscripten/emsdk:$EMSCRIPTEN_VERSION" \
     sh -c "./build-wasm-cmds.sh" || error-beep
     
 else
   echo "====== Bulding using local emsdk ======"
+  "$EMSDK_DIR/emsdk" install "$EMSCRIPTEN_VERSION"
+  "$EMSDK_DIR/emsdk" activate "$EMSCRIPTEN_VERSION"
   source $EMSDK_DIR/emsdk_env.sh
   BUILD_TYPE="$BUILD_TYPE" ./build-wasm-cmds.sh || error-beep
 fi
