@@ -43,9 +43,8 @@ namespace
 {
 #if defined(AMETHYST_WASM_THREADS)
 EM_JS(unsigned int, amethyst_wasm_max_concurrency, (), {
-    const forced = Module['amethystForceMaxConcurrency'];
-    if (Number.isInteger(forced) && forced > 0)
-      return forced;
+    if (import.meta.env && import.meta.env.DEV)
+      return 2;
     const hardwareConcurrency = globalThis.navigator && globalThis.navigator.hardwareConcurrency;
     return Number.isInteger(hardwareConcurrency) && hardwareConcurrency > 0
       ? hardwareConcurrency

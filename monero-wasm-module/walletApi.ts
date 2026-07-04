@@ -10,7 +10,6 @@ export type WasmBuildVariant = "asyncify" | "threads";
 
 export type InitModuleOptions = {
   variant: WasmBuildVariant;
-  forceMaxConcurrency?: number | null;
 };
 
 /** Embind + Asyncify may return a plain value (sync path) or a Promise (after a yield). */
@@ -390,7 +389,6 @@ export type ModuleLoadProgressCallback =
   | null;
 
 type ModuleFactoryOptions = {
-  amethystForceMaxConcurrency?: number;
   locateFile?: (path: string, prefix: string) => string;
   monitorRunDependencies?: (left: number) => void;
   instantiateWasm?: (
@@ -733,9 +731,6 @@ export async function initModule(
   };
 
   const moduleLoad = MoneroWasmWalletModuleFactory({
-    ...(options.forceMaxConcurrency
-      ? { amethystForceMaxConcurrency: options.forceMaxConcurrency }
-      : {}),
     locateFile(path) {
       if (
         path === "wasm_wallet_asyncify.wasm" ||

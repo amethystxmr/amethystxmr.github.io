@@ -64,7 +64,6 @@ export const initModule = async (
 ) => {
   await api.initModule(onProgress ? Comlink.proxy(onProgress) : null, {
     variant: selectWasmBuildVariant(),
-    forceMaxConcurrency: import.meta.env.DEV ? 2 : null,
   });
 };
 
