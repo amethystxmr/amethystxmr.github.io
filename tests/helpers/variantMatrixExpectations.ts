@@ -9,7 +9,7 @@ export type VariantMatrixProjectName =
 export type VariantMatrixExpectations = {
   hasServerCoiHeaders: boolean;
   allowsServiceWorkers: boolean;
-  expectedVariant: "asyncify" | "threads";
+  expectedFinalWasmVariant: "asyncify" | "threads";
 };
 
 function buildVariantMatrixExpectations(
@@ -19,7 +19,7 @@ function buildVariantMatrixExpectations(
   return {
     hasServerCoiHeaders,
     allowsServiceWorkers,
-    expectedVariant:
+    expectedFinalWasmVariant:
       !hasServerCoiHeaders && !allowsServiceWorkers ? "asyncify" : "threads",
   };
 }
@@ -45,7 +45,7 @@ export function getVariantMatrixExpectations(
   return expectations;
 }
 
-export function expectPlaywrightProjectMatchesMatrix(
+export function expectPlaywrightServiceWorkerPolicyMatchesMatrix(
   projectServiceWorkers: "allow" | "block" | undefined,
   expectations: VariantMatrixExpectations,
 ): void {
@@ -53,7 +53,7 @@ export function expectPlaywrightProjectMatchesMatrix(
   expect(allowsServiceWorkers).toBe(expectations.allowsServiceWorkers);
 }
 
-export async function expectMatrixServerCoiHeaders(
+export async function expectPreviewServerCoiHeadersMatchMatrix(
   request: APIRequestContext,
   expectations: VariantMatrixExpectations,
 ): Promise<void> {
@@ -70,7 +70,7 @@ export async function expectMatrixServerCoiHeaders(
   }
 }
 
-export async function expectMatrixServiceWorkers(
+export async function expectPageServiceWorkerStateMatchesMatrix(
   page: Page,
   expectations: VariantMatrixExpectations,
 ): Promise<void> {
@@ -107,18 +107,21 @@ export async function expectMatrixServiceWorkers(
     .toMatch(/service-worker\.js$/);
 }
 
-export async function expectMatrixRuntimeIsolation(
+export async function expectPageIsolationMatchesMatrixFinalVariant(
   page: Page,
   expectations: VariantMatrixExpectations,
 ): Promise<void> {
-  await expectMatrixRuntimeSupportsVariant(page, expectations.expectedVariant);
+  await expectPageIsolationForWasmVariant(
+    page,
+    expectations.expectedFinalWasmVariant,
+  );
 }
 
-export async function expectMatrixRuntimeSupportsVariant(
+export async function expectPageIsolationForWasmVariant(
   page: Page,
-  expectedVariant: "asyncify" | "threads",
+  wasmVariant: "asyncify" | "threads",
 ): Promise<void> {
-  const expectedCrossOriginIsolated = expectedVariant === "threads";
+  const expectedCrossOriginIsolated = wasmVariant === "threads";
   await expect(page.evaluate(() => window.crossOriginIsolated)).resolves.toBe(
     expectedCrossOriginIsolated,
   );

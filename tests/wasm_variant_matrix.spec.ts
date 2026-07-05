@@ -7,11 +7,11 @@ import {
 import { callMoneroJsonRpc, generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import {
-  expectMatrixRuntimeIsolation,
-  expectMatrixRuntimeSupportsVariant,
-  expectMatrixServerCoiHeaders,
-  expectMatrixServiceWorkers,
-  expectPlaywrightProjectMatchesMatrix,
+  expectPageIsolationMatchesMatrixFinalVariant,
+  expectPageServiceWorkerStateMatchesMatrix,
+  expectPageIsolationForWasmVariant,
+  expectPlaywrightServiceWorkerPolicyMatchesMatrix,
+  expectPreviewServerCoiHeadersMatchMatrix,
   getVariantMatrixExpectations,
 } from "./helpers/variantMatrixExpectations";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
@@ -33,7 +33,7 @@ test("loads expected WASM variant and restores funded wallet", async ({
 
   const expectations = getVariantMatrixExpectations(testInfo.project.name);
   const initial = new InitialWalletListPage(page);
-  const walletName = `variant-${expectations.expectedVariant}-${Date.now()}`;
+  const walletName = `variant-${expectations.expectedFinalWasmVariant}-${Date.now()}`;
   let restoreStartingHeight = "0";
 
   await test.step("Mine initial blocks for restored wallet", async () => {
@@ -43,17 +43,17 @@ test("loads expected WASM variant and restores funded wallet", async ({
   });
 
   await test.step("Playwright project matches matrix configuration", async () => {
-    expectPlaywrightProjectMatchesMatrix(
+    expectPlaywrightServiceWorkerPolicyMatchesMatrix(
       testInfo.project.use.serviceWorkers,
       expectations,
     );
   });
 
   await test.step("Preview server COI headers match matrix configuration", async () => {
-    await expectMatrixServerCoiHeaders(request, expectations);
+    await expectPreviewServerCoiHeadersMatchMatrix(request, expectations);
   });
 
-  await test.step("Load expected runtime variant", async () => {
+  await test.step("Load page with expected isolation state", async () => {
     await initial.goto();
     await initial.waitUntilLoaded();
 
@@ -61,14 +61,14 @@ test("loads expected WASM variant and restores funded wallet", async ({
       expectations.allowsServiceWorkers &&
       !expectations.hasServerCoiHeaders
     ) {
-      await expectMatrixRuntimeSupportsVariant(page, "asyncify");
-      await expectMatrixServiceWorkers(page, expectations);
+      await expectPageIsolationForWasmVariant(page, "asyncify");
+      await expectPageServiceWorkerStateMatchesMatrix(page, expectations);
       await page.reload();
       await initial.waitUntilLoaded();
     }
 
-    await expectMatrixRuntimeIsolation(page, expectations);
-    await expectMatrixServiceWorkers(page, expectations);
+    await expectPageIsolationMatchesMatrixFinalVariant(page, expectations);
+    await expectPageServiceWorkerStateMatchesMatrix(page, expectations);
   });
 
   await test.step("Restore funded wallet", async () => {
@@ -88,16 +88,18 @@ test("loads expected WASM variant and restores funded wallet", async ({
     const wallet = new WalletMainPage(page);
     await wallet.waitUntilLoaded();
     expect(await wallet.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
-    await expectMatrixRuntimeIsolation(page, expectations);
-    await expectMatrixServiceWorkers(page, expectations);
+    await expectPageIsolationMatchesMatrixFinalVariant(page, expectations);
+    await expectPageServiceWorkerStateMatchesMatrix(page, expectations);
     await wallet.exitFromWallet();
   });
 
-  await test.step("Options view shows expected WASM variant", async () => {
+  await test.step("Options view shows final WASM variant", async () => {
     await initial.expectLoaded();
     await page.getByRole("button", { name: /options/i }).click();
-    const desktopBuildInfo = page.locator('[aria-label="Build information"]');
-    await expect(desktopBuildInfo).toBeVisible();
-    await expect(desktopBuildInfo).toContainText(expectations.expectedVariant);
+    const buildInfo = page.locator('[aria-label="Build information"]');
+    await expect(buildInfo).toBeVisible();
+    await expect(buildInfo).toContainText(
+      expectations.expectedFinalWasmVariant,
+    );
   });
 });
