@@ -33,7 +33,7 @@ test("loads expected WASM variant and restores funded wallet", async ({
 
   const expectations = getVariantMatrixExpectations(testInfo.project.name);
   const initial = new InitialWalletListPage(page);
-  const walletName = `variant-${expectations.expectedFinalWasmVariant}-${Date.now()}`;
+  const walletName = `variant-${expectations.expectedWasmVariant}-${Date.now()}`;
   let restoreStartingHeight = "0";
 
   await test.step("Mine initial blocks for restored wallet", async () => {
@@ -98,8 +98,6 @@ test("loads expected WASM variant and restores funded wallet", async ({
     await page.getByRole("button", { name: /options/i }).click();
     const buildInfo = page.locator('[aria-label="Build information"]');
     await expect(buildInfo).toBeVisible();
-    await expect(buildInfo).toContainText(
-      expectations.expectedFinalWasmVariant,
-    );
+    await expect(buildInfo).toContainText(expectations.expectedWasmVariant);
   });
 });

@@ -9,7 +9,7 @@ export type VariantMatrixProjectName =
 export type VariantMatrixExpectations = {
   hasServerCoiHeaders: boolean;
   allowsServiceWorkers: boolean;
-  expectedFinalWasmVariant: "asyncify" | "threads";
+  expectedWasmVariant: "asyncify" | "threads";
 };
 
 function buildVariantMatrixExpectations(
@@ -19,7 +19,7 @@ function buildVariantMatrixExpectations(
   return {
     hasServerCoiHeaders,
     allowsServiceWorkers,
-    expectedFinalWasmVariant:
+    expectedWasmVariant:
       !hasServerCoiHeaders && !allowsServiceWorkers ? "asyncify" : "threads",
   };
 }
@@ -113,7 +113,7 @@ export async function expectPageIsolationMatchesMatrixFinalVariant(
 ): Promise<void> {
   await expectPageIsolationForWasmVariant(
     page,
-    expectations.expectedFinalWasmVariant,
+    expectations.expectedWasmVariant,
   );
 }
 
