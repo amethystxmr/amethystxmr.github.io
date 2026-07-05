@@ -9,7 +9,9 @@ import {
 import { registerPwaServiceWorker } from "./startup/registerPwaServiceWorker";
 
 /** App-only phase after the worker module is ready (dynamic import of wallet UI). */
-type WalletUiBootProgress = { phase: "loadingWalletUi" };
+type WalletUiBootProgress =
+  | { phase: "loadingWalletUi" }
+  | { phase: "waitingForServiceWorker" };
 
 type BootPhaseProgress = ModuleLoadProgress | WalletUiBootProgress;
 
@@ -72,6 +74,11 @@ function getBootPhaseUiText(progress: BootPhaseProgress): {
       return {
         title,
         barLabel: "Loading wallet UI...",
+      };
+    case "waitingForServiceWorker":
+      return {
+        title,
+        barLabel: "Waiting for browser isolation setup...",
       };
     default: {
       const _exhaustive: never = progress;
@@ -153,6 +160,15 @@ export function App() {
       try {
         const serviceWorkerBootstrap = await registerPwaServiceWorker();
         if (cancelled) {
+          return;
+        }
+        if (
+          serviceWorkerBootstrap.type === "waiting-for-service-worker-control"
+        ) {
+          setBootState({
+            type: "booting",
+            progress: { phase: "waitingForServiceWorker" },
+          });
           return;
         }
         if (serviceWorkerBootstrap.type === "error") {

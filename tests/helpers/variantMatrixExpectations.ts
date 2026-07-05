@@ -107,7 +107,7 @@ export async function expectPageServiceWorkerStateMatchesMatrix(
     .toMatch(/service-worker\.js$/);
 }
 
-export async function expectPageIsolationMatchesMatrixFinalVariant(
+export async function expectPageIsolationMatchesMatrixExpectedVariant(
   page: Page,
   expectations: VariantMatrixExpectations,
 ): Promise<void> {

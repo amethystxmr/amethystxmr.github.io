@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   FROM_KEYS_TEST_ADDRESS,
   MONERO_MINING_ADDRESS,
@@ -7,9 +7,9 @@ import {
 import { callMoneroJsonRpc, generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import {
-  expectPageIsolationMatchesMatrixFinalVariant,
-  expectPageServiceWorkerStateMatchesMatrix,
+  expectPageIsolationMatchesMatrixExpectedVariant,
   expectPageIsolationForWasmVariant,
+  expectPageServiceWorkerStateMatchesMatrix,
   expectPlaywrightServiceWorkerPolicyMatchesMatrix,
   expectPreviewServerCoiHeadersMatchMatrix,
   getVariantMatrixExpectations,
@@ -20,6 +20,92 @@ import { WalletMainPage } from "./pages/wallet-main.page";
 const INITIAL_MINED_BLOCKS = 80;
 const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
 const MIN_FUNDED_BALANCE = 10n * XMR_ATOMIC_UNITS_PER_XMR;
+const SERVICE_WORKER_BOOTSTRAP_PROJECT = "variant-no-headers-sw";
+
+async function openOptionsAndExpectWasmVariant(
+  page: Page,
+  initial: InitialWalletListPage,
+  expectedWasmVariant: "asyncify" | "threads",
+) {
+  await initial.expectLoaded();
+  await page.getByRole("button", { name: /options/i }).click();
+  const buildInfo = page.locator('[aria-label="Build information"]');
+  await expect(buildInfo).toBeVisible();
+  await expect(buildInfo).toContainText(expectedWasmVariant);
+}
+
+async function mockServiceWorkerRegistrationFailure(page: {
+  addInitScript: Page["addInitScript"];
+}) {
+  await page.addInitScript(() => {
+    const fakeServiceWorkerContainer = {
+      controller: null,
+      ready: new Promise<ServiceWorkerRegistration>(() => {}),
+      addEventListener() {},
+      removeEventListener() {},
+      getRegistration: async () => null,
+      getRegistrations: async () => [],
+      register: async () => {
+        sessionStorage.setItem("mock-sw-register-count", "1");
+        throw new Error("mock service worker registration failure");
+      },
+    };
+
+    Object.defineProperty(Navigator.prototype, "serviceWorker", {
+      configurable: true,
+      get() {
+        return fakeServiceWorkerContainer;
+      },
+    });
+  });
+}
+
+async function expectNoRegisteredServiceWorker(page: Page) {
+  await expect
+    .poll(async () =>
+      page.evaluate(async () => {
+        const registration = await navigator.serviceWorker.getRegistration();
+        return registration?.active?.scriptURL ?? null;
+      }),
+    )
+    .toBeNull();
+}
+
+async function mockServiceWorkerRegistrationTimeout(page: {
+  addInitScript: Page["addInitScript"];
+}) {
+  await page.addInitScript(() => {
+    const registration = {
+      active: null,
+      waiting: null,
+      installing: null,
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    const fakeServiceWorkerContainer = {
+      controller: null,
+      ready: new Promise<ServiceWorkerRegistration>(() => {}),
+      addEventListener() {},
+      removeEventListener() {},
+      getRegistration: async () => null,
+      getRegistrations: async () => [],
+      register: async () => {
+        const current = Number(
+          sessionStorage.getItem("mock-sw-register-count") ?? "0",
+        );
+        sessionStorage.setItem("mock-sw-register-count", String(current + 1));
+        return registration;
+      },
+    };
+
+    Object.defineProperty(Navigator.prototype, "serviceWorker", {
+      configurable: true,
+      get() {
+        return fakeServiceWorkerContainer;
+      },
+    });
+  });
+}
 
 test.beforeEach(async ({ page }) => {
   await initializeAppTestSettings(page);
@@ -57,17 +143,7 @@ test("loads expected WASM variant and restores funded wallet", async ({
     await initial.goto();
     await initial.waitUntilLoaded();
 
-    if (
-      expectations.allowsServiceWorkers &&
-      !expectations.hasServerCoiHeaders
-    ) {
-      await expectPageIsolationForWasmVariant(page, "asyncify");
-      await expectPageServiceWorkerStateMatchesMatrix(page, expectations);
-      await page.reload();
-      await initial.waitUntilLoaded();
-    }
-
-    await expectPageIsolationMatchesMatrixFinalVariant(page, expectations);
+    await expectPageIsolationMatchesMatrixExpectedVariant(page, expectations);
     await expectPageServiceWorkerStateMatchesMatrix(page, expectations);
   });
 
@@ -88,16 +164,114 @@ test("loads expected WASM variant and restores funded wallet", async ({
     const wallet = new WalletMainPage(page);
     await wallet.waitUntilLoaded();
     expect(await wallet.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
-    await expectPageIsolationMatchesMatrixFinalVariant(page, expectations);
+    await expectPageIsolationMatchesMatrixExpectedVariant(page, expectations);
     await expectPageServiceWorkerStateMatchesMatrix(page, expectations);
     await wallet.exitFromWallet();
   });
 
-  await test.step("Options view shows final WASM variant", async () => {
-    await initial.expectLoaded();
-    await page.getByRole("button", { name: /options/i }).click();
-    const buildInfo = page.locator('[aria-label="Build information"]');
-    await expect(buildInfo).toBeVisible();
-    await expect(buildInfo).toContainText(expectations.expectedWasmVariant);
+  await test.step("Options view shows expected WASM variant", async () => {
+    await openOptionsAndExpectWasmVariant(
+      page,
+      initial,
+      expectations.expectedWasmVariant,
+    );
   });
+});
+
+test("service worker registration success loads threads without server COI headers", async ({
+  page,
+  request,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== SERVICE_WORKER_BOOTSTRAP_PROJECT,
+    "Covers the no-server-COI service-worker bootstrap project only.",
+  );
+
+  const expectations = getVariantMatrixExpectations(testInfo.project.name);
+  const initial = new InitialWalletListPage(page);
+
+  expectPlaywrightServiceWorkerPolicyMatchesMatrix(
+    testInfo.project.use.serviceWorkers,
+    expectations,
+  );
+  await expectPreviewServerCoiHeadersMatchMatrix(request, expectations);
+
+  await initial.goto();
+  await initial.waitUntilLoaded();
+
+  await expectPageIsolationForWasmVariant(page, "threads");
+  await expectPageServiceWorkerStateMatchesMatrix(page, expectations);
+  await openOptionsAndExpectWasmVariant(page, initial, "threads");
+});
+
+test("service worker registration failure falls back to asyncify", async ({
+  page,
+  request,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== SERVICE_WORKER_BOOTSTRAP_PROJECT,
+    "Covers the no-server-COI service-worker bootstrap project only.",
+  );
+
+  const expectations = getVariantMatrixExpectations(testInfo.project.name);
+  const initial = new InitialWalletListPage(page);
+
+  await mockServiceWorkerRegistrationFailure(page);
+
+  expectPlaywrightServiceWorkerPolicyMatchesMatrix(
+    testInfo.project.use.serviceWorkers,
+    expectations,
+  );
+  await expectPreviewServerCoiHeadersMatchMatrix(request, expectations);
+
+  await initial.goto();
+  await initial.waitUntilLoaded();
+
+  await expectPageIsolationForWasmVariant(page, "asyncify");
+  await expectNoRegisteredServiceWorker(page);
+  await expect(
+    page.evaluate(() => sessionStorage.getItem("mock-sw-register-count")),
+  ).resolves.toBe("1");
+  await expect(
+    page.evaluate(() =>
+      sessionStorage.getItem("amethystxmr:service-worker-reload-for-control"),
+    ),
+  ).resolves.toBeNull();
+  await openOptionsAndExpectWasmVariant(page, initial, "asyncify");
+});
+
+test("service worker control timeout reloads once then falls back to asyncify", async ({
+  page,
+  request,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== SERVICE_WORKER_BOOTSTRAP_PROJECT,
+    "Covers the no-server-COI service-worker bootstrap project only.",
+  );
+
+  const expectations = getVariantMatrixExpectations(testInfo.project.name);
+  const initial = new InitialWalletListPage(page);
+
+  await mockServiceWorkerRegistrationTimeout(page);
+
+  expectPlaywrightServiceWorkerPolicyMatchesMatrix(
+    testInfo.project.use.serviceWorkers,
+    expectations,
+  );
+  await expectPreviewServerCoiHeadersMatchMatrix(request, expectations);
+
+  await initial.goto();
+  await initial.waitUntilLoaded();
+
+  await expectPageIsolationForWasmVariant(page, "asyncify");
+  await expectNoRegisteredServiceWorker(page);
+  await expect(
+    page.evaluate(() => sessionStorage.getItem("mock-sw-register-count")),
+  ).resolves.toBe("2");
+  await expect(
+    page.evaluate(() =>
+      sessionStorage.getItem("amethystxmr:service-worker-reload-for-control"),
+    ),
+  ).resolves.toMatch(/service-worker\.js$/);
+  await openOptionsAndExpectWasmVariant(page, initial, "asyncify");
 });
