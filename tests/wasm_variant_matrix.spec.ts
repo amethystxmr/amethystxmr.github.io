@@ -8,6 +8,7 @@ import { callMoneroJsonRpc, generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import {
   expectMatrixRuntimeIsolation,
+  expectMatrixRuntimeVariant,
   expectMatrixServerCoiHeaders,
   expectMatrixServiceWorkers,
   expectPlaywrightProjectMatchesMatrix,
@@ -52,11 +53,25 @@ test("loads expected WASM variant and restores funded wallet", async ({
     await expectMatrixServerCoiHeaders(request, expectations);
   });
 
-  await test.step("Restore funded wallet", async () => {
+  await test.step("Load expected runtime variant", async () => {
     await initial.goto();
     await initial.waitUntilLoaded();
+
+    if (
+      expectations.allowsServiceWorkers &&
+      !expectations.hasServerCoiHeaders
+    ) {
+      await expectMatrixRuntimeVariant(page, "asyncify");
+      await expectMatrixServiceWorkers(page, expectations);
+      await page.reload();
+      await initial.waitUntilLoaded();
+    }
+
     await expectMatrixRuntimeIsolation(page, expectations);
     await expectMatrixServiceWorkers(page, expectations);
+  });
+
+  await test.step("Restore funded wallet", async () => {
     await initial.openRestoreWallet();
     const wallet = await initial.restoreWallet({
       walletName,

@@ -111,14 +111,24 @@ export async function expectMatrixRuntimeIsolation(
   page: Page,
   expectations: VariantMatrixExpectations,
 ): Promise<void> {
-  const expectedCrossOriginIsolated =
-    expectations.expectedVariant === "threads";
+  await expectMatrixRuntimeVariant(page, expectations.expectedVariant);
+}
+
+export async function expectMatrixRuntimeVariant(
+  page: Page,
+  expectedVariant: "asyncify" | "threads",
+): Promise<void> {
+  const expectedCrossOriginIsolated = expectedVariant === "threads";
   await expect(page.evaluate(() => window.crossOriginIsolated)).resolves.toBe(
     expectedCrossOriginIsolated,
   );
   if (expectedCrossOriginIsolated) {
     await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
       "function",
+    );
+  } else {
+    await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
+      "undefined",
     );
   }
 }
