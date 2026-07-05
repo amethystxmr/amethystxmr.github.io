@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures/e2eTest";
 import { AppAlertsPage } from "./pages/app-alerts.page";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 import { ManageWalletsPage } from "./pages/manage-wallets.page";

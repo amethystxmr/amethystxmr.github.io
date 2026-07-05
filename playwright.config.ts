@@ -3,6 +3,8 @@ import {
   APP_HOST,
   APP_PORT,
   APP_URL,
+  E2E_ASYNCIFY_PREVIEW_PORT,
+  E2E_THREADS_PREVIEW_PORT,
   MONEROD_RPC_PORT,
 } from "./tests/constants";
 
@@ -42,11 +44,25 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "chromium-production",
+      name: "chromium-asyncify",
       testIgnore: VARIANT_MATRIX_SPEC,
       use: {
         ...devices["Desktop Chrome"],
-        baseURL: APP_URL,
+        baseURL: previewUrl(E2E_ASYNCIFY_PREVIEW_PORT),
+        serviceWorkers: "block",
+        viewport: { width: 1460, height: 920 },
+        launchOptions: {
+          devtools: IS_HEADED,
+        },
+      },
+    },
+    {
+      name: "chromium-threads",
+      testIgnore: VARIANT_MATRIX_SPEC,
+      use: {
+        ...devices["Desktop Chrome"],
+        baseURL: previewUrl(E2E_THREADS_PREVIEW_PORT),
+        serviceWorkers: "block",
         viewport: { width: 1460, height: 920 },
         launchOptions: {
           devtools: IS_HEADED,
@@ -110,22 +126,16 @@ export default defineConfig({
   globalTeardown: "./tests/global.teardown.ts",
   webServer: [
     {
-      command: previewCommand(APP_PORT),
-      url: APP_URL,
+      command: previewCommand(E2E_ASYNCIFY_PREVIEW_PORT),
+      url: previewUrl(E2E_ASYNCIFY_PREVIEW_PORT),
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },
     {
-      command: previewCommand(APP_PORT + 1),
-      url: previewUrl(APP_PORT + 1),
-      reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
-    },
-    {
-      command: previewCommand(APP_PORT + 2, {
+      command: previewCommand(E2E_THREADS_PREVIEW_PORT, {
         AMETHYST_E2E_PREVIEW_COI: "1",
       }),
-      url: previewUrl(APP_PORT + 2),
+      url: previewUrl(E2E_THREADS_PREVIEW_PORT),
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

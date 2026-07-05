@@ -1,4 +1,9 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+} from "./fixtures/e2eTest";
 import { MONERO_MINING_ADDRESS } from "./constants";
 import { generateBlocks } from "./helpers/moneroRpc";
 import { startMonerod } from "./helpers/monerod";

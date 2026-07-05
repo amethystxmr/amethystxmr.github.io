@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/e2eTest";
 import {
   FROM_KEYS_TEST_ADDRESS,
   MONERO_MINING_ADDRESS,
@@ -49,15 +49,6 @@ test("basic flow", async ({ page, context }) => {
       startingHeight: "30",
     });
     expect(await wallet1.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
-  });
-
-  await test.step("Production preview enables SharedArrayBuffer for threads", async () => {
-    await expect(page.evaluate(() => window.crossOriginIsolated)).resolves.toBe(
-      true,
-    );
-    await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
-      "function",
-    );
   });
 
   await test.step("Verify restored wallet has mined transactions", async () => {
