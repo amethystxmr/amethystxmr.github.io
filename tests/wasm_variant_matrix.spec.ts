@@ -8,7 +8,7 @@ import { callMoneroJsonRpc, generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import {
   expectMatrixRuntimeIsolation,
-  expectMatrixRuntimeVariant,
+  expectMatrixRuntimeSupportsVariant,
   expectMatrixServerCoiHeaders,
   expectMatrixServiceWorkers,
   expectPlaywrightProjectMatchesMatrix,
@@ -61,7 +61,7 @@ test("loads expected WASM variant and restores funded wallet", async ({
       expectations.allowsServiceWorkers &&
       !expectations.hasServerCoiHeaders
     ) {
-      await expectMatrixRuntimeVariant(page, "asyncify");
+      await expectMatrixRuntimeSupportsVariant(page, "asyncify");
       await expectMatrixServiceWorkers(page, expectations);
       await page.reload();
       await initial.waitUntilLoaded();
@@ -96,7 +96,7 @@ test("loads expected WASM variant and restores funded wallet", async ({
   await test.step("Options view shows expected WASM variant", async () => {
     await initial.expectLoaded();
     await page.getByRole("button", { name: /options/i }).click();
-    const desktopBuildInfo = page.locator(".hidden.sm\\:block");
+    const desktopBuildInfo = page.locator('[aria-label="Build information"]');
     await expect(desktopBuildInfo).toBeVisible();
     await expect(desktopBuildInfo).toContainText(expectations.expectedVariant);
   });

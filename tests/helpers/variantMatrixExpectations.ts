@@ -111,10 +111,10 @@ export async function expectMatrixRuntimeIsolation(
   page: Page,
   expectations: VariantMatrixExpectations,
 ): Promise<void> {
-  await expectMatrixRuntimeVariant(page, expectations.expectedVariant);
+  await expectMatrixRuntimeSupportsVariant(page, expectations.expectedVariant);
 }
 
-export async function expectMatrixRuntimeVariant(
+export async function expectMatrixRuntimeSupportsVariant(
   page: Page,
   expectedVariant: "asyncify" | "threads",
 ): Promise<void> {

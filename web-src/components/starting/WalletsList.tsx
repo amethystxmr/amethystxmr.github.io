@@ -1891,7 +1891,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
               <div>{wasmBuildVariantText}</div>
               <div>{moneroVersionText}</div>
             </div>
-            <div className="hidden sm:block">
+            <div aria-label="Build information" className="hidden sm:block">
               {`${buildInfoText}, ${wasmBuildVariantText}, ${moneroVersionText}`}
             </div>
           </div>
