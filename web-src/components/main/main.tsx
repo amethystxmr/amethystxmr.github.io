@@ -259,7 +259,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      const daemonHeight = await wallet.get_daemon_blockchain_height();
+      const daemonHeight = BigInt(await wallet.get_daemon_blockchain_height());
       if (cancelled) {
         return;
       }

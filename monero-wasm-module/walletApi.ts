@@ -30,7 +30,7 @@ export declare class MoneroWasmWallet {
   constructor(networkType: NetworkType);
   init(): MaybePromise<boolean>;
   delete(): void;
-  get_daemon_blockchain_height(): MaybePromise<bigint>;
+  get_daemon_blockchain_height(): MaybePromise<number>;
   generate(
     fileName: string,
     password: string,
@@ -113,7 +113,7 @@ export declare class MoneroWasmWallet {
     year: number,
     month: number,
     day: number,
-  ): MaybePromise<bigint>;
+  ): MaybePromise<number>;
   words_to_bytes(
     words: string,
     language: string,

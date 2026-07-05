@@ -650,14 +650,16 @@ async function getBlockchainHeightByDateUsingTempWallet(
   year: number,
   month: number,
   day: number,
-): Promise<bigint> {
-  const tempWallet = await createWalletUsingCurrentOptions();
-  try {
-    await tempWallet.init();
-    return await tempWallet.get_blockchain_height_by_date(year, month, day);
-  } finally {
-    await closeWallet(tempWallet);
-  }
+): Promise<number> {
+  return await withFsLock(async () => {
+    const tempWallet = await createWalletUsingCurrentOptions();
+    try {
+      await tempWallet.init();
+      return await tempWallet.get_blockchain_height_by_date(year, month, day);
+    } finally {
+      await closeWallet(tempWallet);
+    }
+  });
 }
 
 function DoublePasswordInput({
@@ -838,10 +840,8 @@ function RestoreView({
         const year = birthdayDate.getUTCFullYear();
         const month = birthdayDate.getUTCMonth() + 1;
         const day = birthdayDate.getUTCDate();
-        restoreHeight = await getBlockchainHeightByDateUsingTempWallet(
-          year,
-          month,
-          day,
+        restoreHeight = BigInt(
+          await getBlockchainHeightByDateUsingTempWallet(year, month, day),
         );
         if (isUnmountedRef.current) {
           releaseWalletOpenLock?.();
@@ -906,7 +906,7 @@ function RestoreView({
         }
         await wallet.set_explicit_refresh_from_block_height(true);
         await wallet.set_refresh_from_block_height(
-          restoreHeight ?? (await wallet.get_daemon_blockchain_height()),
+          restoreHeight ?? BigInt(await wallet.get_daemon_blockchain_height()),
         );
         await wallet.rewrite(fileName, password);
         await wallet.store();
@@ -955,6 +955,9 @@ function RestoreView({
   };
 
   const onDateChange = (value: string) => {
+    if (loadingHeight) {
+      return;
+    }
     const d = new Date(value);
     if (isNaN(d.getTime())) {
       return;
@@ -999,7 +1002,7 @@ function RestoreView({
         />
         <Input
           type="date"
-          disabled={restoring}
+          disabled={loadingHeight || restoring}
           onChange={(e) => onDateChange(e.target.value)}
         />
       </div>
@@ -1348,7 +1351,7 @@ function CreateNewWalletView({
           }
           return {
             ...prev,
-            daemonHeight,
+            daemonHeight: BigInt(daemonHeight),
             daemonHeightFetchedAt: Date.now(),
           };
         });

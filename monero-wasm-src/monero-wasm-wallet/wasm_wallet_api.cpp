@@ -126,7 +126,9 @@ public:
         return m_wallet.init("127.1.2.3");
     }
 
-    auto get_daemon_blockchain_height()
+    /** `double`: Embind/asyncify rewind mishandles mixed i64/bigint returns on some WASM runs;
+     *  block heights fit safely in IEEE double integer range. */
+    double get_daemon_blockchain_height()
     {
         auto err = std::string{};
         auto blockchain_height = m_wallet.get_daemon_blockchain_height(err);
@@ -134,7 +136,7 @@ public:
         {
             throw std::runtime_error(err);
         }
-        return blockchain_height;
+        return static_cast<double>(blockchain_height);
     }
 
     emscripten::val generate(
@@ -1154,9 +1156,10 @@ public:
         return r;
     }
 
-    auto get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
+    /** `double`: same Asyncify/Embind rationale as `get_daemon_blockchain_height`. */
+    double get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
     {
-        return m_wallet.get_blockchain_height_by_date(year, month, day);
+        return static_cast<double>(m_wallet.get_blockchain_height_by_date(year, month, day));
     }
 
     auto get_multisig_status()
