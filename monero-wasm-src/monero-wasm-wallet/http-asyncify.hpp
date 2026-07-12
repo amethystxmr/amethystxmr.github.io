@@ -8,7 +8,8 @@
 namespace {
 
 /** Async XHR plus Asyncify lets the wallet worker pump events during RPC, so progress
- * events can reach `globalHttpConfig.onFetch`. Linked with `-sASYNCIFY` (see root CMakeLists).
+ * events can reach the UI through the per-module fetch BroadcastChannel.
+ * Linked with `-sASYNCIFY` (see root CMakeLists).
  */
 EM_ASYNC_JS(int, js_http_xhr_invoke, (
     const char *uri_ptr, int uri_len,
@@ -35,6 +36,24 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
 
     const config = globalThis.globalHttpConfig;
     const reqId = Math.random().toString(16).slice(2);
+    const postFetch = (state, loaded, total) => {
+      const channelName = config.httpFetchEventChannelName;
+      if (!channelName || typeof BroadcastChannel !== 'function')
+        return;
+      try {
+        if (!globalThis.__amethystHttpFetchChannels)
+          globalThis.__amethystHttpFetchChannels = new Map();
+        let channel = globalThis.__amethystHttpFetchChannels.get(channelName);
+        if (!channel) {
+          channel = new BroadcastChannel(channelName);
+          globalThis.__amethystHttpFetchChannels.set(channelName, channel);
+        }
+        channel.postMessage({ url: uri, reqId, state, progressLoaded: loaded, progressTotal: total });
+      }
+      catch (e) {
+        // HTTP must continue even if progress delivery is unavailable.
+      }
+    };
 
     const body =
       method !== 'GET' && body_len > 0
@@ -43,7 +62,7 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
     const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
 
     const finalUrl = config.mapUrl(uri);
-    config.onFetch(uri, reqId, 'start', 0, 0);
+    postFetch('start', 0, 0);
 
     /** Do not invoke WASM imports (resize_std_string, HEAP*) from xhr.* handlers:
      *  while awaiting the Promise, WASM is paused in Asyncify and re-entry corrupts RPC.
@@ -52,7 +71,7 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
       heap32()[response_code_i32_ptr >> 2] = 0;
       resizeStdString(mime_std_string_ptr, 0);
       resizeStdString(body_std_string_ptr, 0);
-      config.onFetch(uri, reqId, state, 0, 0);
+      postFetch(state, 0, 0);
     };
 
     try
@@ -66,7 +85,7 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
         xhr.onprogress = (e) => {
           if (!e.lengthComputable)
             return;
-          config.onFetch(uri, reqId, 'progress', e.loaded, e.total);
+          postFetch('progress', e.loaded, e.total);
         };
 
         xhr.onload = () => {
@@ -133,7 +152,7 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
       heapU8().set(xhrOutcome.bodyCopy, outBodyPtr);
 
       const len = xhrOutcome.bodyCopy.length;
-      config.onFetch(uri, reqId, 'end', len, len);
+      postFetch('end', len, len);
 
       return 1;
     }
@@ -145,6 +164,20 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
 });
 
 } // namespace
+
+void set_http_base_url(const std::string &base_url)
+{
+    // Asyncify resolves URLs through `globalHttpConfig.mapUrl`; keep this
+    // function to match the Threads Embind surface.
+    (void)base_url;
+}
+
+void set_http_fetch_event_channel(const std::string &channel_name)
+{
+    // Asyncify reads the channel name from `globalHttpConfig`; keep this
+    // function to match the Threads Embind surface.
+    (void)channel_name;
+}
 
 class js_http_client : public epee::net_utils::http::abstract_http_client
 {

@@ -10,6 +10,7 @@ export type WasmBuildVariant = "asyncify" | "threads";
 
 export type InitModuleOptions = {
   variant: WasmBuildVariant;
+  httpFetchEventChannelName?: string;
 };
 
 /** Embind + Asyncify may return a plain value (sync path) or a Promise (after a yield). */
@@ -342,6 +343,8 @@ interface Module {
   decrementExceptionRefcount?(exn: WasmExceptionValue): void;
   /** Optional Monero logging categories (`mlog_set_categories` from wasm). */
   mlog_set_categories?(categories: string): void;
+  set_http_base_url?(baseUrl: string): void;
+  set_http_fetch_event_channel?(channelName: string): void;
   FS: {
     mkdir(path: string): void;
     mount(type: IDBFS, opts: Record<string, never>, mountpoint: string): void;
@@ -413,6 +416,7 @@ declare const __WASM_WALLET_SIZES__: Record<WasmBuildVariant, number>;
 
 let module: Module;
 let loadedWasmBuildVariant: WasmBuildVariant | null = null;
+let currentDaemonAddress: string | null = null;
 
 const wasmUrls: Record<WasmBuildVariant, string> = {
   asyncify: new URL("./wasm_wallet_asyncify.wasm", import.meta.url).href,
@@ -587,6 +591,14 @@ type HttpFetchState =
 
 export type { HttpFetchState };
 
+export type HttpFetchEvent = {
+  url: string;
+  reqId: string;
+  state: HttpFetchState;
+  progressLoaded: number;
+  progressTotal: number;
+};
+
 /** Daemon RPC progress from the wallet worker. When `progressTotal` is 0, the UI treats the request as indeterminate until a `progress` event with `lengthComputable`. */
 export type HttpFetchCallback = (
   url: string,
@@ -598,7 +610,7 @@ export type HttpFetchCallback = (
 
 type GlobalHttpConfig = {
   mapUrl: (url: string) => string;
-  onFetch: HttpFetchCallback;
+  httpFetchEventChannelName: string | null;
 };
 
 type WalletRuntimeGlobal = typeof globalThis & {
@@ -618,11 +630,30 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
     mapUrl: () => {
       throw new Error("mapUrl not set");
     },
-    onFetch: (...args) => {
-      console.log("onFetch", ...args);
-    },
+    httpFetchEventChannelName: null,
   };
   return runtimeGlobal.globalHttpConfig;
+}
+
+function setHttpFetchEventChannelName(channelName: string | undefined) {
+  if (!channelName) {
+    return;
+  }
+  ensureGlobalHttpConfig().httpFetchEventChannelName = channelName;
+}
+
+function syncHttpConfigToModule() {
+  if (!module) {
+    return;
+  }
+
+  const config = ensureGlobalHttpConfig();
+  if (currentDaemonAddress !== null) {
+    module.set_http_base_url?.(currentDaemonAddress);
+  }
+  if (config.httpFetchEventChannelName) {
+    module.set_http_fetch_event_channel?.(config.httpFetchEventChannelName);
+  }
 }
 
 function getWasmProgressTotal(event: ProgressEvent, variant: WasmBuildVariant) {
@@ -709,6 +740,8 @@ export async function initModule(
   options: InitModuleOptions,
 ) {
   if (module) {
+    setHttpFetchEventChannelName(options.httpFetchEventChannelName);
+    syncHttpConfigToModule();
     onProgress?.({ phase: "moduleReady" });
     return;
   }
@@ -774,6 +807,8 @@ export async function initModule(
   await initFilesystem();
   getWalletRuntimeGlobal().moneroWalletModule = module;
   ensureGlobalHttpConfig();
+  setHttpFetchEventChannelName(options.httpFetchEventChannelName);
+  syncHttpConfigToModule();
   onProgress?.({ phase: "moduleReady" });
 }
 
@@ -785,15 +820,15 @@ export function getWasmBuildVariant(): WasmBuildVariant {
 }
 
 export function setDaemonAddress(daemonAddress: string) {
+  currentDaemonAddress = daemonAddress;
   ensureGlobalHttpConfig().mapUrl = (url) => daemonAddress + url;
+  module?.set_http_base_url?.(daemonAddress);
 }
 
 export function setHttpFetchCallback(callback: HttpFetchCallback | null) {
-  ensureGlobalHttpConfig().onFetch =
-    callback ??
-    ((...args) => {
-      console.log("onFetch", ...args);
-    });
+  // Fetch progress is delivered through the per-module BroadcastChannel.
+  // Keep this worker API method as a compatibility no-op.
+  void callback;
 }
 
 export function setWalletNewBlockCallback(

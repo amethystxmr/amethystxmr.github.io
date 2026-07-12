@@ -1634,6 +1634,8 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         "get_monero_version_full",
         emscripten::optional_override([]() -> std::string
                                       { return MONERO_VERSION_FULL; }));
+    emscripten::function("set_http_base_url", &set_http_base_url);
+    emscripten::function("set_http_fetch_event_channel", &set_http_fetch_event_channel);
 };
 
 int main()
