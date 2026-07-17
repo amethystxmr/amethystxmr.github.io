@@ -5,6 +5,7 @@ import {
   Button,
   ButtonsHolder,
   ConfirmByTextDialog,
+  ConfirmDialog,
   Toggle,
   Header,
   Input,
@@ -25,6 +26,10 @@ import {
   MoneroWasmWallet,
   api as walletApi,
 } from "../../../monero-wasm-module/walletApi.workerClient";
+import {
+  isAsyncifyBuildForced,
+  setAsyncifyBuildForced,
+} from "../../../monero-wasm-module/wasmVariantOverride";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { DAEMON_PRESET_OPTIONS, options } from "../options";
@@ -1746,6 +1751,42 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
+  const asyncifyForced = isAsyncifyBuildForced();
+  const [wasmVariantDialog, setWasmVariantDialog] = React.useState<
+    "none" | "force-asyncify" | "restore-threads"
+  >("none");
+  const threadsClickCountRef = React.useRef(0);
+  const isWasmVariantInteractive =
+    asyncifyForced || wasmBuildVariantText === "threads";
+  const handleWasmVariantClick = () => {
+    if (asyncifyForced) {
+      setWasmVariantDialog("restore-threads");
+      return;
+    }
+    if (wasmBuildVariantText !== "threads") {
+      return;
+    }
+    threadsClickCountRef.current += 1;
+    if (threadsClickCountRef.current >= 3) {
+      threadsClickCountRef.current = 0;
+      setWasmVariantDialog("force-asyncify");
+    }
+  };
+  const wasmVariantLabel = (
+    <span
+      className={
+        asyncifyForced
+          ? "cursor-pointer text-red-400"
+          : isWasmVariantInteractive
+            ? "cursor-pointer"
+            : undefined
+      }
+      onClick={isWasmVariantInteractive ? handleWasmVariantClick : undefined}
+    >
+      {wasmBuildVariantText}
+    </span>
+  );
+
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
     setDaemonSelectValue(getDaemonSelectValue(daemonAddress));
@@ -1793,6 +1834,31 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>Options</Header>
+
+      <ConfirmDialog
+        open={wasmVariantDialog === "force-asyncify"}
+        title="Switch WASM build"
+        message="Do you want to switch to Asyncify build?"
+        confirmText="Switch"
+        cancelText="Cancel"
+        onCancel={() => setWasmVariantDialog("none")}
+        onConfirm={() => {
+          setAsyncifyBuildForced(true);
+          window.location.reload();
+        }}
+      />
+      <ConfirmDialog
+        open={wasmVariantDialog === "restore-threads"}
+        title="Switch WASM build"
+        message="Asyncify mode is enforced. Do you want to switch back to Threads?"
+        confirmText="Switch"
+        cancelText="Cancel"
+        onCancel={() => setWasmVariantDialog("none")}
+        onConfirm={() => {
+          setAsyncifyBuildForced(false);
+          window.location.reload();
+        }}
+      />
 
       <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <div className="space-y-4 scrollbar-glass lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-auto lg:pr-1">
@@ -1891,11 +1957,11 @@ function OptionsView({ onBack }: { onBack: () => void }) {
           <div className="mb-3 px-2 text-center text-[10px] text-white/45">
             <div className="space-y-1 sm:hidden">
               <div>{buildInfoText}</div>
-              <div>{wasmBuildVariantText}</div>
+              <div>{wasmVariantLabel}</div>
               <div>{moneroVersionText}</div>
             </div>
             <div aria-label="Build information" className="hidden sm:block">
-              {`${buildInfoText}, ${wasmBuildVariantText}, ${moneroVersionText}`}
+              {buildInfoText}, {wasmVariantLabel}, {moneroVersionText}
             </div>
           </div>
           <ButtonsHolder>

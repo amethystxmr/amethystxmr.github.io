@@ -275,3 +275,61 @@ test("service worker control timeout reloads once then falls back to asyncify", 
   ).resolves.toMatch(/service-worker\.js$/);
   await openOptionsAndExpectWasmVariant(page, initial, "asyncify");
 });
+
+test("options enforces asyncify build via triple-click and restores threads", async ({
+  page,
+  request,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== SERVICE_WORKER_BOOTSTRAP_PROJECT,
+    "Covers the no-server-COI service-worker bootstrap project only.",
+  );
+
+  const expectations = getVariantMatrixExpectations(testInfo.project.name);
+  const initial = new InitialWalletListPage(page);
+  const buildInfo = page.locator('[aria-label="Build information"]');
+
+  await expectPreviewServerCoiHeadersMatchMatrix(request, expectations);
+
+  await initial.goto();
+  await initial.waitUntilLoaded();
+  await expectPageIsolationForWasmVariant(page, "threads");
+
+  await test.step("Triple-click threads to enforce the Asyncify build", async () => {
+    await page.getByRole("button", { name: /options/i }).click();
+    await expect(buildInfo).toContainText("threads");
+    const threadsLabel = buildInfo.getByText("threads", { exact: true });
+    await threadsLabel.click();
+    await threadsLabel.click();
+    await threadsLabel.click();
+    await page.getByRole("button", { name: "Switch" }).click();
+  });
+
+  await test.step("Reloads into the enforced Asyncify build shown in red", async () => {
+    await initial.waitUntilLoaded();
+    await page.getByRole("button", { name: /options/i }).click();
+    await expect(buildInfo).toContainText("asyncify");
+    await expect(buildInfo.getByText("asyncify", { exact: true })).toHaveClass(
+      /text-red/,
+    );
+    await expect(
+      page.evaluate(() =>
+        localStorage.getItem("amethystxmr:force-asyncify-build"),
+      ),
+    ).resolves.toBe("1");
+  });
+
+  await test.step("Switches back to the Threads build", async () => {
+    await buildInfo.getByText("asyncify", { exact: true }).click();
+    await page.getByRole("button", { name: "Switch" }).click();
+    await initial.waitUntilLoaded();
+    await expectPageIsolationForWasmVariant(page, "threads");
+    await page.getByRole("button", { name: /options/i }).click();
+    await expect(buildInfo).toContainText("threads");
+    await expect(
+      page.evaluate(() =>
+        localStorage.getItem("amethystxmr:force-asyncify-build"),
+      ),
+    ).resolves.toBeNull();
+  });
+});
