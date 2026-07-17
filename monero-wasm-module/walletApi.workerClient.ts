@@ -171,9 +171,9 @@ export async function setWalletNewBlockCallback(
   await wallet.set_on_new_block_callback(proxyCallback);
 }
 
-export const setHttpFetchCallback = async (
+export const setHttpFetchCallback = (
   callback: HttpFetchCallback | null,
-): Promise<void> => {
+): void => {
   httpFetchCallback = callback;
   ensureHttpFetchEventChannel();
 };
