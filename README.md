@@ -42,8 +42,6 @@ The build directories, Emscripten cache directories, and dependency directories
 are also variant-specific, e.g. `built-wasm-Release-Asyncify` and
 `built-wasm-Release-Threads`.
 
-````
-
 ## C++ IDE support
 
 VSCode/Cursor should use the `clangd` extension for C/C++ support. Install
@@ -51,7 +49,7 @@ VSCode/Cursor should use the `clangd` extension for C/C++ support. Install
 
 ```bash
 npm run ide:install-clangd
-````
+```
 
 The project still builds with Emscripten `em++`; the workspace clangd config
 queries `em++` for the wasm target, sysroot, and headers.

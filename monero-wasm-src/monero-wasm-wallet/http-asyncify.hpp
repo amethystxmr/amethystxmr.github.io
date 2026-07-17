@@ -184,11 +184,11 @@ class js_http_client : public epee::net_utils::http::abstract_http_client
 public:
     js_http_client()
     {
-        printf("Note: js_http_client(%i)::constructor called\n", m_my_id);
+        // printf("Note: js_http_client(%i)::constructor called\n", m_my_id);
     }
     ~js_http_client()
     {
-        printf("Note: js_http_client(%i)::destructor called\n", m_my_id);
+        // printf("Note: js_http_client(%i)::destructor called\n", m_my_id);
     }
 
     bool set_server(
@@ -196,7 +196,7 @@ public:
         boost::optional<tools::login> user,
         epee::net_utils::ssl_options_t ssl_options = epee::net_utils::ssl_support_t::e_ssl_support_autodetect)
     {
-        printf("js_http_client(%i)::set_server called with address=%s\n", m_my_id, address.c_str());
+        // printf("js_http_client(%i)::set_server called with address=%s\n", m_my_id, address.c_str());
         return true;
     }
     void set_server(
@@ -205,34 +205,34 @@ public:
         boost::optional<epee::net_utils::http::login> user,
         epee::net_utils::ssl_options_t ssl_options = epee::net_utils::ssl_support_t::e_ssl_support_autodetect)
     {
-        printf("js_http_client(%i)::set_server called with host=%s, port=%s\n", m_my_id, host.c_str(), port.c_str());
+        // printf("js_http_client(%i)::set_server called with host=%s, port=%s\n", m_my_id, host.c_str(), port.c_str());
     }
 
     bool set_proxy(const std::string &address)
     {
-        printf("js_http_client(%i)::set_proxy called with address=%s\n", m_my_id, address.c_str());
+        // printf("js_http_client(%i)::set_proxy called with address=%s\n", m_my_id, address.c_str());
         return true;
     }
 
     void set_auto_connect(bool auto_connect)
     {
-        printf("js_http_client(%i)::set_auto_connect called with auto_connect=%d\n", m_my_id, auto_connect);
+        // printf("js_http_client(%i)::set_auto_connect called with auto_connect=%d\n", m_my_id, auto_connect);
     }
     bool connect(std::chrono::milliseconds timeout)
     {
-        printf("js_http_client(%i)::connect called with timeout=%lld ms\n", m_my_id, timeout.count());
+        // printf("js_http_client(%i)::connect called with timeout=%lld ms\n", m_my_id, timeout.count());
         m_is_connected = true;
         return true;
     }
     bool disconnect()
     {
-        printf("js_http_client(%i)::disconnect called\n", m_my_id);
+        // printf("js_http_client(%i)::disconnect called\n", m_my_id);
         m_is_connected = false;
         return true;
     }
     bool is_connected(bool *ssl = nullptr)
     {
-        printf("js_http_client(%i)::is_connected called\n", m_my_id);
+        // printf("js_http_client(%i)::is_connected called\n", m_my_id);
         return m_is_connected;
     }
     bool invoke(
@@ -249,9 +249,9 @@ public:
         }
         m_is_busy = true;
 
-        std::string uri_str(uri.data(), uri.size());
-        printf("js_http_client(%i)::invoke called with uri=%s\n", m_my_id,
-               uri_str.c_str());
+        // std::string uri_str(uri.data(), uri.size());
+        // printf("js_http_client(%i)::invoke called with uri=%s\n", m_my_id,
+        //        uri_str.c_str());
 
         if (ppresponse_info)
         {
@@ -299,12 +299,12 @@ public:
     }
     uint64_t get_bytes_sent() const
     {
-        printf("my-demo: js_http_client(%i)::get_bytes_sent called\n", m_my_id);
+        // printf("my-demo: js_http_client(%i)::get_bytes_sent called\n", m_my_id);
         return 0;
     }
     uint64_t get_bytes_received() const
     {
-        printf("my-demo: js_http_client(%i)::get_bytes_received called\n", m_my_id);
+        // printf("my-demo: js_http_client(%i)::get_bytes_received called\n", m_my_id);
         return 0;
     }
 
