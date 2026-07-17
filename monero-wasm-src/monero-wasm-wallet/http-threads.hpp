@@ -18,6 +18,11 @@ struct BusyFlagGuard
     explicit BusyFlagGuard(bool &is_busy)
         : m_is_busy(is_busy)
     {
+        if (m_is_busy)
+        {
+            throw std::runtime_error("js_http_client::invoke called while another request is in progress");
+        }
+        m_is_busy = true;
     }
 
     ~BusyFlagGuard()
@@ -312,11 +317,6 @@ public:
         const epee::net_utils::http::http_response_info **ppresponse_info = nullptr,
         const epee::net_utils::http::fields_list &additional_params = epee::net_utils::http::fields_list())
     {
-        if (m_is_busy)
-        {
-            throw std::runtime_error("js_http_client::invoke called while another request is in progress");
-        }
-        m_is_busy = true;
         BusyFlagGuard busy_guard(m_is_busy);
 
         // std::string uri_str(uri.data(), uri.size());
