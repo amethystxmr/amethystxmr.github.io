@@ -29,7 +29,7 @@ import {
 import {
   isAsyncifyBuildForced,
   setAsyncifyBuildForced,
-} from "../../../monero-wasm-module/wasmVariantOverride";
+} from "../../startup/wasmVariant";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { DAEMON_PRESET_OPTIONS, options } from "../options";

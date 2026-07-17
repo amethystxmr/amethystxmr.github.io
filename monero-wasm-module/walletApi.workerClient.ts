@@ -1,6 +1,5 @@
 import * as Comlink from "comlink";
 import type { exposedApi } from "./walletApi.worker";
-import { isAsyncifyBuildForced } from "./wasmVariantOverride";
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority as FeePriorityConst,
@@ -54,16 +53,6 @@ export type RemoteApi = Comlink.Remote<typeof exposedApi>;
 
 let httpFetchEventChannel: BroadcastChannel | null = null;
 let httpFetchCallback: HttpFetchCallback | null = null;
-
-function selectWasmBuildVariant(): WasmBuildVariant {
-  if (isAsyncifyBuildForced()) {
-    return "asyncify";
-  }
-  return globalThis.crossOriginIsolated &&
-    typeof SharedArrayBuffer === "function"
-    ? "threads"
-    : "asyncify";
-}
 
 function createHttpFetchEventChannelName() {
   const randomId =
@@ -153,10 +142,14 @@ function ensureHttpFetchEventChannel() {
 }
 
 export const initModule: (
+  variant: WasmBuildVariant,
   onProgress?: Parameters<typeof exposedApi.initModule>[0],
-) => ReturnType<typeof exposedApi.initModule> = async (onProgress = null) => {
+) => ReturnType<typeof exposedApi.initModule> = async (
+  variant,
+  onProgress = null,
+) => {
   await api.initModule(onProgress ? Comlink.proxy(onProgress) : null, {
-    variant: selectWasmBuildVariant(),
+    variant,
     httpFetchEventChannelName,
   });
   ensureHttpFetchEventChannel();

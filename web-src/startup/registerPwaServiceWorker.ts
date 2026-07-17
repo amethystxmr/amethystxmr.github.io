@@ -1,4 +1,4 @@
-import { isAsyncifyBuildForced } from "../../monero-wasm-module/wasmVariantOverride";
+import { isAsyncifyBuildForced } from "./wasmVariant";
 
 function getServiceWorkerUrl() {
   const path = window.location.pathname;
