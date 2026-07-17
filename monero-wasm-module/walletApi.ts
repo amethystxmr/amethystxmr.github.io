@@ -830,12 +830,6 @@ export function setDaemonAddress(daemonAddress: string) {
   module?.set_http_base_url?.(daemonAddress);
 }
 
-export function setHttpFetchCallback(callback: HttpFetchCallback | null) {
-  // Fetch progress is delivered through the per-module BroadcastChannel.
-  // Keep this worker API method as a compatibility no-op.
-  void callback;
-}
-
 export function setWalletNewBlockCallback(
   wallet: MoneroWasmWallet,
   callback: WalletNewBlockCallback,
