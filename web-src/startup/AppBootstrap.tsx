@@ -1,11 +1,9 @@
 import * as React from "react";
 import type { ModuleLoadProgress } from "../../monero-wasm-module/walletApi.workerClient";
-import {
-  APP_OVERLAY_ROOT_ATTRIBUTE,
-  AlertProvider,
-  MultisigDataOverlayProvider,
-  ProgressBar,
-} from "../components/ui";
+// Import the boot-screen primitives directly (not via the ui barrel) so the
+// initial bundle stays minimal; the rest of the UI loads with loadUiModule.
+import { APP_OVERLAY_ROOT_ATTRIBUTE } from "../components/ui/OverlayPrimitives";
+import { ProgressBar } from "../components/ui/ProgressBar";
 import { registerPwaServiceWorker } from "./registerPwaServiceWorker";
 import { selectWasmBuildVariant } from "./wasmVariant";
 
@@ -25,6 +23,7 @@ type BootState =
     }
   | {
       type: "ready";
+      UiComponent: React.ComponentType;
     };
 
 /** Loads the UI module to mount once the wallet runtime is ready. */
@@ -156,8 +155,6 @@ export function AppBootstrap({ loadUiModule }: { loadUiModule: LoadUiModule }) {
     type: "booting",
     progress: { phase: "preparingModule" },
   });
-  const [UiComponent, setUiComponent] =
-    React.useState<React.ComponentType | null>(null);
 
   // Keep the latest factory without re-running the one-shot boot effect.
   const loadUiModuleRef = React.useRef(loadUiModule);
@@ -210,8 +207,7 @@ export function AppBootstrap({ loadUiModule }: { loadUiModule: LoadUiModule }) {
         if (cancelled) {
           return;
         }
-        setUiComponent(() => LoadedUi);
-        setBootState({ type: "ready" });
+        setBootState({ type: "ready", UiComponent: LoadedUi });
       } catch (error) {
         if (cancelled) {
           return;
@@ -229,11 +225,6 @@ export function AppBootstrap({ loadUiModule }: { loadUiModule: LoadUiModule }) {
     };
   }, []);
 
-  const statusViewState: Exclude<BootState, { type: "ready" }> =
-    bootState.type === "ready"
-      ? { type: "booting", progress: { phase: "loadingWalletUi" } }
-      : bootState;
-
   return (
     <div className="scrollbar-hidden-mobile mx-auto h-dvh w-full max-w-[1200px] overflow-y-auto overflow-x-hidden p-0 sm:h-auto sm:overflow-visible sm:p-6">
       <div
@@ -242,15 +233,11 @@ export function AppBootstrap({ loadUiModule }: { loadUiModule: LoadUiModule }) {
       >
         <div className="ambient-pane-overlay" />
         <div className="relative z-10">
-          <AlertProvider>
-            <MultisigDataOverlayProvider>
-              {bootState.type === "ready" && UiComponent ? (
-                <UiComponent />
-              ) : (
-                <BootStatusView state={statusViewState} />
-              )}
-            </MultisigDataOverlayProvider>
-          </AlertProvider>
+          {bootState.type === "ready" ? (
+            <bootState.UiComponent />
+          ) : (
+            <BootStatusView state={bootState} />
+          )}
         </div>
       </div>
     </div>
