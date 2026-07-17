@@ -1,3 +1,5 @@
+import { isAsyncifyBuildForced } from "../../monero-wasm-module/wasmVariantOverride";
+
 function getServiceWorkerUrl() {
   const path = window.location.pathname;
   const dirPath = path.endsWith("/") ? path : path.replace(/\/[^/]*$/, "/");
@@ -11,6 +13,7 @@ export type PwaServiceWorkerBootstrapResult =
       reason:
         | "non-production-build"
         | "native-app"
+        | "asyncify-build-forced"
         | "shared-array-buffer-available"
         | "insecure-context"
         | "service-worker-unavailable";
@@ -32,7 +35,11 @@ const SERVICE_WORKER_RELOAD_SESSION_KEY =
   "amethystxmr:service-worker-reload-for-control";
 
 function isSharedArrayBufferAvailable() {
-  return typeof SharedArrayBuffer === "function";
+  // Mirror walletApi.workerClient's variant selection: the Threads build needs a
+  // cross-origin isolated context, not just the SharedArrayBuffer constructor.
+  return (
+    globalThis.crossOriginIsolated && typeof SharedArrayBuffer === "function"
+  );
 }
 
 function serviceWorkerReloadWasAttempted(swUrl: string) {
@@ -120,11 +127,15 @@ function waitForServiceWorkerControl(
       { once: true },
     );
     registration.addEventListener("updatefound", onUpdateFound);
-    watchWorker(
-      registration.active ?? registration.waiting ?? registration.installing,
-    );
 
-    if (navigator.serviceWorker.controller || registration.active) {
+    // Prefer a worker that is still installing/waiting: it may be an updated COI
+    // worker replacing a stale active worker that does not inject COOP/COEP. Only
+    // treat an existing active worker as ready when no update is pending, so we do
+    // not reload through the old script and waste the single reload attempt.
+    const pendingWorker = registration.installing ?? registration.waiting;
+    if (pendingWorker) {
+      watchWorker(pendingWorker);
+    } else if (navigator.serviceWorker.controller) {
       finish();
     }
   });
@@ -143,6 +154,16 @@ export function registerPwaServiceWorker(): Promise<PwaServiceWorkerBootstrapRes
   }
 
   bootstrapPromise = (async () => {
+    if (isAsyncifyBuildForced()) {
+      // The user pinned the Asyncify build, which does not need isolation.
+      clearServiceWorkerReloadAttempt();
+      return {
+        type: "skipped",
+        reason: "asyncify-build-forced",
+        sharedArrayBufferAvailable: isSharedArrayBufferAvailable(),
+      } as const;
+    }
+
     if (isSharedArrayBufferAvailable()) {
       clearServiceWorkerReloadAttempt();
       return {
@@ -156,7 +177,7 @@ export function registerPwaServiceWorker(): Promise<PwaServiceWorkerBootstrapRes
       return {
         type: "skipped",
         reason: "non-production-build",
-        sharedArrayBufferAvailable: false,
+        sharedArrayBufferAvailable: isSharedArrayBufferAvailable(),
       } as const;
     }
 
@@ -164,7 +185,7 @@ export function registerPwaServiceWorker(): Promise<PwaServiceWorkerBootstrapRes
       return {
         type: "skipped",
         reason: "native-app",
-        sharedArrayBufferAvailable: false,
+        sharedArrayBufferAvailable: isSharedArrayBufferAvailable(),
       } as const;
     }
 
@@ -172,7 +193,7 @@ export function registerPwaServiceWorker(): Promise<PwaServiceWorkerBootstrapRes
       return {
         type: "skipped",
         reason: "insecure-context",
-        sharedArrayBufferAvailable: false,
+        sharedArrayBufferAvailable: isSharedArrayBufferAvailable(),
       } as const;
     }
 
@@ -180,7 +201,7 @@ export function registerPwaServiceWorker(): Promise<PwaServiceWorkerBootstrapRes
       return {
         type: "skipped",
         reason: "service-worker-unavailable",
-        sharedArrayBufferAvailable: false,
+        sharedArrayBufferAvailable: isSharedArrayBufferAvailable(),
       } as const;
     }
 

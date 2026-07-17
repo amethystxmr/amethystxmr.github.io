@@ -1,5 +1,6 @@
 import * as Comlink from "comlink";
 import type { exposedApi } from "./walletApi.worker";
+import { isAsyncifyBuildForced } from "./wasmVariantOverride";
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority as FeePriorityConst,
@@ -55,6 +56,9 @@ let httpFetchEventChannel: BroadcastChannel | null = null;
 let httpFetchCallback: HttpFetchCallback | null = null;
 
 function selectWasmBuildVariant(): WasmBuildVariant {
+  if (isAsyncifyBuildForced()) {
+    return "asyncify";
+  }
   return globalThis.crossOriginIsolated &&
     typeof SharedArrayBuffer === "function"
     ? "threads"

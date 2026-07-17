@@ -740,6 +740,11 @@ export async function initModule(
   options: InitModuleOptions,
 ) {
   if (module) {
+    if (loadedWasmBuildVariant !== options.variant) {
+      throw new Error(
+        `Wallet module already initialized as "${loadedWasmBuildVariant}"; switching to "${options.variant}" requires a reload.`,
+      );
+    }
     setHttpFetchEventChannelName(options.httpFetchEventChannelName);
     syncHttpConfigToModule();
     onProgress?.({ phase: "moduleReady" });
