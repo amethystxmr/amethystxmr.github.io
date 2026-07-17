@@ -5,6 +5,7 @@ import {
   Button,
   ButtonsHolder,
   ConfirmByTextDialog,
+  ConfirmDialog,
   Toggle,
   Header,
   Input,
@@ -741,6 +742,8 @@ function RestoreView({
   >("monero-25");
 
   const [restoring, setRestoring] = React.useState(false);
+  const [confirmUseDaemonHeight, setConfirmUseDaemonHeight] =
+    React.useState(false);
 
   const doRestore = (
     seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
@@ -792,6 +795,21 @@ function RestoreView({
       }
     }
 
+    const needsManualHeight =
+      seedType === "monero-25" ||
+      seedType === "multisig" ||
+      seedType === "from-keys";
+    if (needsManualHeight && startingHeight.trim() === "") {
+      setConfirmUseDaemonHeight(true);
+      return;
+    }
+
+    runRestore(seedType);
+  };
+
+  const runRestore = (
+    seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
+  ) => {
     setRestoring(true);
     let wallet: MoneroWasmWallet | undefined;
     let releaseWalletOpenLock: (() => void) | null = null;
@@ -1015,6 +1033,18 @@ function RestoreView({
   return (
     <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>Restore wallet</Header>
+      <ConfirmDialog
+        open={confirmUseDaemonHeight}
+        title="No starting height"
+        message="No height is provided. Do you want to use current blockchain height?"
+        confirmText="Yes"
+        cancelText="No"
+        onCancel={() => setConfirmUseDaemonHeight(false)}
+        onConfirm={() => {
+          setConfirmUseDaemonHeight(false);
+          runRestore(seedType);
+        }}
+      />
       <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <FormRow className="lg:shrink-0">
           <Label>Wallet name</Label>
