@@ -188,28 +188,26 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
 
   React.useEffect(() => {
-    void setHttpFetchCallback(
-      (url, reqId, state, progressLoaded, progressTotal) => {
-        console.info(
-          `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
-        );
-        if (
-          state === "end" ||
-          state === "error" ||
-          state === "timeout" ||
-          state === "abort"
-        ) {
-          setDownloadInfo(null);
-        } else if (state === "start" || state === "progress") {
-          setDownloadInfo({ url, progressLoaded, progressTotal });
-        } else {
-          state satisfies never;
-        }
-      },
-    );
+    setHttpFetchCallback((url, reqId, state, progressLoaded, progressTotal) => {
+      console.info(
+        `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
+      );
+      if (
+        state === "end" ||
+        state === "error" ||
+        state === "timeout" ||
+        state === "abort"
+      ) {
+        setDownloadInfo(null);
+      } else if (state === "start" || state === "progress") {
+        setDownloadInfo({ url, progressLoaded, progressTotal });
+      } else {
+        state satisfies never;
+      }
+    });
 
     return () => {
-      void setHttpFetchCallback(null);
+      setHttpFetchCallback(null);
     };
   }, [wallet]);
 
