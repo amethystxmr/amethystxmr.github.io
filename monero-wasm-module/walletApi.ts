@@ -393,6 +393,11 @@ export type ModuleLoadProgressCallback =
 
 type ModuleFactoryOptions = {
   locateFile?: (path: string, prefix: string) => string;
+  /**
+   * URL of the threads module script used to spawn Emscripten pthread workers.
+   * With EXPORT_ES6 there is no separate `.worker.js`; pthreads reload this `.mjs`.
+   */
+  mainScriptUrlOrBlob?: string;
   monitorRunDependencies?: (left: number) => void;
   instantiateWasm?: (
     imports: WebAssembly.Imports,
@@ -423,6 +428,10 @@ const wasmUrls: Record<WasmBuildVariant, string> = {
   asyncify: new URL("./wasm_wallet_asyncify.wasm", import.meta.url).href,
   threads: new URL("./wasm_wallet_threads.wasm", import.meta.url).href,
 };
+
+/** Static URL so Vite emits the threads `.mjs` for Emscripten pthread workers. */
+const threadsModuleUrl = new URL("./wasm_wallet_threads.mjs", import.meta.url)
+  .href;
 
 async function loadMoneroWasmWalletModuleFactory(
   variant: WasmBuildVariant,
@@ -754,6 +763,7 @@ export async function initModule(
   };
 
   const moduleLoad = MoneroWasmWalletModuleFactory({
+    ...(variant === "threads" ? { mainScriptUrlOrBlob: threadsModuleUrl } : {}),
     locateFile(path) {
       if (
         path === "wasm_wallet_asyncify.wasm" ||
@@ -761,7 +771,7 @@ export async function initModule(
       ) {
         return wasmUrls[variant];
       }
-      return new URL(path, import.meta.url).href;
+      throw new Error(`Unexpected WASM locateFile request: ${path}`);
     },
     instantiateWasm(imports, receiveInstance) {
       instantiateWalletWasmWithProgress(
