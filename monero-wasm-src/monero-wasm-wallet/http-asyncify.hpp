@@ -4,8 +4,23 @@
 #include <emscripten/bind.h>
 #include <emscripten/em_js.h>
 #include <limits>
+#include <string>
 
 namespace {
+
+// Asyncify runs single-threaded, so the HTTP config needs no locking.
+std::string g_http_base_url;
+std::string g_http_fetch_event_channel;
+
+std::string get_http_base_url()
+{
+    return g_http_base_url;
+}
+
+std::string get_http_fetch_event_channel()
+{
+    return g_http_fetch_event_channel;
+}
 
 /** Async XHR plus Asyncify lets the wallet worker pump events during RPC, so progress
  * events can reach the UI through the per-module fetch BroadcastChannel.
@@ -15,6 +30,8 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
     const char *uri_ptr, int uri_len,
     const char *method_ptr, int method_len,
     const char *body_ptr, int body_len,
+    const char *base_url_ptr, int base_url_len,
+    const char *channel_name_ptr, int channel_name_len,
     int timeout_ms,
     int response_code_i32_ptr,
     intptr_t mime_std_string_ptr,
@@ -22,6 +39,9 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
 {
     const uri = UTF8ToString(uri_ptr, uri_len);
     const method = UTF8ToString(method_ptr, method_len);
+    const baseUrl = UTF8ToString(base_url_ptr, base_url_len);
+    const channelName =
+      channel_name_len > 0 ? UTF8ToString(channel_name_ptr, channel_name_len) : "";
     const resizeStdString = Module['_resize_std_string'];
     const heapU8 = () => {
       if (typeof growMemViews === 'function')
@@ -34,10 +54,8 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
       return HEAP32;
     };
 
-    const config = globalThis.globalHttpConfig;
     const reqId = Math.random().toString(16).slice(2);
     const postFetch = (state, loaded, total) => {
-      const channelName = config.httpFetchEventChannelName;
       if (!channelName || typeof BroadcastChannel !== 'function')
         return;
       try {
@@ -61,7 +79,7 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
         : undefined;
     const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
 
-    const finalUrl = config.mapUrl(uri);
+    const finalUrl = baseUrl + uri;
     postFetch('start', 0, 0);
 
     /** Do not invoke WASM imports (resize_std_string, HEAP*) from xhr.* handlers:
@@ -167,16 +185,12 @@ EM_ASYNC_JS(int, js_http_xhr_invoke, (
 
 void set_http_base_url(const std::string &base_url)
 {
-    // Asyncify resolves URLs through `globalHttpConfig.mapUrl`; keep this
-    // function to match the Threads Embind surface.
-    (void)base_url;
+    g_http_base_url = base_url;
 }
 
 void set_http_fetch_event_channel(const std::string &channel_name)
 {
-    // Asyncify reads the channel name from `globalHttpConfig`; keep this
-    // function to match the Threads Embind surface.
-    (void)channel_name;
+    g_http_fetch_event_channel = channel_name;
 }
 
 class js_http_client : public epee::net_utils::http::abstract_http_client
@@ -267,11 +281,15 @@ public:
                                : (timeout_count > timeout_max ? std::numeric_limits<int>::max()
                                                               : static_cast<int>(timeout_count));
 
+        const std::string base_url = get_http_base_url();
+        const std::string channel_name = get_http_fetch_event_channel();
         const int xh_ok =
             js_http_xhr_invoke(
                 uri.data(), static_cast<int>(uri.size()),
                 method.data(), static_cast<int>(method.size()),
                 body.data(), static_cast<int>(body.size()),
+                base_url.data(), static_cast<int>(base_url.size()),
+                channel_name.data(), static_cast<int>(channel_name.size()),
                 timeout_ms_for_js,
                 reinterpret_cast<int>(std::addressof(m_response_info.m_response_code)),
                 reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_mime_tipe)),

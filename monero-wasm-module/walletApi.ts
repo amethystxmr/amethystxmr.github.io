@@ -417,6 +417,7 @@ declare const __WASM_WALLET_SIZES__: Record<WasmBuildVariant, number>;
 let module: Module;
 let loadedWasmBuildVariant: WasmBuildVariant | null = null;
 let currentDaemonAddress: string | null = null;
+let currentHttpFetchEventChannelName: string | null = null;
 
 const wasmUrls: Record<WasmBuildVariant, string> = {
   asyncify: new URL("./wasm_wallet_asyncify.wasm", import.meta.url).href,
@@ -608,15 +609,9 @@ export type HttpFetchCallback = (
   progressTotal: number,
 ) => void;
 
-type GlobalHttpConfig = {
-  mapUrl: (url: string) => string;
-  httpFetchEventChannelName: string | null;
-};
-
 type WalletRuntimeGlobal = typeof globalThis & {
   moneroWalletModule?: Module;
   clearFilesystem?: typeof clearFilesystem;
-  globalHttpConfig?: GlobalHttpConfig;
 };
 
 function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
@@ -624,35 +619,25 @@ function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
   return runtimeGlobal;
 }
 
-function ensureGlobalHttpConfig(): GlobalHttpConfig {
-  const runtimeGlobal = getWalletRuntimeGlobal();
-  runtimeGlobal.globalHttpConfig ??= {
-    mapUrl: () => {
-      throw new Error("mapUrl not set");
-    },
-    httpFetchEventChannelName: null,
-  };
-  return runtimeGlobal.globalHttpConfig;
-}
-
 function setHttpFetchEventChannelName(channelName: string | undefined) {
   if (!channelName) {
     return;
   }
-  ensureGlobalHttpConfig().httpFetchEventChannelName = channelName;
+  currentHttpFetchEventChannelName = channelName;
+  module?.set_http_fetch_event_channel?.(channelName);
 }
 
+// The wallet module stores the daemon base URL and fetch event channel in C++,
+// so re-apply both after the module (re)loads.
 function syncHttpConfigToModule() {
   if (!module) {
     return;
   }
-
-  const config = ensureGlobalHttpConfig();
   if (currentDaemonAddress !== null) {
     module.set_http_base_url?.(currentDaemonAddress);
   }
-  if (config.httpFetchEventChannelName) {
-    module.set_http_fetch_event_channel?.(config.httpFetchEventChannelName);
+  if (currentHttpFetchEventChannelName !== null) {
+    module.set_http_fetch_event_channel?.(currentHttpFetchEventChannelName);
   }
 }
 
@@ -811,7 +796,6 @@ export async function initModule(
   onProgress?.({ phase: "initializingWalletStorage" });
   await initFilesystem();
   getWalletRuntimeGlobal().moneroWalletModule = module;
-  ensureGlobalHttpConfig();
   setHttpFetchEventChannelName(options.httpFetchEventChannelName);
   syncHttpConfigToModule();
   onProgress?.({ phase: "moduleReady" });
@@ -826,7 +810,6 @@ export function getWasmBuildVariant(): WasmBuildVariant {
 
 export function setDaemonAddress(daemonAddress: string) {
   currentDaemonAddress = daemonAddress;
-  ensureGlobalHttpConfig().mapUrl = (url) => daemonAddress + url;
   module?.set_http_base_url?.(daemonAddress);
 }
 
