@@ -5,10 +5,10 @@ import {
   MoneroWasmWallet,
   MultisigAccountStatus,
   PaymentDetails,
-  setHttpFetchCallback,
   WalletAddress,
   setWalletNewBlockCallback,
 } from "../../../monero-wasm-module/walletApi.workerClient";
+import { setHttpFetchCallback } from "../../../monero-wasm-module/httpFetchEventChannel";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
