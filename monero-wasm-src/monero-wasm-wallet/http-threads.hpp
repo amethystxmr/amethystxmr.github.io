@@ -5,6 +5,7 @@
 #include <emscripten/em_js.h>
 #include <emscripten/eventloop.h>
 #include <emscripten/proxying.h>
+#include <atomic>
 #include <limits>
 #include <condition_variable>
 #include <mutex>
@@ -39,6 +40,23 @@ std::string g_http_base_url;
 std::string g_http_fetch_event_channel;
 std::mutex g_http_request_mutex;
 
+// Number of in-flight HTTP requests. The fetch-queue heartbeat only drains the
+// proxying queue while this is non-zero (see js_http_start_proxy_queue_heartbeat).
+std::atomic<int> g_http_active_request_count{0};
+
+struct HttpRequestActiveGuard
+{
+    HttpRequestActiveGuard()
+    {
+        g_http_active_request_count.fetch_add(1, std::memory_order_release);
+    }
+
+    ~HttpRequestActiveGuard()
+    {
+        g_http_active_request_count.fetch_sub(1, std::memory_order_release);
+    }
+};
+
 std::string get_http_base_url()
 {
     std::lock_guard<std::mutex> lock(g_http_config_mutex);
@@ -51,6 +69,45 @@ std::string get_http_fetch_event_channel()
     return g_http_fetch_event_channel;
 }
 
+// The wallet worker thread blocks synchronously inside invoke() while an RPC is
+// in flight (proxy_http_request -> emscripten_proxy_sync_with_ctx), so it cannot
+// run the fetch itself. Instead we proxy the XHR to a dedicated, always-alive
+// fetch thread (HttpFetchWorker) whose event loop services the XHR callbacks.
+//
+// Emscripten normally delivers proxied work on its own: em_task_queue_send()
+// enqueues the task and pings the target thread's mailbox, waking it (via an
+// Atomics.waitAsync notify, or a postMessage relayed through the main thread) so
+// it runs checkMailbox() -> receive_notification() -> em_task_queue_execute(),
+// which executes our proxied function. References:
+//   - https://emscripten.org/docs/api_reference/proxying.h.html
+//   - https://github.com/emscripten-core/emscripten/blob/main/system/lib/pthread/proxying.c
+//     (do_proxy / emscripten_proxy_execute_queue)
+//   - https://github.com/emscripten-core/emscripten/blob/main/system/lib/pthread/em_task_queue.c
+//     (em_task_queue_send / receive_notification)
+//   - https://github.com/emscripten-core/emscripten/blob/main/system/lib/pthread/thread_mailbox.c
+//     (emscripten_thread_mailbox_send)
+//   - https://github.com/emscripten-core/emscripten/blob/main/src/lib/libpthread.js
+//     (_emscripten_notify_mailbox_postmessage / checkMailbox)
+//
+// That wake can be missed or delayed in edge cases the Emscripten source itself
+// calls out: a thread that has not yet armed Atomics.waitAsync falls back to a
+// cross-worker postMessage that must be relayed by the main thread. If a wake is
+// ever lost, the proxied task sits in the queue forever, the wallet thread stays
+// parked in pthread_cond_wait, and because requests are serialized under
+// g_http_request_mutex all wallet networking stalls.
+//
+// This heartbeat is the safety net: it periodically drains the fetch thread's
+// proxying queue itself, turning a lost wake into at most one interval of delay
+// instead of a permanent hang. emscripten_proxy_execute_queue() is idempotent
+// (it guards against re-entrancy and concurrent draining), so racing with the
+// normal mailbox delivery is safe.
+//
+// Self-throttling: the drain only runs while a request is in flight (gated by
+// g_http_active_request_count inside amethyst_http_proxy_execute_queue), so an
+// idle wallet does no queue work. The timer stays scheduled between requests on
+// purpose - (re)starting it would have to run on the fetch thread, which needs
+// the very cross-thread wake this code exists to back up - and a widened 250ms
+// tick keeps the idle cost down to a cheap atomic load.
 EM_JS(void, js_http_start_proxy_queue_heartbeat, (intptr_t queue_ptr), {
     const intervalId = setInterval(() => {
       if (typeof ABORT !== 'undefined' && ABORT) {
@@ -58,7 +115,7 @@ EM_JS(void, js_http_start_proxy_queue_heartbeat, (intptr_t queue_ptr), {
         return;
       }
       Module['_amethyst_http_proxy_execute_queue'](queue_ptr);
-    }, 50);
+    }, 250);
 });
 
 EM_JS(void, js_http_finish_proxy_ctx, (intptr_t ctx_ptr), {
@@ -343,6 +400,8 @@ public:
         // progress indicator. Parallel requests would produce ambiguous progress
         // events and overwrite the visible request state.
         std::lock_guard<std::mutex> request_lock(g_http_request_mutex);
+        // Enable the heartbeat drain only for the duration of this request.
+        HttpRequestActiveGuard active_guard;
         const bool proxied = get_http_fetch_worker().proxy_http_request([&](emscripten::ProxyingQueue::ProxyingCtx ctx) {
             xhr_started =
                 js_http_xhr_invoke(
@@ -412,6 +471,12 @@ extern "C"
 {
     void EMSCRIPTEN_KEEPALIVE amethyst_http_proxy_execute_queue(intptr_t queue_ptr)
     {
+        // Self-throttle: skip the drain when no request is in flight so an idle
+        // wallet does no queue work (see js_http_start_proxy_queue_heartbeat).
+        if (g_http_active_request_count.load(std::memory_order_acquire) == 0)
+        {
+            return;
+        }
         emscripten_proxy_execute_queue(reinterpret_cast<em_proxying_queue *>(queue_ptr));
     }
 
