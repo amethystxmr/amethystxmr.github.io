@@ -341,10 +341,10 @@ interface Module {
   /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
   getExceptionMessage?(exn: WasmExceptionValue): [string, string];
   decrementExceptionRefcount?(exn: WasmExceptionValue): void;
-  /** Optional Monero logging categories (`mlog_set_categories` from wasm). */
-  mlog_set_categories?(categories: string): void;
-  set_http_base_url?(baseUrl: string): void;
-  set_http_fetch_event_channel?(channelName: string): void;
+  /** Monero logging categories (`mlog_set_categories` from wasm). */
+  mlog_set_categories(categories: string): void;
+  set_http_base_url(baseUrl: string): void;
+  set_http_fetch_event_channel(channelName: string): void;
   FS: {
     mkdir(path: string): void;
     mount(type: IDBFS, opts: Record<string, never>, mountpoint: string): void;
@@ -624,7 +624,7 @@ function setHttpFetchEventChannelName(channelName: string | undefined) {
     return;
   }
   currentHttpFetchEventChannelName = channelName;
-  module?.set_http_fetch_event_channel?.(channelName);
+  module?.set_http_fetch_event_channel(channelName);
 }
 
 // The wallet module stores the daemon base URL and fetch event channel in C++,
@@ -634,10 +634,10 @@ function syncHttpConfigToModule() {
     return;
   }
   if (currentDaemonAddress !== null) {
-    module.set_http_base_url?.(currentDaemonAddress);
+    module.set_http_base_url(currentDaemonAddress);
   }
   if (currentHttpFetchEventChannelName !== null) {
-    module.set_http_fetch_event_channel?.(currentHttpFetchEventChannelName);
+    module.set_http_fetch_event_channel(currentHttpFetchEventChannelName);
   }
 }
 
@@ -810,7 +810,7 @@ export function getWasmBuildVariant(): WasmBuildVariant {
 
 export function setDaemonAddress(daemonAddress: string) {
   currentDaemonAddress = daemonAddress;
-  module?.set_http_base_url?.(daemonAddress);
+  module?.set_http_base_url(daemonAddress);
 }
 
 export function setWalletNewBlockCallback(
