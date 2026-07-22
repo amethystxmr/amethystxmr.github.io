@@ -90,7 +90,8 @@ npm run test:e2e -- tests/wasm_variant_matrix.spec.ts
 
 Mainnet restore/sync benchmark comparing **Asyncify vs Threads** and **Cake node vs
 local daemon** (`localhost:18081`) across four restore heights (today, 1 week, 1
-month, 2 months). Not part of CI e2e.
+month, 2 months). Runs in order **height → daemon → variant** so Asyncify and
+Threads stay adjacent. Not part of CI e2e.
 
 Prerequisites:
 

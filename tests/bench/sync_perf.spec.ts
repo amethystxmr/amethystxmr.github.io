@@ -1,5 +1,8 @@
 /**
- * Mainnet sync performance bench: Threads×Asyncify × Cake×local × 4 restore heights.
+ * Mainnet sync performance bench.
+ *
+ * Loop order is height → daemon → variant so Asyncify and Threads run back-to-back
+ * for the same restore height and daemon (fairer comparison).
  *
  * Primary CPU/RSS metrics are Chromium renderer process totals (includes the wallet
  * web worker and WASM pthread workers). Main-isolate JS heap is logged only as a
@@ -159,9 +162,17 @@ async function fillRestoreForm(
   await expect(heightInput).toHaveValue(params.startingHeight);
 }
 
+function cellLabel(result: {
+  heightLabel: string;
+  daemon: DaemonKind;
+  variant: WasmVariant;
+}): string {
+  return `${result.heightLabel}/${result.daemon}/${result.variant}`;
+}
+
 function printCellResult(result: CellResult): void {
   console.log(
-    `[bench] DONE ${result.variant}/${result.daemon}/${result.heightLabel} ` +
+    `[bench] DONE ${cellLabel(result)} ` +
       `height=${result.restoreHeight} ` +
       `duration=${(result.durationMs / 1000).toFixed(1)}s ` +
       `final=${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"} ` +
@@ -178,14 +189,14 @@ function printCellResult(result: CellResult): void {
 function printSummary(results: CellResult[]): void {
   console.log("\n[bench] ===== SUMMARY =====");
   console.log(
-    "variant\tdaemon\theightLabel\trestoreHeight\tdurationSec\tpeakRssMiB\tcpuDeltaSec\tfinalHeights",
+    "heightLabel\tdaemon\tvariant\trestoreHeight\tdurationSec\tpeakRssMiB\tcpuDeltaSec\tfinalHeights",
   );
   for (const result of results) {
     console.log(
       [
-        result.variant,
-        result.daemon,
         result.heightLabel,
+        result.daemon,
+        result.variant,
         result.restoreHeight,
         (result.durationMs / 1000).toFixed(1),
         (result.peakRendererRssBytes / (1024 * 1024)).toFixed(1),
@@ -206,7 +217,7 @@ async function runOneCell(params: {
   seed: string;
   timeoutMs: number;
 }): Promise<CellResult> {
-  const label = `${params.variant}/${params.daemon}/${params.heightCase.label}`;
+  const label = `${params.heightCase.label}/${params.daemon}/${params.variant}`;
   const context = await params.browser.newContext({
     baseURL: previewUrl(params.variant),
     serviceWorkers: "block",
@@ -274,9 +285,7 @@ test("mainnet sync performance matrix", async ({ browser }) => {
   const seed = envOr("BENCH_SEED", DEFAULT_SEED);
   const localAddress = envOr("BENCH_DAEMON_LOCAL", DEFAULT_LOCAL);
   const cakeAddress = envOr("BENCH_DAEMON_REMOTE", DEFAULT_CAKE);
-  const timeoutMs = Number(
-    process.env.BENCH_TIMEOUT_MS ?? 4 * 60 * 60 * 1000,
-  );
+  const timeoutMs = Number(process.env.BENCH_TIMEOUT_MS ?? 4 * 60 * 60 * 1000);
   const heights = parseHeights();
 
   test.setTimeout(Math.max(timeoutMs * heights.length * 4, 60_000));
@@ -302,11 +311,12 @@ test("mainnet sync performance matrix", async ({ browser }) => {
   const variants: WasmVariant[] = ["asyncify", "threads"];
   const results: CellResult[] = [];
 
-  for (const variant of variants) {
+  // height → daemon → variant: keep Asyncify/Threads adjacent for fair comparisons
+  for (const heightCase of heights) {
     for (const daemon of daemons) {
-      for (const heightCase of heights) {
+      for (const variant of variants) {
         console.log(
-          `[bench] START ${variant}/${daemon.kind}/${heightCase.label} ` +
+          `[bench] START ${heightCase.label}/${daemon.kind}/${variant} ` +
             `restoreHeight=${heightCase.height} daemon=${daemon.address}`,
         );
         const result = await runOneCell({
