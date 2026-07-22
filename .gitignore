@@ -4,6 +4,7 @@ built-web
 playwright-report
 test-results
 tests/.artifacts
+tests/bench/results
 dist-native
 /compile_commands.json
 monero-wasm-src/compile_commands.json

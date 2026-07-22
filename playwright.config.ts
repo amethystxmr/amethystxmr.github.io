@@ -25,6 +25,7 @@ function previewUrl(port: number) {
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: ["**/bench/**"],
   timeout: 600_000,
   expect: {
     timeout: 60_000,

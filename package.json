@@ -12,6 +12,7 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:install": "playwright install chromium",
+    "bench:sync": "playwright test -c playwright.bench.config.ts",
     "dev": "vite",
     "build": "vite build",
     "native:dev": "npm run build && electron .",

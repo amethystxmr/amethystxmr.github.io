@@ -86,6 +86,51 @@ Run only the variant matrix with:
 npm run test:e2e -- tests/wasm_variant_matrix.spec.ts
 ```
 
+## Sync performance bench
+
+Mainnet restore/sync benchmark comparing **Asyncify vs Threads** and **Cake node vs
+local daemon** (`localhost:18081`) across four restore heights (today, 1 week, 1
+month, 2 months). Not part of CI e2e.
+
+Prerequisites:
+
+1. Production WASM + web build (both variants):
+
+```bash
+cd monero-wasm-src && ./build.sh Release Threads && ./build.sh Release Asyncify && cd ..
+npm run build && echo All_Ok
+```
+
+2. Local `monerod` already running and **synced** on mainnet at
+   `http://localhost:18081` (the bench only verifies it; it does not start monerod).
+3. Network access to Cake: `https://xmr-node.cakewallet.com:18081`.
+4. Playwright Chromium installed: `npm run test:e2e:install`.
+
+Run the full matrix (16 cells; older heights can take a long time):
+
+```bash
+npm run bench:sync
+```
+
+Useful overrides:
+
+```bash
+# Single near-tip height smoke run
+BENCH_HEIGHTS=3723687 npm run bench:sync
+
+# Custom seed / daemons / per-cell timeout (ms)
+BENCH_SEED="dogs zero ..." \
+BENCH_HEIGHTS="3723655,3718615,3702055,3680455" \
+BENCH_DAEMON_LOCAL="http://localhost:18081" \
+BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" \
+BENCH_TIMEOUT_MS=14400000 \
+npm run bench:sync
+```
+
+The harness prints progress during sync and a summary after each cell. JSON
+results are written under `tests/bench/results/` (gitignored). Primary CPU/RSS
+numbers are Chromium renderer process metrics (includes the wallet web worker).
+
 ## Building web
 
 ```bash
