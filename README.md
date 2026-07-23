@@ -129,8 +129,14 @@ npm run bench:sync
 ```
 
 The harness prints progress during sync and a summary after each cell. JSON
-results are written under `tests/bench/results/` (gitignored). Primary CPU/RSS
-numbers are Chromium renderer process metrics (includes the wallet web worker).
+results are written under `tests/bench/results/` (gitignored).
+
+CPU columns (page renderer process only, includes the wallet web worker):
+
+- `cpuWorkSec`: total CPU-seconds across all threads in that process — the
+  comparable “how much CPU work” metric between Asyncify and Threads
+- `avgCores`: `cpuWorkSec / wallSec` — how that work was parallelized (Threads
+  should be higher; `cpuWorkSec` should stay in a similar ballpark)
 
 ## Building web
 

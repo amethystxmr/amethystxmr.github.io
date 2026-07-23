@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
+  averageCoresUsed,
   formatBytes,
   type ProcessMetricsTracker,
   type ProcessSample,
@@ -16,7 +17,10 @@ export type SyncWaitResult = {
   finalWalletHeight: number | null;
   finalDaemonHeight: number | null;
   peakRendererRssBytes: number;
-  cpuTimeDeltaSec: number;
+  /** Total CPU-seconds on the page renderer (all threads). Comparable across variants. */
+  cpuWorkSec: number;
+  /** cpuWorkSec / wallSec — how CPU was used (parallelism). */
+  avgCoresUsed: number;
   peakMainJsHeapUsedBytes: number | null;
   samples: ProcessSample[];
 };
@@ -104,8 +108,8 @@ export async function waitUntilWalletSynced(params: {
     }
 
     const elapsedMs = Date.now() - params.startedAtMs;
-    const cpuDelta =
-      sample.rendererCpuTimeSec - params.baseline.rendererCpuTimeSec;
+    const cpuWorkSec = sample.cpuWorkSec - params.baseline.cpuWorkSec;
+    const avgCores = averageCoresUsed(cpuWorkSec, elapsedMs);
     if (elapsedMs - lastLogAt >= logEveryMs) {
       lastLogAt = elapsedMs;
       console.log(
@@ -113,7 +117,8 @@ export async function waitUntilWalletSynced(params: {
           `elapsed=${(elapsedMs / 1000).toFixed(1)}s ` +
           `height=${lastProgress.walletHeight ?? "?"}/${lastProgress.daemonHeight ?? "?"} ` +
           `rss=${formatBytes(sample.rendererRssBytes)} ` +
-          `cpuΔ=${cpuDelta.toFixed(2)}s`,
+          `cpuWork=${cpuWorkSec.toFixed(2)}s ` +
+          `avgCores=${avgCores.toFixed(2)}`,
       );
     }
 
@@ -123,7 +128,8 @@ export async function waitUntilWalletSynced(params: {
         finalWalletHeight: lastProgress.walletHeight,
         finalDaemonHeight: lastProgress.daemonHeight,
         peakRendererRssBytes,
-        cpuTimeDeltaSec: cpuDelta,
+        cpuWorkSec,
+        avgCoresUsed: avgCores,
         peakMainJsHeapUsedBytes,
         samples,
       };

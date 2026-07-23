@@ -4,9 +4,10 @@
  * Loop order is height → daemon → variant so Asyncify and Threads run back-to-back
  * for the same restore height and daemon (fairer comparison).
  *
- * Primary CPU/RSS metrics are Chromium renderer process totals (includes the wallet
- * web worker and WASM pthread workers). Main-isolate JS heap is logged only as a
- * secondary curiosity — it under-counts worker/WASM memory.
+ * CPU metrics (page renderer process only, includes wallet worker / pthreads):
+ * - cpuWorkSec: total CPU-seconds across all threads — comparable "how much CPU
+ *   work" between Asyncify and Threads for the same height
+ * - avgCoresUsed: cpuWorkSec / wallSec — how that work was parallelized
  *
  * Does not start monerod; verifies local/Cake are mainnet + synchronized.
  * Intermediate results print after each cell. Results JSON is written under
@@ -27,6 +28,9 @@ import { assertDaemonReadyForBench } from "./helpers/daemonInfo";
 import {
   createProcessMetricsTracker,
   formatBytes,
+  pickPageRendererPid,
+  readRendererCpuByPid,
+  snapshotRendererCpuByPid,
 } from "./helpers/processMetrics";
 import { waitUntilWalletSynced } from "./helpers/syncWait";
 
@@ -48,7 +52,10 @@ type CellResult = {
   finalWalletHeight: number | null;
   finalDaemonHeight: number | null;
   peakRendererRssBytes: number;
-  cpuTimeDeltaSec: number;
+  /** Total CPU-seconds on the page renderer (all threads). Comparable across variants. */
+  cpuWorkSec: number;
+  /** cpuWorkSec / wallSec — parallelism / how CPU was used. */
+  avgCoresUsed: number;
   peakMainJsHeapUsedBytes: number | null;
 };
 
@@ -177,7 +184,8 @@ function printCellResult(result: CellResult): void {
       `duration=${(result.durationMs / 1000).toFixed(1)}s ` +
       `final=${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"} ` +
       `peakRss=${formatBytes(result.peakRendererRssBytes)} ` +
-      `cpuΔ=${result.cpuTimeDeltaSec.toFixed(2)}s ` +
+      `cpuWork=${result.cpuWorkSec.toFixed(2)}s ` +
+      `avgCores=${result.avgCoresUsed.toFixed(2)} ` +
       `mainHeapPeak=${
         result.peakMainJsHeapUsedBytes === null
           ? "n/a"
@@ -189,7 +197,7 @@ function printCellResult(result: CellResult): void {
 function printSummary(results: CellResult[]): void {
   console.log("\n[bench] ===== SUMMARY =====");
   console.log(
-    "heightLabel\tdaemon\tvariant\trestoreHeight\tdurationSec\tpeakRssMiB\tcpuDeltaSec\tfinalHeights",
+    "heightLabel\tdaemon\tvariant\trestoreHeight\tdurationSec\tpeakRssMiB\tcpuWorkSec\tavgCores\tfinalHeights",
   );
   for (const result of results) {
     console.log(
@@ -200,7 +208,8 @@ function printSummary(results: CellResult[]): void {
         result.restoreHeight,
         (result.durationMs / 1000).toFixed(1),
         (result.peakRendererRssBytes / (1024 * 1024)).toFixed(1),
-        result.cpuTimeDeltaSec.toFixed(2),
+        result.cpuWorkSec.toFixed(2),
+        result.avgCoresUsed.toFixed(2),
         `${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"}`,
       ].join("\t"),
     );
@@ -218,6 +227,7 @@ async function runOneCell(params: {
   timeoutMs: number;
 }): Promise<CellResult> {
   const label = `${params.heightCase.label}/${params.daemon}/${params.variant}`;
+  const preSnapshot = await snapshotRendererCpuByPid(params.browser);
   const context = await params.browser.newContext({
     baseURL: previewUrl(params.variant),
     serviceWorkers: "block",
@@ -234,6 +244,10 @@ async function runOneCell(params: {
     await initial.waitUntilLoaded();
     await assertActiveWasmVariant(page, params.variant);
 
+    const afterLoadCpu = await readRendererCpuByPid(preSnapshot.session);
+    const trackedPid = pickPageRendererPid(preSnapshot.cpuByPid, afterLoadCpu);
+    await preSnapshot.session.detach().catch(() => undefined);
+
     const walletName = `bench-${params.variant}-${params.daemon}-${params.heightCase.label}-${Date.now()}`;
     await fillRestoreForm(page, {
       walletName,
@@ -241,7 +255,11 @@ async function runOneCell(params: {
       startingHeight: String(params.heightCase.height),
     });
 
-    metrics = await createProcessMetricsTracker(params.browser, page);
+    metrics = await createProcessMetricsTracker(
+      params.browser,
+      page,
+      trackedPid,
+    );
     const baseline = await metrics.sample();
     const startedAtMs = Date.now();
     await page.getByRole("button", { name: /restore wallet/i }).click();
@@ -268,10 +286,12 @@ async function runOneCell(params: {
       finalWalletHeight: sync.finalWalletHeight,
       finalDaemonHeight: sync.finalDaemonHeight,
       peakRendererRssBytes: sync.peakRendererRssBytes,
-      cpuTimeDeltaSec: sync.cpuTimeDeltaSec,
+      cpuWorkSec: sync.cpuWorkSec,
+      avgCoresUsed: sync.avgCoresUsed,
       peakMainJsHeapUsedBytes: sync.peakMainJsHeapUsedBytes,
     };
   } finally {
+    await preSnapshot.session.detach().catch(() => undefined);
     if (metrics) {
       await metrics.dispose();
     }
