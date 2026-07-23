@@ -109,8 +109,7 @@ Not part of CI e2e.
 1. Production WASM + web build (both variants):
 
 ```bash
-cd monero-wasm-src && ./build.sh Release Threads && ./build.sh Release Asyncify && cd ..
-npm run build && echo All_Ok
+cd monero-wasm-src && ./build.sh Release Threads && ./build.sh Release Asyncify && cd .. && npm run build && echo All_Ok
 ```
 
 2. Local `monerod` already running and **synced** on mainnet at
@@ -120,15 +119,7 @@ npm run build && echo All_Ok
 5. Official `monero-wallet-cli` in `./bin` (gitignored). Download:
 
 ```bash
-mkdir -p bin && cd bin
-curl -fL -o monero.tar.bz2 "https://downloads.getmonero.org/cli/linux64"
-tar -xjf monero.tar.bz2
-# archive extracts to monero-*-linux-x64/; copy the CLI next to this folder's bin/
-cp monero-*-linux-x64/monero-wallet-cli ./monero-wallet-cli
-chmod +x monero-wallet-cli
-rm -rf monero.tar.bz2 monero-*-linux-x64
-cd ..
-./bin/monero-wallet-cli --version
+mkdir -p bin && cd bin && curl -fL -o monero.tar.bz2 "https://downloads.getmonero.org/cli/linux64" && tar -xjf monero.tar.bz2 && cp monero-*-linux-x64/monero-wallet-cli ./monero-wallet-cli && chmod +x monero-wallet-cli && rm -rf monero.tar.bz2 monero-*-linux-x64 && cd .. && ./bin/monero-wallet-cli --version
 ```
 
 Optional: `BENCH_WALLET_CLI_PATH=/path/to/monero-wallet-cli` to override.
@@ -136,22 +127,19 @@ Optional: `BENCH_WALLET_CLI_PATH=/path/to/monero-wallet-cli` to override.
 ### Run
 
 ```bash
-# Default (~2 weeks / 10080 blocks) — long run
 npm run bench:sync
+```
 
-# Smoke / shorter window
+Smoke / shorter window:
+
+```bash
 BENCH_HEIGHT_DIFF=1000 npm run bench:sync
 ```
 
 Other overrides:
 
 ```bash
-BENCH_SEED="dogs zero ..." \
-BENCH_HEIGHT_DIFF=10080 \
-BENCH_DAEMON_LOCAL="http://localhost:18081" \
-BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" \
-BENCH_TIMEOUT_MS=14400000 \
-npm run bench:sync
+BENCH_SEED="dogs zero ..." BENCH_HEIGHT_DIFF=10080 BENCH_DAEMON_LOCAL="http://localhost:18081" BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" BENCH_TIMEOUT_MS=14400000 npm run bench:sync
 ```
 
 Progress prints during each cell; JSON under `tests/bench/results/` (gitignored).
