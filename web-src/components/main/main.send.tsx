@@ -166,14 +166,10 @@ function findPreparedAddressMismatch(
   enteredAddresses: string[],
   transferInfo: TransferInfoItem[],
 ): string | null {
-  const entered = [...new Set(enteredAddresses.map(compactAddress))].sort();
-  const shown = [
-    ...new Set(
-      transferInfo.flatMap((tx) =>
-        tx.destinations.map((d) => compactAddress(d.dstAddress)),
-      ),
-    ),
-  ].sort();
+  const entered = enteredAddresses.map(compactAddress);
+  const shown = transferInfo.flatMap((tx) =>
+    tx.destinations.map((d) => compactAddress(d.dstAddress)),
+  );
 
   if (entered.length === 0) {
     return "A bug detected: no entered destination addresses to verify";
@@ -182,6 +178,8 @@ function findPreparedAddressMismatch(
     return "A bug detected: prepared transaction has no destination addresses";
   }
 
+  // wallet2 may split one destination across multiple pending transactions, so
+  // verify membership instead of relying on flattened order or exact counts.
   for (const address of shown) {
     if (!entered.includes(address)) {
       return `A bug detected: address ${address} does not match entered destination(s)`;
@@ -1485,7 +1483,10 @@ export function SendTab({
                           <div className="text-xs text-white/60 pt-2">
                             To address
                           </div>
-                          <div className="break-all font-mono text-xs text-white/80">
+                          <div
+                            aria-label="Send review destination address"
+                            className="break-all font-mono text-xs text-white/80"
+                          >
                             {splitAddressBy6(
                               summary.destinations[0].dstAddress,
                             )}
@@ -1503,7 +1504,10 @@ export function SendTab({
                               key={`${recipient.dstAddress}-${recipient.dspAmount.toString()}-${index}`}
                               className="rounded-lg bg-white/5 p-2"
                             >
-                              <div className="break-all font-mono text-[11px] text-white/75">
+                              <div
+                                aria-label={`Send review recipient ${index + 1} address`}
+                                className="break-all font-mono text-[11px] text-white/75"
+                              >
                                 {splitAddressBy6(recipient.dstAddress)}
                               </div>
                               <div className="mt-1 text-xs text-white">

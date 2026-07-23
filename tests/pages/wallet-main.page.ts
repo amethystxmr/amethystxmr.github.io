@@ -208,11 +208,10 @@ export class WalletMainPage {
   }
 
   async expectSendReviewAddress(address: string): Promise<void> {
-    await expect(this.page.getByText("To address")).toBeVisible();
-    const reviewAddress = this.page
-      .getByText("To address")
-      .locator("..")
-      .locator(".font-mono");
+    const reviewAddress = this.page.getByLabel(
+      "Send review destination address",
+    );
+    await expect(reviewAddress).toBeVisible();
     await expect
       .poll(async () => (await reviewAddress.innerText()).replace(/\s+/g, ""))
       .toBe(address);
@@ -223,17 +222,13 @@ export class WalletMainPage {
     address: string,
   ): Promise<void> {
     await this.openTab("transactions");
-    const typeBadge = this.page
-      .getByLabel(`Transaction type: ${typeLabel}`)
-      .first();
-    await expect(typeBadge).toBeVisible();
-    const card = this.page
-      .locator('div[class*="rounded-xl"][class*="ring-1"]')
-      .filter({ has: typeBadge })
-      .first();
+    const card = this.page.getByLabel(`Transaction card: ${typeLabel}`).first();
+    await expect(card).toBeVisible();
     await card.click();
     await expect(card.getByText("Destinations:")).toBeVisible();
-    const destinationAddress = card.locator(`[title="${address}"]`);
+    const destinationAddress = card.getByLabel(
+      `${typeLabel} transaction destination address`,
+    );
     await expect(destinationAddress).toHaveCount(1);
     await expect
       .poll(async () =>
@@ -247,17 +242,14 @@ export class WalletMainPage {
     paymentId: string,
   ): Promise<void> {
     await this.openTab("transactions");
-    const typeBadge = this.page
-      .getByLabel(`Transaction type: ${typeLabel}`)
-      .first();
-    await expect(typeBadge).toBeVisible();
-    const card = this.page
-      .locator('div[class*="rounded-xl"][class*="ring-1"]')
-      .filter({ has: typeBadge })
-      .first();
+    const card = this.page.getByLabel(`Transaction card: ${typeLabel}`).first();
+    await expect(card).toBeVisible();
     await card.click();
-    await expect(card.getByText("Payment id:")).toBeVisible();
-    await expect(card.getByText(paymentId, { exact: false })).toBeVisible();
+    const paymentIdValue = card.getByLabel(
+      `${typeLabel} transaction payment id`,
+    );
+    await expect(paymentIdValue).toBeVisible();
+    await expect(paymentIdValue).toContainText(paymentId);
   }
 
   async confirmSend(): Promise<void> {
