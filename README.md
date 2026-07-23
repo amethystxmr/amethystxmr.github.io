@@ -88,12 +88,23 @@ npm run test:e2e -- tests/wasm_variant_matrix.spec.ts
 
 ## Sync performance bench
 
-Mainnet restore/sync benchmark comparing **Asyncify vs Threads** and **Cake node vs
-local daemon** (`localhost:18081`) across four restore heights (today, 1 week, 1
-month, 2 months). Runs in order **height → daemon → variant** so Asyncify and
-Threads stay adjacent. Not part of CI e2e.
+Mainnet restore/sync benchmark. One restore height = current tip −
+`BENCH_HEIGHT_DIFF` (default **10080** ≈ 2 weeks at 720 blocks/day).
 
-Prerequisites:
+Compares five variants × Cake vs local daemon (10 cells), in order
+**daemon → variant**:
+
+| Variant    | What it runs                                              |
+| ---------- | --------------------------------------------------------- |
+| `asyncify` | WASM Asyncify build                                       |
+| `threads`  | WASM Threads (full `navigator.hardwareConcurrency`)       |
+| `threads4` | WASM Threads with `hardwareConcurrency` forced to 4       |
+| `native0`  | `./bin/monero-wallet-cli --max-concurrency 0` (all cores) |
+| `native4`  | `./bin/monero-wallet-cli --max-concurrency 4`             |
+
+Not part of CI e2e.
+
+### Prerequisites
 
 1. Production WASM + web build (both variants):
 
@@ -106,37 +117,50 @@ npm run build && echo All_Ok
    `http://localhost:18081` (the bench only verifies it; it does not start monerod).
 3. Network access to Cake: `https://xmr-node.cakewallet.com:18081`.
 4. Playwright Chromium installed: `npm run test:e2e:install`.
-
-Run the full matrix (16 cells; older heights can take a long time):
+5. Official `monero-wallet-cli` in `./bin` (gitignored). Download:
 
 ```bash
-npm run bench:sync
+mkdir -p bin && cd bin
+curl -fL -o monero.tar.bz2 "https://downloads.getmonero.org/cli/linux64"
+tar -xjf monero.tar.bz2
+# archive extracts to monero-*-linux-x64/; copy the CLI next to this folder's bin/
+cp monero-*-linux-x64/monero-wallet-cli ./monero-wallet-cli
+chmod +x monero-wallet-cli
+rm -rf monero.tar.bz2 monero-*-linux-x64
+cd ..
+./bin/monero-wallet-cli --version
 ```
 
-Useful overrides:
+Optional: `BENCH_WALLET_CLI_PATH=/path/to/monero-wallet-cli` to override.
+
+### Run
 
 ```bash
-# Single near-tip height smoke run
-BENCH_HEIGHTS=3723687 npm run bench:sync
+# Default (~2 weeks / 10080 blocks) — long run
+npm run bench:sync
 
-# Custom seed / daemons / per-cell timeout (ms)
+# Smoke / shorter window
+BENCH_HEIGHT_DIFF=1000 npm run bench:sync
+```
+
+Other overrides:
+
+```bash
 BENCH_SEED="dogs zero ..." \
-BENCH_HEIGHTS="3723655,3718615,3702055,3680455" \
+BENCH_HEIGHT_DIFF=10080 \
 BENCH_DAEMON_LOCAL="http://localhost:18081" \
 BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" \
 BENCH_TIMEOUT_MS=14400000 \
 npm run bench:sync
 ```
 
-The harness prints progress during sync and a summary after each cell. JSON
-results are written under `tests/bench/results/` (gitignored).
+Progress prints during each cell; JSON under `tests/bench/results/` (gitignored).
 
-CPU columns (page renderer process only, includes the wallet web worker):
+CPU columns:
 
-- `cpuWorkSec`: total CPU-seconds across all threads in that process — the
-  comparable “how much CPU work” metric between Asyncify and Threads
-- `avgCores`: `cpuWorkSec / wallSec` — how that work was parallelized (Threads
-  should be higher; `cpuWorkSec` should stay in a similar ballpark)
+- `cpuWorkSec`: total CPU-seconds (WASM: page renderer incl. worker/pthreads;
+  native: CLI process via `/proc`)
+- `avgCores`: `cpuWorkSec / wallSec` (parallelism)
 
 ## Building web
 

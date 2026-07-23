@@ -1,17 +1,17 @@
 /**
  * Mainnet sync performance bench.
  *
- * Loop order is height → daemon → variant so Asyncify and Threads run back-to-back
- * for the same restore height and daemon (fairer comparison).
+ * One restore height: tip - BENCH_HEIGHT_DIFF (default 10080 ≈ 2 weeks).
+ * Loop order: daemon → variant so comparable variants stay adjacent.
  *
- * CPU metrics (page renderer process only, includes wallet worker / pthreads):
- * - cpuWorkSec: total CPU-seconds across all threads — comparable "how much CPU
- *   work" between Asyncify and Threads for the same height
- * - avgCoresUsed: cpuWorkSec / wallSec — how that work was parallelized
+ * Variants:
+ * - asyncify
+ * - threads (full navigator.hardwareConcurrency)
+ * - threads4 (hardwareConcurrency forced to 4 in the wallet worker)
+ * - native0 (monero-wallet-cli --max-concurrency 0 = all cores)
+ * - native4 (monero-wallet-cli --max-concurrency 4)
  *
- * Does not start monerod; verifies local/Cake are mainnet + synchronized.
- * Intermediate results print after each cell. Results JSON is written under
- * tests/bench/results/ (gitignored).
+ * CPU: cpuWorkSec (total CPU-seconds) and avgCores (cpuWork/wall).
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -26,6 +26,11 @@ import { InitialWalletListPage } from "../pages/initial-wallet-list.page";
 import { WalletMainPage } from "../pages/wallet-main.page";
 import { assertDaemonReadyForBench } from "./helpers/daemonInfo";
 import {
+  assertWalletCliExists,
+  resolveWalletCliPath,
+  runNativeWalletCliSync,
+} from "./helpers/nativeWalletCli";
+import {
   createProcessMetricsTracker,
   formatBytes,
   pickPageRendererPid,
@@ -34,40 +39,36 @@ import {
 } from "./helpers/processMetrics";
 import { waitUntilWalletSynced } from "./helpers/syncWait";
 
-type WasmVariant = "asyncify" | "threads";
 type DaemonKind = "local" | "cake";
-
-type HeightCase = {
-  label: string;
-  height: number;
-};
+type BenchVariant =
+  | "asyncify"
+  | "threads"
+  | "threads4"
+  | "native0"
+  | "native4";
 
 type CellResult = {
-  variant: WasmVariant;
+  variant: BenchVariant;
   daemon: DaemonKind;
   daemonAddress: string;
-  heightLabel: string;
+  heightDiff: number;
   restoreHeight: number;
+  tipHeight: number;
   durationMs: number;
   finalWalletHeight: number | null;
   finalDaemonHeight: number | null;
-  peakRendererRssBytes: number;
-  /** Total CPU-seconds on the page renderer (all threads). Comparable across variants. */
+  peakRssBytes: number;
   cpuWorkSec: number;
-  /** cpuWorkSec / wallSec — parallelism / how CPU was used. */
   avgCoresUsed: number;
   peakMainJsHeapUsedBytes: number | null;
+  blocksReceived: number | null;
 };
 
 const DEFAULT_SEED =
   "dogs zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero";
 
-const DEFAULT_HEIGHTS: HeightCase[] = [
-  { label: "today", height: 3723655 },
-  { label: "1w", height: 3718615 },
-  { label: "1m", height: 3702055 },
-  { label: "2m", height: 3680455 },
-];
+/** ~2 weeks at 720 blocks/day. */
+const DEFAULT_HEIGHT_DIFF = 10_080;
 
 const DEFAULT_LOCAL = "http://localhost:18081";
 const DEFAULT_CAKE = "https://xmr-node.cakewallet.com:18081";
@@ -77,40 +78,40 @@ function envOr(name: string, fallback: string): string {
   return value && value.length > 0 ? value : fallback;
 }
 
-function parseHeights(): HeightCase[] {
-  const raw = process.env.BENCH_HEIGHTS;
+function parseHeightDiff(): number {
+  const raw = process.env.BENCH_HEIGHT_DIFF;
   if (!raw || raw.trim().length === 0) {
-    return DEFAULT_HEIGHTS;
+    return DEFAULT_HEIGHT_DIFF;
   }
-  const heights = raw
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => Number.parseInt(part, 10));
-  if (heights.some((height) => Number.isNaN(height))) {
-    throw new Error(`Invalid BENCH_HEIGHTS=${raw}`);
+  const value = Number.parseInt(raw, 10);
+  if (Number.isNaN(value) || value < 0) {
+    throw new Error(`Invalid BENCH_HEIGHT_DIFF=${raw}`);
   }
-  const labels = ["today", "1w", "1m", "2m"];
-  return heights.map((height, index) => ({
-    label: labels[index] ?? `h${height}`,
-    height,
-  }));
+  return value;
 }
 
-function previewUrl(variant: WasmVariant): string {
-  const port =
-    variant === "threads"
-      ? E2E_THREADS_PREVIEW_PORT
-      : E2E_ASYNCIFY_PREVIEW_PORT;
-  return `http://${APP_HOST}:${port}`;
+function previewUrl(variant: BenchVariant): string {
+  if (variant === "asyncify") {
+    return `http://${APP_HOST}:${E2E_ASYNCIFY_PREVIEW_PORT}`;
+  }
+  return `http://${APP_HOST}:${E2E_THREADS_PREVIEW_PORT}`;
+}
+
+function isWasmVariant(
+  variant: BenchVariant,
+): variant is "asyncify" | "threads" | "threads4" {
+  return (
+    variant === "asyncify" || variant === "threads" || variant === "threads4"
+  );
 }
 
 async function applyBenchSettings(
   page: Page,
   daemonAddress: string,
+  hardwareConcurrencyOverride: number | null,
 ): Promise<void> {
   await page.addInitScript(
-    ({ daemonAddress, networkType }) => {
+    ({ daemonAddress, networkType, hardwareConcurrencyOverride }) => {
       localStorage.setItem(
         "options",
         JSON.stringify({
@@ -120,22 +121,52 @@ async function applyBenchSettings(
           allowMismatchedDaemonVersion: true,
         }),
       );
+      if (hardwareConcurrencyOverride !== null) {
+        Object.defineProperty(navigator, "hardwareConcurrency", {
+          configurable: true,
+          enumerable: true,
+          get: () => hardwareConcurrencyOverride,
+        });
+      }
     },
     {
       daemonAddress,
       networkType: NetworkTypes.MAINNET,
+      hardwareConcurrencyOverride,
     },
   );
 }
 
+function patchWorkerHardwareConcurrency(
+  page: Page,
+  hardwareConcurrencyOverride: number | null,
+): void {
+  if (hardwareConcurrencyOverride === null) {
+    return;
+  }
+  page.on("worker", (worker) => {
+    void worker
+      .evaluate((n) => {
+        Object.defineProperty(navigator, "hardwareConcurrency", {
+          configurable: true,
+          enumerable: true,
+          get: () => n,
+        });
+      }, hardwareConcurrencyOverride)
+      .catch(() => {
+        // Worker may exit before evaluate runs; WASM download usually leaves enough time.
+      });
+  });
+}
+
 async function assertActiveWasmVariant(
   page: Page,
-  expected: WasmVariant,
+  expectedUiVariant: "asyncify" | "threads",
 ): Promise<void> {
   await page.getByRole("button", { name: /options/i }).click();
   const buildInfo = page.locator('[aria-label="Build information"]');
   await expect(buildInfo).toBeVisible();
-  await expect(buildInfo).toContainText(expected);
+  await expect(buildInfo).toContainText(expectedUiVariant);
   await page.getByRole("button", { name: /←\s*Back/i }).click();
   await expect(
     page.getByRole("button", { name: /^(?:↺\s*)?Restore$/i }),
@@ -170,46 +201,47 @@ async function fillRestoreForm(
 }
 
 function cellLabel(result: {
-  heightLabel: string;
   daemon: DaemonKind;
-  variant: WasmVariant;
+  variant: BenchVariant;
 }): string {
-  return `${result.heightLabel}/${result.daemon}/${result.variant}`;
+  return `${result.daemon}/${result.variant}`;
 }
 
 function printCellResult(result: CellResult): void {
   console.log(
     `[bench] DONE ${cellLabel(result)} ` +
-      `height=${result.restoreHeight} ` +
+      `restoreHeight=${result.restoreHeight} (tip-${result.heightDiff}) ` +
       `duration=${(result.durationMs / 1000).toFixed(1)}s ` +
       `final=${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"} ` +
-      `peakRss=${formatBytes(result.peakRendererRssBytes)} ` +
+      `peakRss=${formatBytes(result.peakRssBytes)} ` +
       `cpuWork=${result.cpuWorkSec.toFixed(2)}s ` +
-      `avgCores=${result.avgCoresUsed.toFixed(2)} ` +
-      `mainHeapPeak=${
-        result.peakMainJsHeapUsedBytes === null
-          ? "n/a"
-          : formatBytes(result.peakMainJsHeapUsedBytes)
-      }`,
+      `avgCores=${result.avgCoresUsed.toFixed(2)}` +
+      (result.blocksReceived !== null
+        ? ` blocks=${result.blocksReceived}`
+        : "") +
+      (result.peakMainJsHeapUsedBytes !== null
+        ? ` mainHeapPeak=${formatBytes(result.peakMainJsHeapUsedBytes)}`
+        : ""),
   );
 }
 
 function printSummary(results: CellResult[]): void {
   console.log("\n[bench] ===== SUMMARY =====");
   console.log(
-    "heightLabel\tdaemon\tvariant\trestoreHeight\tdurationSec\tpeakRssMiB\tcpuWorkSec\tavgCores\tfinalHeights",
+    "daemon\tvariant\theightDiff\trestoreHeight\tdurationSec\tpeakRssMiB\tcpuWorkSec\tavgCores\tblocks\tfinalHeights",
   );
   for (const result of results) {
     console.log(
       [
-        result.heightLabel,
         result.daemon,
         result.variant,
+        result.heightDiff,
         result.restoreHeight,
         (result.durationMs / 1000).toFixed(1),
-        (result.peakRendererRssBytes / (1024 * 1024)).toFixed(1),
+        (result.peakRssBytes / (1024 * 1024)).toFixed(1),
         result.cpuWorkSec.toFixed(2),
         result.avgCoresUsed.toFixed(2),
+        result.blocksReceived ?? "",
         `${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"}`,
       ].join("\t"),
     );
@@ -217,16 +249,19 @@ function printSummary(results: CellResult[]): void {
   console.log("[bench] ====================\n");
 }
 
-async function runOneCell(params: {
+async function runWasmCell(params: {
   browser: Browser;
-  variant: WasmVariant;
+  variant: "asyncify" | "threads" | "threads4";
   daemon: DaemonKind;
   daemonAddress: string;
-  heightCase: HeightCase;
+  heightDiff: number;
+  restoreHeight: number;
+  tipHeight: number;
   seed: string;
   timeoutMs: number;
 }): Promise<CellResult> {
-  const label = `${params.heightCase.label}/${params.daemon}/${params.variant}`;
+  const label = `${params.daemon}/${params.variant}`;
+  const concurrencyOverride = params.variant === "threads4" ? 4 : null;
   const preSnapshot = await snapshotRendererCpuByPid(params.browser);
   const context = await params.browser.newContext({
     baseURL: previewUrl(params.variant),
@@ -234,25 +269,33 @@ async function runOneCell(params: {
     viewport: { width: 1460, height: 920 },
   });
   const page = await context.newPage();
+  patchWorkerHardwareConcurrency(page, concurrencyOverride);
   let metrics: Awaited<ReturnType<typeof createProcessMetricsTracker>> | null =
     null;
 
   try {
-    await applyBenchSettings(page, params.daemonAddress);
+    await applyBenchSettings(
+      page,
+      params.daemonAddress,
+      concurrencyOverride,
+    );
     await page.goto("/");
     const initial = new InitialWalletListPage(page);
     await initial.waitUntilLoaded();
-    await assertActiveWasmVariant(page, params.variant);
+    await assertActiveWasmVariant(
+      page,
+      params.variant === "asyncify" ? "asyncify" : "threads",
+    );
 
     const afterLoadCpu = await readRendererCpuByPid(preSnapshot.session);
     const trackedPid = pickPageRendererPid(preSnapshot.cpuByPid, afterLoadCpu);
     await preSnapshot.session.detach().catch(() => undefined);
 
-    const walletName = `bench-${params.variant}-${params.daemon}-${params.heightCase.label}-${Date.now()}`;
+    const walletName = `bench-${params.variant}-${params.daemon}-${Date.now()}`;
     await fillRestoreForm(page, {
       walletName,
       seed: params.seed,
-      startingHeight: String(params.heightCase.height),
+      startingHeight: String(params.restoreHeight),
     });
 
     metrics = await createProcessMetricsTracker(
@@ -280,15 +323,17 @@ async function runOneCell(params: {
       variant: params.variant,
       daemon: params.daemon,
       daemonAddress: params.daemonAddress,
-      heightLabel: params.heightCase.label,
-      restoreHeight: params.heightCase.height,
+      heightDiff: params.heightDiff,
+      restoreHeight: params.restoreHeight,
+      tipHeight: params.tipHeight,
       durationMs: sync.durationMs,
       finalWalletHeight: sync.finalWalletHeight,
       finalDaemonHeight: sync.finalDaemonHeight,
-      peakRendererRssBytes: sync.peakRendererRssBytes,
+      peakRssBytes: sync.peakRendererRssBytes,
       cpuWorkSec: sync.cpuWorkSec,
       avgCoresUsed: sync.avgCoresUsed,
       peakMainJsHeapUsedBytes: sync.peakMainJsHeapUsedBytes,
+      blocksReceived: null,
     };
   } finally {
     await preSnapshot.session.detach().catch(() => undefined);
@@ -299,6 +344,47 @@ async function runOneCell(params: {
   }
 }
 
+async function runNativeCell(params: {
+  variant: "native0" | "native4";
+  daemon: DaemonKind;
+  daemonAddress: string;
+  heightDiff: number;
+  restoreHeight: number;
+  tipHeight: number;
+  seed: string;
+  timeoutMs: number;
+  walletCliPath: string;
+}): Promise<CellResult> {
+  const label = `${params.daemon}/${params.variant}`;
+  const maxConcurrency = params.variant === "native0" ? 0 : 4;
+  const sync = await runNativeWalletCliSync({
+    walletCliPath: params.walletCliPath,
+    seed: params.seed,
+    restoreHeight: params.restoreHeight,
+    daemonHttpUrl: params.daemonAddress,
+    maxConcurrency,
+    timeoutMs: params.timeoutMs,
+    progressLabel: label,
+  });
+
+  return {
+    variant: params.variant,
+    daemon: params.daemon,
+    daemonAddress: params.daemonAddress,
+    heightDiff: params.heightDiff,
+    restoreHeight: params.restoreHeight,
+    tipHeight: params.tipHeight,
+    durationMs: sync.durationMs,
+    finalWalletHeight: sync.restoreHeight + (sync.blocksReceived ?? 0),
+    finalDaemonHeight: sync.finalDaemonHeight,
+    peakRssBytes: sync.peakRssBytes,
+    cpuWorkSec: sync.cpuWorkSec,
+    avgCoresUsed: sync.avgCoresUsed,
+    peakMainJsHeapUsedBytes: null,
+    blocksReceived: sync.blocksReceived,
+  };
+}
+
 test.describe.configure({ mode: "serial" });
 
 test("mainnet sync performance matrix", async ({ browser }) => {
@@ -306,12 +392,20 @@ test("mainnet sync performance matrix", async ({ browser }) => {
   const localAddress = envOr("BENCH_DAEMON_LOCAL", DEFAULT_LOCAL);
   const cakeAddress = envOr("BENCH_DAEMON_REMOTE", DEFAULT_CAKE);
   const timeoutMs = Number(process.env.BENCH_TIMEOUT_MS ?? 4 * 60 * 60 * 1000);
-  const heights = parseHeights();
+  const heightDiff = parseHeightDiff();
+  const walletCliPath = resolveWalletCliPath();
 
-  test.setTimeout(Math.max(timeoutMs * heights.length * 4, 60_000));
+  test.setTimeout(Math.max(timeoutMs * 10, 60_000));
+
+  await assertWalletCliExists(walletCliPath);
 
   const localInfo = await assertDaemonReadyForBench(localAddress, "local");
   const cakeInfo = await assertDaemonReadyForBench(cakeAddress, "cake");
+
+  // Use the lower tip so restore height is valid for both daemons.
+  const tipHeight = Math.min(localInfo.height, cakeInfo.height);
+  const restoreHeight = Math.max(0, tipHeight - heightDiff);
+
   console.log(
     `[bench] local tip=${localInfo.height} synchronized=${localInfo.synchronized}`,
   );
@@ -319,38 +413,54 @@ test("mainnet sync performance matrix", async ({ browser }) => {
     `[bench] cake tip=${cakeInfo.height} synchronized=${cakeInfo.synchronized}`,
   );
   console.log(
-    `[bench] heights=${heights
-      .map((height) => `${height.label}:${height.height}`)
-      .join(", ")}`,
+    `[bench] heightDiff=${heightDiff} restoreHeight=${restoreHeight} (from tip ${tipHeight})`,
   );
+  console.log(`[bench] wallet-cli=${walletCliPath}`);
 
   const daemons: Array<{ kind: DaemonKind; address: string }> = [
     { kind: "cake", address: cakeAddress },
     { kind: "local", address: localAddress },
   ];
-  const variants: WasmVariant[] = ["asyncify", "threads"];
+  const variants: BenchVariant[] = [
+    "asyncify",
+    "threads",
+    "threads4",
+    "native0",
+    "native4",
+  ];
   const results: CellResult[] = [];
 
-  // height → daemon → variant: keep Asyncify/Threads adjacent for fair comparisons
-  for (const heightCase of heights) {
-    for (const daemon of daemons) {
-      for (const variant of variants) {
-        console.log(
-          `[bench] START ${heightCase.label}/${daemon.kind}/${variant} ` +
-            `restoreHeight=${heightCase.height} daemon=${daemon.address}`,
-        );
-        const result = await runOneCell({
-          browser,
-          variant,
-          daemon: daemon.kind,
-          daemonAddress: daemon.address,
-          heightCase,
-          seed,
-          timeoutMs,
-        });
-        results.push(result);
-        printCellResult(result);
-      }
+  for (const daemon of daemons) {
+    for (const variant of variants) {
+      console.log(
+        `[bench] START ${daemon.kind}/${variant} ` +
+          `restoreHeight=${restoreHeight} daemon=${daemon.address}`,
+      );
+      const result = isWasmVariant(variant)
+        ? await runWasmCell({
+            browser,
+            variant,
+            daemon: daemon.kind,
+            daemonAddress: daemon.address,
+            heightDiff,
+            restoreHeight,
+            tipHeight,
+            seed,
+            timeoutMs,
+          })
+        : await runNativeCell({
+            variant,
+            daemon: daemon.kind,
+            daemonAddress: daemon.address,
+            heightDiff,
+            restoreHeight,
+            tipHeight,
+            seed,
+            timeoutMs,
+            walletCliPath,
+          });
+      results.push(result);
+      printCellResult(result);
     }
   }
 
@@ -364,12 +474,12 @@ test("mainnet sync performance matrix", async ({ browser }) => {
     outPath,
     JSON.stringify(
       {
-        startedTips: {
-          local: localInfo,
-          cake: cakeInfo,
-        },
+        startedTips: { local: localInfo, cake: cakeInfo },
+        heightDiff,
+        tipHeight,
+        restoreHeight,
         seedWordCount: seed.trim().split(/\s+/).length,
-        heights,
+        walletCliPath,
         results,
       },
       null,
