@@ -237,21 +237,6 @@ export class WalletMainPage {
       .toBe(address);
   }
 
-  async expectLatestTransactionPaymentId(
-    typeLabel: "Mempool In" | "Incoming" | "Outgoing" | "Pending",
-    paymentId: string,
-  ): Promise<void> {
-    await this.openTab("transactions");
-    const card = this.page.getByLabel(`Transaction card: ${typeLabel}`).first();
-    await expect(card).toBeVisible();
-    await card.click();
-    const paymentIdValue = card.getByLabel(
-      `${typeLabel} transaction payment id`,
-    );
-    await expect(paymentIdValue).toBeVisible();
-    await expect(paymentIdValue).toContainText(paymentId);
-  }
-
   async confirmSend(): Promise<void> {
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();

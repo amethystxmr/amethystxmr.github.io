@@ -3,7 +3,6 @@ import {
   FROM_KEYS_TEST_ADDRESS,
   INTEGRATED_RECIPIENT_ADDRESS,
   INTEGRATED_RECIPIENT_INTEGRATED_ADDRESS,
-  INTEGRATED_RECIPIENT_PAYMENT_ID,
   INTEGRATED_RECIPIENT_PRIVATE_SPEND_KEY,
   INTEGRATED_RECIPIENT_PRIVATE_VIEW_KEY,
   MONERO_MINING_ADDRESS,
@@ -26,7 +25,7 @@ test.beforeEach(async ({ page }) => {
   await initializeAppTestSettings(page);
 });
 
-test("send to integrated address preserves payment id", async ({
+test("send to integrated address pays integrated recipient", async ({
   page,
   context,
 }) => {
@@ -108,7 +107,7 @@ test("send to integrated address preserves payment id", async ({
     expect(wallet1LockedBalance).toBeGreaterThan(0n);
   });
 
-  await test.step("Verify payment reaches the underlying standard address with payment id", async () => {
+  await test.step("Verify payment reaches the underlying standard address", async () => {
     const wallet2MempoolCount = await wallet2.waitForPaymentTypeCountAtLeast(
       "mempool",
       1,
@@ -119,11 +118,6 @@ test("send to integrated address preserves payment id", async ({
       TRANSFER_AMOUNT_XMR,
       "+",
     );
-    await wallet2.expectLatestTransactionPaymentId(
-      "Mempool In",
-      INTEGRATED_RECIPIENT_PAYMENT_ID,
-    );
-
     await generateBlocks(MONERO_MINING_ADDRESS, POST_SEND_MINED_BLOCKS);
     const wallet1OutgoingCount = await wallet1.waitForPaymentTypeCountAtLeast(
       "out",

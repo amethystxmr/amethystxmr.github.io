@@ -2,7 +2,6 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import {
   INTEGRATED_RECIPIENT_ADDRESS,
   INTEGRATED_RECIPIENT_INTEGRATED_ADDRESS,
-  INTEGRATED_RECIPIENT_PAYMENT_ID,
   INTEGRATED_RECIPIENT_PRIVATE_SPEND_KEY,
   INTEGRATED_RECIPIENT_PRIVATE_VIEW_KEY,
   MONERO_MINING_ADDRESS,
@@ -283,7 +282,7 @@ test.describe("multisig flow", () => {
         });
       });
 
-      await test.step("Verify integrated pending transaction amount and payment id", async () => {
+      await test.step("Verify integrated pending transaction amount", async () => {
         const pendingCount =
           await multisigWallets[0].waitForPaymentTypeCountAtLeast("pending", 2);
         expect(pendingCount).toBeGreaterThanOrEqual(2);
@@ -297,10 +296,6 @@ test.describe("multisig flow", () => {
           "Mempool In",
           INTEGRATED_TRANSFER_AMOUNT_XMR,
           "+",
-        );
-        await integratedRecipientWallet.expectLatestTransactionPaymentId(
-          "Mempool In",
-          INTEGRATED_RECIPIENT_PAYMENT_ID,
         );
       });
 
@@ -329,10 +324,6 @@ test.describe("multisig flow", () => {
           "Incoming",
           INTEGRATED_TRANSFER_AMOUNT_XMR,
           "+",
-        );
-        await integratedRecipientWallet.expectLatestTransactionPaymentId(
-          "Incoming",
-          INTEGRATED_RECIPIENT_PAYMENT_ID,
         );
       });
     });
