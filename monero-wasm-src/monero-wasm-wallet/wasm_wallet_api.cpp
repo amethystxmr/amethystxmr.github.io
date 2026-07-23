@@ -2,6 +2,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -672,10 +673,10 @@ public:
         m_wallet.get_unconfirmed_payments(payments);
 
         std::vector<PaymentDetails> result;
-        for (const auto &[tx_hash, ppd] : payments)
+        for (const auto &[payment_hash, ppd] : payments)
         {
             const tools::wallet2::payment_details &pd = ppd.m_pd;
-            const std::string payment_id = epee::string_tools::pod_to_hex(tx_hash);
+            const std::string payment_id = epee::string_tools::pod_to_hex(payment_hash);
             const std::string note = m_wallet.get_tx_note(pd.m_tx_hash);
 
             std::vector<PaymentDetails::Destination> destinations{
@@ -756,6 +757,8 @@ public:
 
         std::vector<cryptonote::tx_destination_entry> dsts;
         dsts.reserve(dst_addresses.size());
+        std::vector<uint8_t> extra;
+        bool payment_id_seen = false;
         for (size_t i = 0; i < dst_addresses.size(); ++i)
         {
             cryptonote::address_parse_info info;
@@ -765,11 +768,22 @@ public:
             }
 
             cryptonote::tx_destination_entry de;
+            de.original = dst_addresses[i];
             de.addr = info.address;
             de.is_subaddress = info.is_subaddress;
             de.is_integrated = info.has_payment_id;
             de.amount = amounts[i];
             dsts.push_back(de);
+
+            if (info.has_payment_id)
+            {
+                if (payment_id_seen)
+                {
+                    throw std::runtime_error("A single payment id is allowed per transaction");
+                }
+                add_integrated_payment_id_to_extra(extra, info.payment_id);
+                payment_id_seen = true;
+            }
         }
 
         tools::wallet2::unique_index_container subtract_fee_from_outputs;
@@ -783,7 +797,6 @@ public:
         }
 
         const size_t fake_outs_count = m_wallet.get_min_ring_size() - 1;
-        std::vector<uint8_t> extra;
         std::set<uint32_t> subaddr_indices;
 
         auto ptx_vector = m_wallet.create_transactions_2(
@@ -815,6 +828,10 @@ public:
 
         const size_t fake_outs_count = m_wallet.get_min_ring_size() - 1;
         std::vector<uint8_t> extra;
+        if (info.has_payment_id)
+        {
+            add_integrated_payment_id_to_extra(extra, info.payment_id);
+        }
         std::set<uint32_t> subaddr_indices;
 
         auto ptx_vector = m_wallet.create_transactions_all(
@@ -824,6 +841,21 @@ public:
         if (ptx_vector.empty())
         {
             throw std::runtime_error("No outputs found, or daemon is not ready");
+        }
+
+        // create_transactions_all does not carry integrated-address metadata on
+        // destinations; restore it so confirmation/history show the address the
+        // user entered (including the embedded payment id).
+        if (info.has_payment_id)
+        {
+            for (auto &ptx : ptx_vector)
+            {
+                for (auto &dst : ptx.dests)
+                {
+                    dst.original = dst_address;
+                    dst.is_integrated = true;
+                }
+            }
         }
 
         return register_pending_tx_handle(
@@ -980,6 +1012,22 @@ private:
         return indexed_to_js_array(ptxs.size(), [&](std::size_t i) -> emscripten::val
         {
             const auto &ptx = ptxs[i];
+
+            crypto::hash payment_id = crypto::null_hash;
+            {
+                std::vector<cryptonote::tx_extra_field> tx_extra_fields;
+                if (cryptonote::parse_tx_extra(ptx.construction_data.extra, tx_extra_fields))
+                {
+                    cryptonote::tx_extra_nonce extra_nonce;
+                    crypto::hash8 payment_id8 = crypto::null_hash8;
+                    if (cryptonote::find_tx_extra_field_by_type(tx_extra_fields, extra_nonce) &&
+                        cryptonote::get_encrypted_payment_id_from_tx_extra_nonce(extra_nonce.nonce, payment_id8))
+                    {
+                        memcpy(payment_id.data, payment_id8.data, sizeof(payment_id8));
+                    }
+                }
+            }
+
             auto tx_item = emscripten::val::object();
             tx_item.set("fee", ptx.fee);
             tx_item.set("changeAmount", ptx.change_dts.amount);
@@ -987,12 +1035,24 @@ private:
             {
                 const auto &dst = ptx.dests[j];
                 auto dst_item = emscripten::val::object();
-                dst_item.set("dstAddress", cryptonote::get_account_address_as_str(nettype, dst.is_subaddress, dst.addr));
+                dst_item.set("dstAddress", dst.address(nettype, payment_id));
                 dst_item.set("dspAmount", dst.amount);
                 return dst_item;
             }));
             return tx_item;
         });
+    }
+
+    static void add_integrated_payment_id_to_extra(
+        std::vector<uint8_t> &extra,
+        const crypto::hash8 &payment_id)
+    {
+        cryptonote::blobdata extra_nonce;
+        cryptonote::set_encrypted_payment_id_to_tx_extra_nonce(extra_nonce, payment_id);
+        if (!cryptonote::add_extra_nonce_to_tx_extra(extra, extra_nonce))
+        {
+            throw std::runtime_error("Failed to set integrated payment id");
+        }
     }
 
 public:

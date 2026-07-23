@@ -308,6 +308,12 @@ export function TransactionsTab({
                           {p.tx_hash}
                         </div>
                       )}
+                      {hasPaymentId(p.payment_id) && (
+                        <div className="mt-1 break-all whitespace-normal">
+                          <span className="text-white/45">Payment id:</span>{" "}
+                          {p.payment_id}
+                        </div>
+                      )}
                       {(p.type === "in" ||
                         p.type === "mempool" ||
                         p.type === "block") && (
@@ -581,6 +587,10 @@ function getTypeLabel(type: PaymentDetails["type"]): string {
   if (type === "failed") return "Failed";
   if (type === "block") return "Mined";
   return type;
+}
+
+function hasPaymentId(paymentId: string): boolean {
+  return paymentId.trim() !== "" && !/^0+$/.test(paymentId);
 }
 
 function getTypeToneClass(type: PaymentDetails["type"]): string {

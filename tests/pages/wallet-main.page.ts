@@ -207,6 +207,59 @@ export class WalletMainPage {
     await expect(this.page.getByText("Network fee")).toBeVisible();
   }
 
+  async expectSendReviewAddress(address: string): Promise<void> {
+    await expect(this.page.getByText("To address")).toBeVisible();
+    const reviewAddress = this.page
+      .getByText("To address")
+      .locator("..")
+      .locator(".font-mono");
+    await expect
+      .poll(async () => (await reviewAddress.innerText()).replace(/\s+/g, ""))
+      .toBe(address);
+  }
+
+  async expectLatestTransactionDestinationAddress(
+    typeLabel: "Pending" | "Outgoing",
+    address: string,
+  ): Promise<void> {
+    await this.openTab("transactions");
+    const typeBadge = this.page
+      .getByLabel(`Transaction type: ${typeLabel}`)
+      .first();
+    await expect(typeBadge).toBeVisible();
+    const card = this.page
+      .locator('div[class*="rounded-xl"][class*="ring-1"]')
+      .filter({ has: typeBadge })
+      .first();
+    await card.click();
+    await expect(card.getByText("Destinations:")).toBeVisible();
+    const destinationAddress = card.locator(`[title="${address}"]`);
+    await expect(destinationAddress).toHaveCount(1);
+    await expect
+      .poll(async () =>
+        (await destinationAddress.innerText()).replace(/\s+/g, ""),
+      )
+      .toBe(address);
+  }
+
+  async expectLatestTransactionPaymentId(
+    typeLabel: "Mempool In" | "Incoming" | "Outgoing" | "Pending",
+    paymentId: string,
+  ): Promise<void> {
+    await this.openTab("transactions");
+    const typeBadge = this.page
+      .getByLabel(`Transaction type: ${typeLabel}`)
+      .first();
+    await expect(typeBadge).toBeVisible();
+    const card = this.page
+      .locator('div[class*="rounded-xl"][class*="ring-1"]')
+      .filter({ has: typeBadge })
+      .first();
+    await card.click();
+    await expect(card.getByText("Payment id:")).toBeVisible();
+    await expect(card.getByText(paymentId, { exact: false })).toBeVisible();
+  }
+
   async confirmSend(): Promise<void> {
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
@@ -262,7 +315,7 @@ export class WalletMainPage {
   }
 
   async expectLatestTransactionAmount(
-    typeLabel: "Mined" | "Pending" | "Mempool In",
+    typeLabel: "Mined" | "Pending" | "Mempool In" | "Incoming" | "Outgoing",
     amountXmr: string,
     sign: "+" | "-",
   ): Promise<void> {
@@ -705,15 +758,23 @@ export class WalletMainPage {
     const mempool = await this.page
       .getByLabel("Transaction type: Mempool In")
       .count();
+    const incoming = await this.page
+      .getByLabel("Transaction type: Incoming")
+      .count();
+    const outgoing = await this.page
+      .getByLabel("Transaction type: Outgoing")
+      .count();
     return {
       block: mined,
       pending,
       mempool,
+      in: incoming,
+      out: outgoing,
     };
   }
 
   async waitForPaymentTypeCountAtLeast(
-    paymentType: "block" | "pending" | "mempool",
+    paymentType: "block" | "pending" | "mempool" | "in" | "out",
     minCount: number,
     timeoutMs = 180_000,
   ): Promise<number> {
