@@ -62,6 +62,55 @@ export async function fetchDaemonInfo(
   };
 }
 
+export async function fetchBlockTimestamp(
+  daemonAddress: string,
+  height: number,
+): Promise<number> {
+  const response = await fetch(rpcUrl(daemonAddress), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: "bench",
+      method: "get_block_header_by_height",
+      params: { height },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Daemon ${daemonAddress} HTTP ${response.status} ${response.statusText}`,
+    );
+  }
+  const body = (await response.json()) as {
+    result?: { block_header?: { timestamp?: number } };
+    error?: { message?: string };
+  };
+  if (body.error) {
+    throw new Error(
+      `Daemon ${daemonAddress} RPC error: ${body.error.message ?? "unknown"}`,
+    );
+  }
+  const timestamp = body.result?.block_header?.timestamp;
+  if (typeof timestamp !== "number") {
+    throw new Error(
+      `Daemon ${daemonAddress} returned no timestamp for height ${height}`,
+    );
+  }
+  return timestamp;
+}
+
+/** Format a unix-seconds age as e.g. "21d 3h (~3.0w)". */
+export function formatAgeFromUnixSeconds(
+  blockTimestampSec: number,
+  nowSec = Math.floor(Date.now() / 1000),
+): string {
+  const ageSec = Math.max(0, nowSec - blockTimestampSec);
+  const days = Math.floor(ageSec / 86400);
+  const hours = Math.floor((ageSec % 86400) / 3600);
+  const weeks = ageSec / (7 * 86400);
+  return `${days}d ${hours}h (~${weeks.toFixed(1)}w)`;
+}
+
 /** Verify a production mainnet daemon is reachable and fully synced. Does not start monerod. */
 export async function assertDaemonReadyForBench(
   daemonAddress: string,

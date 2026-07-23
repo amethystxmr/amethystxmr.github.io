@@ -89,7 +89,7 @@ npm run test:e2e -- tests/wasm_variant_matrix.spec.ts
 ## Sync performance bench
 
 Mainnet restore/sync benchmark. One restore height = current tip −
-`BENCH_HEIGHT_DIFF` (default **10080** ≈ 2 weeks at 720 blocks/day).
+`BENCH_HEIGHT_DIFF` (default **15120** ≈ 3 weeks at 720 blocks/day).
 
 Compares five variants × Cake vs local daemon (10 cells), in order
 **daemon → variant**:
@@ -130,16 +130,16 @@ Optional: `BENCH_WALLET_CLI_PATH=/path/to/monero-wallet-cli` to override.
 npm run bench:sync
 ```
 
-Smoke / shorter window:
+Smoke / ~1 day (720 blocks):
 
 ```bash
-BENCH_HEIGHT_DIFF=1000 npm run bench:sync
+BENCH_HEIGHT_DIFF=720 npm run bench:sync
 ```
 
 Other overrides:
 
 ```bash
-BENCH_SEED="dogs zero ..." BENCH_HEIGHT_DIFF=10080 BENCH_DAEMON_LOCAL="http://localhost:18081" BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" BENCH_TIMEOUT_MS=14400000 npm run bench:sync
+BENCH_SEED="dogs zero ..." BENCH_HEIGHT_DIFF=15120 BENCH_DAEMON_LOCAL="http://localhost:18081" BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" BENCH_TIMEOUT_MS=14400000 npm run bench:sync
 ```
 
 Progress prints during each cell; JSON under `tests/bench/results/` (gitignored).

@@ -1,8 +1,8 @@
 /**
  * Mainnet sync performance bench.
  *
- * One restore height: tip - BENCH_HEIGHT_DIFF (default 10080 ≈ 2 weeks).
- * Loop order: daemon → variant so comparable variants stay adjacent.
+ * One restore height: tip - BENCH_HEIGHT_DIFF (default 15120 ≈ 3 weeks).
+ * Loop order: daemon → variant (local first) so comparable variants stay adjacent.
  *
  * Variants:
  * - asyncify
@@ -24,7 +24,11 @@ import {
 import { NetworkTypes } from "../../monero-wasm-module/walletApi";
 import { InitialWalletListPage } from "../pages/initial-wallet-list.page";
 import { WalletMainPage } from "../pages/wallet-main.page";
-import { assertDaemonReadyForBench } from "./helpers/daemonInfo";
+import {
+  assertDaemonReadyForBench,
+  fetchBlockTimestamp,
+  formatAgeFromUnixSeconds,
+} from "./helpers/daemonInfo";
 import {
   assertWalletCliExists,
   resolveWalletCliPath,
@@ -40,12 +44,7 @@ import {
 import { waitUntilWalletSynced } from "./helpers/syncWait";
 
 type DaemonKind = "local" | "cake";
-type BenchVariant =
-  | "asyncify"
-  | "threads"
-  | "threads4"
-  | "native0"
-  | "native4";
+type BenchVariant = "asyncify" | "threads" | "threads4" | "native0" | "native4";
 
 type CellResult = {
   variant: BenchVariant;
@@ -67,8 +66,8 @@ type CellResult = {
 const DEFAULT_SEED =
   "dogs zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero";
 
-/** ~2 weeks at 720 blocks/day. */
-const DEFAULT_HEIGHT_DIFF = 10_080;
+/** ~3 weeks at 720 blocks/day. */
+const DEFAULT_HEIGHT_DIFF = 15_120;
 
 const DEFAULT_LOCAL = "http://localhost:18081";
 const DEFAULT_CAKE = "https://xmr-node.cakewallet.com:18081";
@@ -207,11 +206,71 @@ function cellLabel(result: {
   return `${result.daemon}/${result.variant}`;
 }
 
+function formatDurationHuman(durationMs: number): string {
+  const totalSec = Math.max(0, Math.round(durationMs / 1000));
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
+function padCell(value: string, width: number): string {
+  return value.length >= width
+    ? value
+    : `${value}${" ".repeat(width - value.length)}`;
+}
+
+function printSummary(results: CellResult[]): void {
+  const headers = [
+    "daemon",
+    "variant",
+    "diff",
+    "restoreH",
+    "duration",
+    "durHuman",
+    "rssMiB",
+    "cpuWork",
+    "avgCores",
+    "blocks",
+    "finalH",
+  ] as const;
+
+  const rows = results.map((result) => [
+    result.daemon,
+    result.variant,
+    String(result.heightDiff),
+    String(result.restoreHeight),
+    `${(result.durationMs / 1000).toFixed(1)}s`,
+    formatDurationHuman(result.durationMs),
+    (result.peakRssBytes / (1024 * 1024)).toFixed(1),
+    `${result.cpuWorkSec.toFixed(2)}s`,
+    result.avgCoresUsed.toFixed(2),
+    result.blocksReceived === null ? "-" : String(result.blocksReceived),
+    `${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"}`,
+  ]);
+
+  const widths = headers.map((header, col) =>
+    Math.max(header.length, ...rows.map((row) => row[col].length)),
+  );
+
+  const formatRow = (cells: string[]) =>
+    cells.map((cell, i) => padCell(cell, widths[i])).join("  ");
+
+  const separator = widths.map((width) => "-".repeat(width)).join("  ");
+
+  console.log("\n[bench] ===== SUMMARY =====");
+  console.log(formatRow([...headers]));
+  console.log(separator);
+  for (const row of rows) {
+    console.log(formatRow(row));
+  }
+  console.log("[bench] ====================\n");
+}
+
 function printCellResult(result: CellResult): void {
   console.log(
     `[bench] DONE ${cellLabel(result)} ` +
       `restoreHeight=${result.restoreHeight} (tip-${result.heightDiff}) ` +
-      `duration=${(result.durationMs / 1000).toFixed(1)}s ` +
+      `duration=${(result.durationMs / 1000).toFixed(1)}s (${formatDurationHuman(result.durationMs)}) ` +
       `final=${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"} ` +
       `peakRss=${formatBytes(result.peakRssBytes)} ` +
       `cpuWork=${result.cpuWorkSec.toFixed(2)}s ` +
@@ -223,30 +282,6 @@ function printCellResult(result: CellResult): void {
         ? ` mainHeapPeak=${formatBytes(result.peakMainJsHeapUsedBytes)}`
         : ""),
   );
-}
-
-function printSummary(results: CellResult[]): void {
-  console.log("\n[bench] ===== SUMMARY =====");
-  console.log(
-    "daemon\tvariant\theightDiff\trestoreHeight\tdurationSec\tpeakRssMiB\tcpuWorkSec\tavgCores\tblocks\tfinalHeights",
-  );
-  for (const result of results) {
-    console.log(
-      [
-        result.daemon,
-        result.variant,
-        result.heightDiff,
-        result.restoreHeight,
-        (result.durationMs / 1000).toFixed(1),
-        (result.peakRssBytes / (1024 * 1024)).toFixed(1),
-        result.cpuWorkSec.toFixed(2),
-        result.avgCoresUsed.toFixed(2),
-        result.blocksReceived ?? "",
-        `${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"}`,
-      ].join("\t"),
-    );
-  }
-  console.log("[bench] ====================\n");
 }
 
 async function runWasmCell(params: {
@@ -274,11 +309,7 @@ async function runWasmCell(params: {
     null;
 
   try {
-    await applyBenchSettings(
-      page,
-      params.daemonAddress,
-      concurrencyOverride,
-    );
+    await applyBenchSettings(page, params.daemonAddress, concurrencyOverride);
     await page.goto("/");
     const initial = new InitialWalletListPage(page);
     await initial.waitUntilLoaded();
@@ -402,9 +433,13 @@ test("mainnet sync performance matrix", async ({ browser }) => {
   const localInfo = await assertDaemonReadyForBench(localAddress, "local");
   const cakeInfo = await assertDaemonReadyForBench(cakeAddress, "cake");
 
-  // Use the lower tip so restore height is valid for both daemons.
   const tipHeight = Math.min(localInfo.height, cakeInfo.height);
   const restoreHeight = Math.max(0, tipHeight - heightDiff);
+  const restoreBlockTimestamp = await fetchBlockTimestamp(
+    localAddress,
+    restoreHeight,
+  );
+  const restoreAge = formatAgeFromUnixSeconds(restoreBlockTimestamp);
 
   console.log(
     `[bench] local tip=${localInfo.height} synchronized=${localInfo.synchronized}`,
@@ -413,13 +448,13 @@ test("mainnet sync performance matrix", async ({ browser }) => {
     `[bench] cake tip=${cakeInfo.height} synchronized=${cakeInfo.synchronized}`,
   );
   console.log(
-    `[bench] heightDiff=${heightDiff} restoreHeight=${restoreHeight} (from tip ${tipHeight})`,
+    `[bench] heightDiff=${heightDiff} restoreHeight=${restoreHeight} (from tip ${tipHeight}, block age ${restoreAge})`,
   );
   console.log(`[bench] wallet-cli=${walletCliPath}`);
 
   const daemons: Array<{ kind: DaemonKind; address: string }> = [
-    { kind: "cake", address: cakeAddress },
     { kind: "local", address: localAddress },
+    { kind: "cake", address: cakeAddress },
   ];
   const variants: BenchVariant[] = [
     "asyncify",
@@ -461,6 +496,7 @@ test("mainnet sync performance matrix", async ({ browser }) => {
           });
       results.push(result);
       printCellResult(result);
+      printSummary(results);
     }
   }
 
@@ -478,6 +514,8 @@ test("mainnet sync performance matrix", async ({ browser }) => {
         heightDiff,
         tipHeight,
         restoreHeight,
+        restoreBlockTimestamp,
+        restoreAge,
         seedWordCount: seed.trim().split(/\s+/).length,
         walletCliPath,
         results,
