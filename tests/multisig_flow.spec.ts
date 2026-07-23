@@ -1,5 +1,12 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { MONERO_MINING_ADDRESS } from "./constants";
+import {
+  INTEGRATED_RECIPIENT_ADDRESS,
+  INTEGRATED_RECIPIENT_INTEGRATED_ADDRESS,
+  INTEGRATED_RECIPIENT_PAYMENT_ID,
+  INTEGRATED_RECIPIENT_PRIVATE_SPEND_KEY,
+  INTEGRATED_RECIPIENT_PRIVATE_VIEW_KEY,
+  MONERO_MINING_ADDRESS,
+} from "./constants";
 import { generateBlocks } from "./helpers/moneroRpc";
 import { startMonerod } from "./helpers/monerod";
 import { initializeAppTestSettings } from "./helpers/testSettings";
@@ -10,9 +17,11 @@ import {
 } from "./pages/wallet-main.page";
 
 const TRANSFER_AMOUNT_XMR = "3";
+const INTEGRATED_TRANSFER_AMOUNT_XMR = "2.345678901234";
 const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
 const MIN_EXPECTED_UNLOCKED_BALANCE =
   BigInt(TRANSFER_AMOUNT_XMR) * XMR_ATOMIC_UNITS_PER_XMR;
+const MIN_EXPECTED_INTEGRATED_UNLOCKED_BALANCE = 2_345_678_901_234n;
 const INITIAL_MINED_BLOCKS = 140;
 const POST_SEND_MINED_BLOCKS = 70;
 
@@ -222,35 +231,41 @@ test.describe("multisig flow", () => {
         expect(recipientAddress.length).toBeGreaterThan(20);
       });
 
-      await test.step("Create, sign, and send multisig transaction", async () => {
-        let partialData =
-          await multisigWallets[0].createMultisigTransactionAndExport(
-            recipientAddress,
-            TRANSFER_AMOUNT_XMR,
-          );
-        for (let signer = 1; signer < threshold; signer++) {
-          await test.step(`Signer [${signer + 1}/${threshold}] sign pass`, async () => {
-            const result: MultisigSignResult =
-              await multisigWallets[signer].signMultisigTransactionAndContinue(
-                partialData,
-              );
-            if (signer < threshold - 1) {
-              if (result.sent) {
-                throw new Error(
-                  `Signer ${signer + 1} unexpectedly finalized transaction early`,
-                );
-              }
-              partialData = result.exportedData;
-            } else if (!result.sent) {
-              throw new Error(
-                `Final signer ${signer + 1} did not finalize multisig transaction`,
-              );
-            }
+      let integratedRecipientWallet: WalletMainPage;
+      await test.step("Restore integrated recipient wallet", async () => {
+        const integratedRecipientPage = await context.newPage();
+        await initializeAppTestSettings(integratedRecipientPage);
+        const integratedRecipientInitial = new InitialWalletListPage(
+          integratedRecipientPage,
+        );
+        const integratedRecipientName = `integrated-recipient-${threshold}-of-${members}-${Date.now()}`;
+
+        await integratedRecipientInitial.goto();
+        await integratedRecipientInitial.waitUntilLoaded();
+        await integratedRecipientInitial.openRestoreWallet();
+        integratedRecipientWallet =
+          await integratedRecipientInitial.restoreWalletFromKeys({
+            walletName: integratedRecipientName,
+            address: INTEGRATED_RECIPIENT_ADDRESS,
+            secretViewKey: INTEGRATED_RECIPIENT_PRIVATE_VIEW_KEY,
+            secretSpendKey: INTEGRATED_RECIPIENT_PRIVATE_SPEND_KEY,
+            startingHeight: "0",
           });
-        }
+        expect(await integratedRecipientWallet.getPrimaryAddress()).toBe(
+          INTEGRATED_RECIPIENT_ADDRESS,
+        );
       });
 
-      await test.step("Verify pending and mempool statuses", async () => {
+      await test.step("Create, sign, and send multisig transaction", async () => {
+        await createSignAndSendMultisigTransaction({
+          multisigWallets,
+          threshold,
+          destinationAddress: recipientAddress,
+          amountXmr: TRANSFER_AMOUNT_XMR,
+        });
+      });
+
+      await test.step("Verify regular pending and mempool statuses", async () => {
         const pendingCount =
           await multisigWallets[0].waitForPaymentTypeCountAtLeast("pending", 1);
         expect(pendingCount).toBeGreaterThan(0);
@@ -259,8 +274,41 @@ test.describe("multisig flow", () => {
         expect(mempoolCount).toBeGreaterThan(0);
       });
 
-      await test.step("Mine unlock blocks and verify recipient unlocked balance", async () => {
+      await test.step("Create, sign, and send integrated-address multisig transaction", async () => {
+        await createSignAndSendMultisigTransaction({
+          multisigWallets,
+          threshold,
+          destinationAddress: INTEGRATED_RECIPIENT_INTEGRATED_ADDRESS,
+          amountXmr: INTEGRATED_TRANSFER_AMOUNT_XMR,
+        });
+      });
+
+      await test.step("Verify integrated pending transaction amount and payment id", async () => {
+        const pendingCount =
+          await multisigWallets[0].waitForPaymentTypeCountAtLeast("pending", 2);
+        expect(pendingCount).toBeGreaterThanOrEqual(2);
+        const mempoolCount =
+          await integratedRecipientWallet.waitForPaymentTypeCountAtLeast(
+            "mempool",
+            1,
+          );
+        expect(mempoolCount).toBeGreaterThan(0);
+        await integratedRecipientWallet.expectLatestTransactionAmount(
+          "Mempool In",
+          INTEGRATED_TRANSFER_AMOUNT_XMR,
+          "+",
+        );
+        await integratedRecipientWallet.expectLatestTransactionPaymentId(
+          "Mempool In",
+          INTEGRATED_RECIPIENT_PAYMENT_ID,
+        );
+      });
+
+      await test.step("Mine unlock blocks and verify recipient unlocked balances", async () => {
         await generateBlocks(MONERO_MINING_ADDRESS, POST_SEND_MINED_BLOCKS);
+        const multisigOutgoingCount =
+          await multisigWallets[0].waitForPaymentTypeCountAtLeast("out", 2);
+        expect(multisigOutgoingCount).toBeGreaterThanOrEqual(2);
         const recipientUnlocked =
           await recipientWallet.waitForUnlockedBalanceAtLeast(
             MIN_EXPECTED_UNLOCKED_BALANCE,
@@ -268,6 +316,23 @@ test.describe("multisig flow", () => {
           );
         expect(recipientUnlocked).toBeGreaterThanOrEqual(
           MIN_EXPECTED_UNLOCKED_BALANCE,
+        );
+        const integratedRecipientUnlocked =
+          await integratedRecipientWallet.waitForUnlockedBalanceAtLeast(
+            MIN_EXPECTED_INTEGRATED_UNLOCKED_BALANCE,
+            300_000,
+          );
+        expect(integratedRecipientUnlocked).toBeGreaterThanOrEqual(
+          MIN_EXPECTED_INTEGRATED_UNLOCKED_BALANCE,
+        );
+        await integratedRecipientWallet.expectLatestTransactionAmount(
+          "Incoming",
+          INTEGRATED_TRANSFER_AMOUNT_XMR,
+          "+",
+        );
+        await integratedRecipientWallet.expectLatestTransactionPaymentId(
+          "Incoming",
+          INTEGRATED_RECIPIENT_PAYMENT_ID,
         );
       });
     });
@@ -321,6 +386,39 @@ async function restoreMultisigWalletOnPage(
     seedType: "multisig",
     startingHeight: "0",
   });
+}
+
+async function createSignAndSendMultisigTransaction(params: {
+  multisigWallets: WalletMainPage[];
+  threshold: number;
+  destinationAddress: string;
+  amountXmr: string;
+}): Promise<void> {
+  let partialData =
+    await params.multisigWallets[0].createMultisigTransactionAndExport(
+      params.destinationAddress,
+      params.amountXmr,
+    );
+  for (let signer = 1; signer < params.threshold; signer++) {
+    await test.step(`Signer [${signer + 1}/${params.threshold}] sign pass`, async () => {
+      const result: MultisigSignResult =
+        await params.multisigWallets[signer].signMultisigTransactionAndContinue(
+          partialData,
+        );
+      if (signer < params.threshold - 1) {
+        if (result.sent) {
+          throw new Error(
+            `Signer ${signer + 1} unexpectedly finalized transaction early`,
+          );
+        }
+        partialData = result.exportedData;
+      } else if (!result.sent) {
+        throw new Error(
+          `Final signer ${signer + 1} did not finalize multisig transaction`,
+        );
+      }
+    });
+  }
 }
 
 async function synchronizeMultisigParticipantData(

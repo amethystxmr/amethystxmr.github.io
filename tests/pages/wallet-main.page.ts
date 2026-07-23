@@ -680,6 +680,7 @@ export class WalletMainPage {
     if (isFinalSigner) {
       await finalizeButton.click();
       await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
+      await this.dismissSentScreen();
       return { exportedData: null, sent: true };
     }
 
