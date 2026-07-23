@@ -803,6 +803,14 @@ export class WalletMainPage {
     return parsed;
   }
 
+  async getLockedBalanceAtomic(): Promise<bigint | null> {
+    const text =
+      (await this.page.getByLabel("XMR locked value").first().textContent()) ??
+      "";
+    const parsed = WalletMainPage.parseXmrTextToAtomic(text);
+    return parsed;
+  }
+
   async waitForUnlockedBalanceAtLeast(
     minBalanceAtomic: bigint,
     timeoutMs = 180_000,
@@ -840,6 +848,45 @@ export class WalletMainPage {
 
     throw new Error(
       `Unlocked balance did not reach ${minBalanceAtomic} atomic units. Last value: ${last}. Last UI text: ${lastUi}`,
+    );
+  }
+
+  async waitForLockedBalanceAtLeast(
+    minBalanceAtomic: bigint,
+    timeoutMs = 120_000,
+  ): Promise<bigint> {
+    const startedAt = Date.now();
+    let last = 0n;
+    let lastUi = "";
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        await this.clickRefreshWallet();
+        const balance = await this.getLockedBalanceAtomic();
+        if (balance !== null) {
+          last = balance;
+        }
+        if (balance !== null && balance >= minBalanceAtomic) {
+          return last;
+        }
+      } catch {
+        // Wallet may still be refreshing, retry.
+      }
+      try {
+        lastUi = (
+          (await this.page
+            .getByLabel("XMR locked value")
+            .first()
+            .textContent()) ?? ""
+        ).trim();
+      } catch {
+        // Ignore UI probe errors.
+      }
+      await this.page.waitForTimeout(1_000);
+    }
+
+    throw new Error(
+      `Locked balance did not reach ${minBalanceAtomic} atomic units. Last value: ${last}. Last UI text: ${lastUi}`,
     );
   }
 

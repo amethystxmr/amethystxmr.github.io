@@ -781,6 +781,11 @@ public:
                 {
                     throw std::runtime_error("A single payment id is allowed per transaction");
                 }
+                if (dst_addresses.size() > 1)
+                {
+                    throw std::runtime_error(
+                        "Integrated addresses cannot be used with multiple recipients in one transaction");
+                }
                 add_integrated_payment_id_to_extra(extra, info.payment_id);
                 payment_id_seen = true;
             }

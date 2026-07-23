@@ -14,10 +14,10 @@ import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 import type { WalletMainPage } from "./pages/wallet-main.page";
 
-const TRANSFER_AMOUNT_XMR = "2";
+const TRANSFER_AMOUNT_XMR = "2.345678901234";
 const XMR_ATOMIC_UNITS_PER_XMR = 1_000_000_000_000n;
-const MIN_EXPECTED_UNLOCKED_BALANCE =
-  BigInt(TRANSFER_AMOUNT_XMR) * XMR_ATOMIC_UNITS_PER_XMR;
+const TRANSFER_AMOUNT_ATOMIC = 2_345_678_901_234n;
+const MIN_EXPECTED_UNLOCKED_BALANCE = TRANSFER_AMOUNT_ATOMIC;
 const MIN_FUNDED_BALANCE = 10n * XMR_ATOMIC_UNITS_PER_XMR;
 const INITIAL_MINED_BLOCKS = 140;
 const POST_SEND_MINED_BLOCKS = 70;
@@ -104,6 +104,8 @@ test("send to integrated address preserves payment id", async ({
       "Pending",
       INTEGRATED_RECIPIENT_INTEGRATED_ADDRESS,
     );
+    const wallet1LockedBalance = await wallet1.waitForLockedBalanceAtLeast(1n);
+    expect(wallet1LockedBalance).toBeGreaterThan(0n);
   });
 
   await test.step("Verify payment reaches the underlying standard address with payment id", async () => {
