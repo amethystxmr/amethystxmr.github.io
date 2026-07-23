@@ -91,7 +91,7 @@ export async function runNativeWalletCliSync(params: {
   seed: string;
   restoreHeight: number;
   daemonHttpUrl: string;
-  maxConcurrency: 0 | 4;
+  maxConcurrency: 0 | 2 | 4;
   timeoutMs: number;
   progressLabel: string;
   logEveryMs?: number;

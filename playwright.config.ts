@@ -10,6 +10,7 @@ import {
 
 const IS_HEADED = process.argv.includes("--headed");
 const VARIANT_MATRIX_SPEC = "**/wasm_variant_matrix.spec.ts";
+const BENCH_SPEC = "**/bench/**";
 
 function previewCommand(port: number, env: Record<string, string> = {}) {
   const envPrefix = Object.entries(env)
@@ -25,7 +26,7 @@ function previewUrl(port: number) {
 
 export default defineConfig({
   testDir: "./tests",
-  testIgnore: ["**/bench/**"],
+  testIgnore: [BENCH_SPEC],
   timeout: 600_000,
   expect: {
     timeout: 60_000,
@@ -46,7 +47,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium-asyncify",
-      testIgnore: VARIANT_MATRIX_SPEC,
+      testIgnore: [VARIANT_MATRIX_SPEC, BENCH_SPEC],
       use: {
         ...devices["Desktop Chrome"],
         baseURL: previewUrl(E2E_ASYNCIFY_PREVIEW_PORT),
@@ -59,7 +60,7 @@ export default defineConfig({
     },
     {
       name: "chromium-threads",
-      testIgnore: VARIANT_MATRIX_SPEC,
+      testIgnore: [VARIANT_MATRIX_SPEC, BENCH_SPEC],
       use: {
         ...devices["Desktop Chrome"],
         baseURL: previewUrl(E2E_THREADS_PREVIEW_PORT),

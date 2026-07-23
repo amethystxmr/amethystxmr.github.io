@@ -1,15 +1,19 @@
 /**
  * Mainnet sync performance bench.
  *
- * One restore height: tip - BENCH_HEIGHT_DIFF (default 15120 ≈ 3 weeks).
- * Loop order: daemon → variant (local first) so comparable variants stay adjacent.
+ * One restore height: tip - BENCH_HEIGHT_DIFF (default 20160 ≈ 4 weeks).
+ * Execution order: run → daemon → variant (full matrix per run, local first).
+ * Summary table order: daemon → variant → run (same daemon/variant rows stay adjacent).
  *
  * Variants:
  * - asyncify
  * - threads (full navigator.hardwareConcurrency)
- * - threads4 (hardwareConcurrency forced to 4 in the wallet worker)
+ * - threads2 / threads4 (hardwareConcurrency forced to 2 / 4 in the wallet worker)
  * - native0 (monero-wallet-cli --max-concurrency 0 = all cores)
- * - native4 (monero-wallet-cli --max-concurrency 4)
+ * - native2 / native4 (--max-concurrency 2 / 4)
+ *
+ * BENCH_RUNS (default 5) repeats the full matrix; summary lists run1, run2, … under each
+ * daemon/variant group.
  *
  * CPU: cpuWorkSec (total CPU-seconds) and avgCores (cpuWork/wall).
  */
@@ -44,9 +48,17 @@ import {
 import { waitUntilWalletSynced } from "./helpers/syncWait";
 
 type DaemonKind = "local" | "cake";
-type BenchVariant = "asyncify" | "threads" | "threads4" | "native0" | "native4";
+type BenchVariant =
+  | "asyncify"
+  | "threads"
+  | "threads2"
+  | "threads4"
+  | "native0"
+  | "native2"
+  | "native4";
 
 type CellResult = {
+  run: number;
   variant: BenchVariant;
   daemon: DaemonKind;
   daemonAddress: string;
@@ -66,8 +78,9 @@ type CellResult = {
 const DEFAULT_SEED =
   "dogs zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero zero";
 
-/** ~3 weeks at 720 blocks/day. */
-const DEFAULT_HEIGHT_DIFF = 15_120;
+/** ~4 weeks at 720 blocks/day. */
+const DEFAULT_HEIGHT_DIFF = 20_160;
+const DEFAULT_RUNS = 5;
 
 const DEFAULT_LOCAL = "http://localhost:18081";
 const DEFAULT_CAKE = "https://xmr-node.cakewallet.com:18081";
@@ -89,6 +102,18 @@ function parseHeightDiff(): number {
   return value;
 }
 
+function parseRuns(): number {
+  const raw = process.env.BENCH_RUNS;
+  if (!raw || raw.trim().length === 0) {
+    return DEFAULT_RUNS;
+  }
+  const value = Number.parseInt(raw, 10);
+  if (Number.isNaN(value) || value < 1) {
+    throw new Error(`Invalid BENCH_RUNS=${raw}`);
+  }
+  return value;
+}
+
 function previewUrl(variant: BenchVariant): string {
   if (variant === "asyncify") {
     return `http://${APP_HOST}:${E2E_ASYNCIFY_PREVIEW_PORT}`;
@@ -98,10 +123,35 @@ function previewUrl(variant: BenchVariant): string {
 
 function isWasmVariant(
   variant: BenchVariant,
-): variant is "asyncify" | "threads" | "threads4" {
+): variant is "asyncify" | "threads" | "threads2" | "threads4" {
   return (
-    variant === "asyncify" || variant === "threads" || variant === "threads4"
+    variant === "asyncify" ||
+    variant === "threads" ||
+    variant === "threads2" ||
+    variant === "threads4"
   );
+}
+
+function wasmConcurrencyOverride(variant: BenchVariant): number | null {
+  if (variant === "threads2") {
+    return 2;
+  }
+  if (variant === "threads4") {
+    return 4;
+  }
+  return null;
+}
+
+function nativeMaxConcurrency(
+  variant: "native0" | "native2" | "native4",
+): 0 | 2 | 4 {
+  if (variant === "native0") {
+    return 0;
+  }
+  if (variant === "native2") {
+    return 2;
+  }
+  return 4;
 }
 
 async function applyBenchSettings(
@@ -202,8 +252,9 @@ async function fillRestoreForm(
 function cellLabel(result: {
   daemon: DaemonKind;
   variant: BenchVariant;
+  run: number;
 }): string {
-  return `${result.daemon}/${result.variant}`;
+  return `${result.daemon}/${result.variant}/run${result.run}`;
 }
 
 function formatDurationHuman(durationMs: number): string {
@@ -219,10 +270,41 @@ function padCell(value: string, width: number): string {
     : `${value}${" ".repeat(width - value.length)}`;
 }
 
+const DAEMON_REPORT_ORDER: DaemonKind[] = ["local", "cake"];
+const VARIANT_REPORT_ORDER: BenchVariant[] = [
+  "asyncify",
+  "threads",
+  "threads2",
+  "threads4",
+  "native0",
+  "native2",
+  "native4",
+];
+
+/** Table/report order: daemon → variant → run (independent of execution order). */
+function sortResultsForReport(results: CellResult[]): CellResult[] {
+  return [...results].sort((a, b) => {
+    const daemonCmp =
+      DAEMON_REPORT_ORDER.indexOf(a.daemon) -
+      DAEMON_REPORT_ORDER.indexOf(b.daemon);
+    if (daemonCmp !== 0) {
+      return daemonCmp;
+    }
+    const variantCmp =
+      VARIANT_REPORT_ORDER.indexOf(a.variant) -
+      VARIANT_REPORT_ORDER.indexOf(b.variant);
+    if (variantCmp !== 0) {
+      return variantCmp;
+    }
+    return a.run - b.run;
+  });
+}
+
 function printSummary(results: CellResult[]): void {
   const headers = [
     "daemon",
     "variant",
+    "run",
     "diff",
     "restoreH",
     "duration",
@@ -234,9 +316,10 @@ function printSummary(results: CellResult[]): void {
     "finalH",
   ] as const;
 
-  const rows = results.map((result) => [
+  const rows = sortResultsForReport(results).map((result) => [
     result.daemon,
     result.variant,
+    String(result.run),
     String(result.heightDiff),
     String(result.restoreHeight),
     `${(result.durationMs / 1000).toFixed(1)}s`,
@@ -249,7 +332,10 @@ function printSummary(results: CellResult[]): void {
   ]);
 
   const widths = headers.map((header, col) =>
-    Math.max(header.length, ...rows.map((row) => row[col].length)),
+    Math.max(
+      header.length,
+      ...(rows.length === 0 ? [0] : rows.map((row) => row[col].length)),
+    ),
   );
 
   const formatRow = (cells: string[]) =>
@@ -286,7 +372,7 @@ function printCellResult(result: CellResult): void {
 
 async function runWasmCell(params: {
   browser: Browser;
-  variant: "asyncify" | "threads" | "threads4";
+  variant: "asyncify" | "threads" | "threads2" | "threads4";
   daemon: DaemonKind;
   daemonAddress: string;
   heightDiff: number;
@@ -294,9 +380,10 @@ async function runWasmCell(params: {
   tipHeight: number;
   seed: string;
   timeoutMs: number;
+  run: number;
 }): Promise<CellResult> {
-  const label = `${params.daemon}/${params.variant}`;
-  const concurrencyOverride = params.variant === "threads4" ? 4 : null;
+  const label = `${params.daemon}/${params.variant}/run${params.run}`;
+  const concurrencyOverride = wasmConcurrencyOverride(params.variant);
   const preSnapshot = await snapshotRendererCpuByPid(params.browser);
   const context = await params.browser.newContext({
     baseURL: previewUrl(params.variant),
@@ -322,7 +409,7 @@ async function runWasmCell(params: {
     const trackedPid = pickPageRendererPid(preSnapshot.cpuByPid, afterLoadCpu);
     await preSnapshot.session.detach().catch(() => undefined);
 
-    const walletName = `bench-${params.variant}-${params.daemon}-${Date.now()}`;
+    const walletName = `bench-${params.variant}-${params.daemon}-r${params.run}-${Date.now()}`;
     await fillRestoreForm(page, {
       walletName,
       seed: params.seed,
@@ -351,6 +438,7 @@ async function runWasmCell(params: {
     });
 
     return {
+      run: params.run,
       variant: params.variant,
       daemon: params.daemon,
       daemonAddress: params.daemonAddress,
@@ -376,7 +464,7 @@ async function runWasmCell(params: {
 }
 
 async function runNativeCell(params: {
-  variant: "native0" | "native4";
+  variant: "native0" | "native2" | "native4";
   daemon: DaemonKind;
   daemonAddress: string;
   heightDiff: number;
@@ -385,9 +473,10 @@ async function runNativeCell(params: {
   seed: string;
   timeoutMs: number;
   walletCliPath: string;
+  run: number;
 }): Promise<CellResult> {
-  const label = `${params.daemon}/${params.variant}`;
-  const maxConcurrency = params.variant === "native0" ? 0 : 4;
+  const label = `${params.daemon}/${params.variant}/run${params.run}`;
+  const maxConcurrency = nativeMaxConcurrency(params.variant);
   const sync = await runNativeWalletCliSync({
     walletCliPath: params.walletCliPath,
     seed: params.seed,
@@ -399,6 +488,7 @@ async function runNativeCell(params: {
   });
 
   return {
+    run: params.run,
     variant: params.variant,
     daemon: params.daemon,
     daemonAddress: params.daemonAddress,
@@ -424,9 +514,10 @@ test("mainnet sync performance matrix", async ({ browser }) => {
   const cakeAddress = envOr("BENCH_DAEMON_REMOTE", DEFAULT_CAKE);
   const timeoutMs = Number(process.env.BENCH_TIMEOUT_MS ?? 4 * 60 * 60 * 1000);
   const heightDiff = parseHeightDiff();
+  const runs = parseRuns();
   const walletCliPath = resolveWalletCliPath();
 
-  test.setTimeout(Math.max(timeoutMs * 10, 60_000));
+  test.setTimeout(Math.max(timeoutMs * 14 * runs, 60_000));
 
   await assertWalletCliExists(walletCliPath);
 
@@ -450,53 +541,53 @@ test("mainnet sync performance matrix", async ({ browser }) => {
   console.log(
     `[bench] heightDiff=${heightDiff} restoreHeight=${restoreHeight} (from tip ${tipHeight}, block age ${restoreAge})`,
   );
+  console.log(`[bench] runs=${runs}`);
   console.log(`[bench] wallet-cli=${walletCliPath}`);
 
   const daemons: Array<{ kind: DaemonKind; address: string }> = [
     { kind: "local", address: localAddress },
     { kind: "cake", address: cakeAddress },
   ];
-  const variants: BenchVariant[] = [
-    "asyncify",
-    "threads",
-    "threads4",
-    "native0",
-    "native4",
-  ];
+  const variants: BenchVariant[] = VARIANT_REPORT_ORDER;
   const results: CellResult[] = [];
 
-  for (const daemon of daemons) {
-    for (const variant of variants) {
-      console.log(
-        `[bench] START ${daemon.kind}/${variant} ` +
-          `restoreHeight=${restoreHeight} daemon=${daemon.address}`,
-      );
-      const result = isWasmVariant(variant)
-        ? await runWasmCell({
-            browser,
-            variant,
-            daemon: daemon.kind,
-            daemonAddress: daemon.address,
-            heightDiff,
-            restoreHeight,
-            tipHeight,
-            seed,
-            timeoutMs,
-          })
-        : await runNativeCell({
-            variant,
-            daemon: daemon.kind,
-            daemonAddress: daemon.address,
-            heightDiff,
-            restoreHeight,
-            tipHeight,
-            seed,
-            timeoutMs,
-            walletCliPath,
-          });
-      results.push(result);
-      printCellResult(result);
-      printSummary(results);
+  for (let run = 1; run <= runs; run++) {
+    console.log(`[bench] ===== RUN ${run}/${runs} =====`);
+    for (const daemon of daemons) {
+      for (const variant of variants) {
+        console.log(
+          `[bench] START ${daemon.kind}/${variant}/run${run} ` +
+            `restoreHeight=${restoreHeight} daemon=${daemon.address}`,
+        );
+        const result = isWasmVariant(variant)
+          ? await runWasmCell({
+              browser,
+              variant,
+              daemon: daemon.kind,
+              daemonAddress: daemon.address,
+              heightDiff,
+              restoreHeight,
+              tipHeight,
+              seed,
+              timeoutMs,
+              run,
+            })
+          : await runNativeCell({
+              variant,
+              daemon: daemon.kind,
+              daemonAddress: daemon.address,
+              heightDiff,
+              restoreHeight,
+              tipHeight,
+              seed,
+              timeoutMs,
+              walletCliPath,
+              run,
+            });
+        results.push(result);
+        printCellResult(result);
+        printSummary(results);
+      }
     }
   }
 
@@ -506,6 +597,7 @@ test("mainnet sync performance matrix", async ({ browser }) => {
   await mkdir(resultsDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outPath = path.join(resultsDir, `sync-perf-${stamp}.json`);
+  const resultsForReport = sortResultsForReport(results);
   await writeFile(
     outPath,
     JSON.stringify(
@@ -516,9 +608,10 @@ test("mainnet sync performance matrix", async ({ browser }) => {
         restoreHeight,
         restoreBlockTimestamp,
         restoreAge,
+        runs,
         seedWordCount: seed.trim().split(/\s+/).length,
         walletCliPath,
-        results,
+        results: resultsForReport,
       },
       null,
       2,

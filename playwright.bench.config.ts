@@ -26,10 +26,16 @@ function previewUrl(port: number) {
 const BENCH_TIMEOUT_MS = Number(
   process.env.BENCH_TIMEOUT_MS ?? 4 * 60 * 60 * 1000,
 );
+const BENCH_RUNS = Number(process.env.BENCH_RUNS ?? 5);
+/** 7 variants × 2 daemons. */
+const CELLS_PER_RUN = 14;
 
 export default defineConfig({
   testDir: "./tests/bench",
-  timeout: Math.max(BENCH_TIMEOUT_MS * 16, 48 * 60 * 60 * 1000),
+  timeout: Math.max(
+    BENCH_TIMEOUT_MS * CELLS_PER_RUN * Math.max(1, BENCH_RUNS),
+    48 * 60 * 60 * 1000,
+  ),
   expect: {
     timeout: 60_000,
   },

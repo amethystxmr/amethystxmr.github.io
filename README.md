@@ -89,18 +89,22 @@ npm run test:e2e -- tests/wasm_variant_matrix.spec.ts
 ## Sync performance bench
 
 Mainnet restore/sync benchmark. One restore height = current tip −
-`BENCH_HEIGHT_DIFF` (default **15120** ≈ 3 weeks at 720 blocks/day).
+`BENCH_HEIGHT_DIFF` (default **20160** ≈ 4 weeks at 720 blocks/day).
+`BENCH_RUNS` (default **5**) repeats the full matrix. Execution order is
+**run → daemon → variant**; summary/JSON rows are grouped as
+**daemon → variant → run** (run1, run2, … under each cell).
 
-Compares five variants × Cake vs local daemon (10 cells), in order
-**daemon → variant**:
+Compares seven variants × Cake vs local daemon:
 
-| Variant    | What it runs                                              |
-| ---------- | --------------------------------------------------------- |
-| `asyncify` | WASM Asyncify build                                       |
-| `threads`  | WASM Threads (full `navigator.hardwareConcurrency`)       |
-| `threads4` | WASM Threads with `hardwareConcurrency` forced to 4       |
-| `native0`  | `./bin/monero-wallet-cli --max-concurrency 0` (all cores) |
-| `native4`  | `./bin/monero-wallet-cli --max-concurrency 4`             |
+| Variant     | What it runs                                              |
+| ----------- | --------------------------------------------------------- |
+| `asyncify`  | WASM Asyncify build                                       |
+| `threads`   | WASM Threads (full `navigator.hardwareConcurrency`)       |
+| `threads2`  | WASM Threads with `hardwareConcurrency` forced to 2       |
+| `threads4`  | WASM Threads with `hardwareConcurrency` forced to 4       |
+| `native0`   | `./bin/monero-wallet-cli --max-concurrency 0` (all cores) |
+| `native2`   | `./bin/monero-wallet-cli --max-concurrency 2`             |
+| `native4`   | `./bin/monero-wallet-cli --max-concurrency 4`             |
 
 Not part of CI e2e.
 
@@ -130,16 +134,16 @@ Optional: `BENCH_WALLET_CLI_PATH=/path/to/monero-wallet-cli` to override.
 npm run bench:sync
 ```
 
-Smoke / ~1 day (720 blocks):
+Smoke / ~1 day (720 blocks), 2 runs:
 
 ```bash
-BENCH_HEIGHT_DIFF=720 npm run bench:sync
+BENCH_HEIGHT_DIFF=720 BENCH_RUNS=2 npm run bench:sync
 ```
 
 Other overrides:
 
 ```bash
-BENCH_SEED="dogs zero ..." BENCH_HEIGHT_DIFF=15120 BENCH_DAEMON_LOCAL="http://localhost:18081" BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" BENCH_TIMEOUT_MS=14400000 npm run bench:sync
+BENCH_SEED="dogs zero ..." BENCH_HEIGHT_DIFF=20160 BENCH_RUNS=5 BENCH_DAEMON_LOCAL="http://localhost:18081" BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" BENCH_TIMEOUT_MS=14400000 npm run bench:sync
 ```
 
 Progress prints during each cell; JSON under `tests/bench/results/` (gitignored).
