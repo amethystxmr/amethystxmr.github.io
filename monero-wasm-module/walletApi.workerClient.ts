@@ -2,6 +2,7 @@ import * as Comlink from "comlink";
 import type { exposedApi } from "./walletApi.worker";
 import {
   ensureHttpFetchEventChannel,
+  handleHttpFetchChannelMessage,
   httpFetchEventChannelName,
 } from "./httpFetchEventChannel";
 import {
@@ -53,6 +54,9 @@ const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
   name: "monero-wallet-api",
   type: "module",
 });
+worker.addEventListener("message", (message) => {
+  handleHttpFetchChannelMessage(message.data);
+});
 export const api = Comlink.wrap<typeof exposedApi>(worker);
 
 export const initModule: (
@@ -62,11 +66,11 @@ export const initModule: (
   variant,
   onProgress = null,
 ) => {
+  ensureHttpFetchEventChannel();
   await api.initModule(onProgress ? Comlink.proxy(onProgress) : null, {
     variant,
     httpFetchEventChannelName,
   });
-  ensureHttpFetchEventChannel();
 };
 
 export async function setWalletNewBlockCallback(

@@ -49,9 +49,7 @@ if(EMSCRIPTEN)
         )
         list(APPEND AMETHYST_WASM_LINK_OPTIONS
             -sUSE_PTHREADS=1
-            # One extra pthread is reserved for the dedicated HTTP fetch/progress worker.
-            # Monero's compute pool may still use up to hardwareConcurrency - 1 workers.
-            "-sPTHREAD_POOL_SIZE=((navigator.hardwareConcurrency||2)+1)"
+            "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)"
             -sPTHREAD_POOL_SIZE_STRICT=1
         )
     else()
