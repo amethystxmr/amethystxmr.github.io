@@ -146,6 +146,24 @@ with `BENCH_HEADLESS=1`. Optional: `BENCH_TERMINAL=gnome-terminal` (or
 npm run bench:sync
 ```
 
+Smoke / ~1 hour (30 blocks ≈ 720/day), 1 run:
+
+```bash
+BENCH_HEIGHT_DIFF=30 BENCH_RUNS=1 npm run bench:sync
+```
+
+Local only (skip Cake):
+
+```bash
+BENCH_DAEMONS=local BENCH_HEIGHT_DIFF=30 BENCH_RUNS=1 npm run bench:sync
+```
+
+Headless:
+
+```bash
+BENCH_HEADLESS=1 BENCH_HEIGHT_DIFF=30 BENCH_RUNS=1 npm run bench:sync
+```
+
 Smoke / ~1 day (720 blocks), 2 runs:
 
 ```bash
