@@ -577,8 +577,9 @@ async function fetchHttpResponse(
 
 async function handleHttpFetchRequest(request: HttpFetchRequestMessage) {
   const key = requestKey(request.requestIdHi, request.requestIdLo);
-  // The worker posts through BroadcastChannel and, when possible, parent
-  // postMessage. Both paths can arrive, so request ids make the bridge idempotent.
+  // The outer module worker sends through both BroadcastChannel and parent
+  // postMessage; nested pthread workers use BroadcastChannel only. De-dupe here
+  // so the bridge stays idempotent when both outer-worker paths arrive.
   if (
     activeHttpFetchRequests.has(key) ||
     pendingHttpFetchResponses.has(key) ||

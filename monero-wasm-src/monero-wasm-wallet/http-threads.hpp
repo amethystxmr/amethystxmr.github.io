@@ -141,9 +141,10 @@ EM_JS(int, js_http_fetch_request, (
         mimeDataPtrPtr: mime_data_ptr_i32_ptr,
       };
       channel.postMessage(message);
-      // BroadcastChannel-only delivery can be delayed when this worker parks in
-      // Atomics.wait immediately after posting. When this is the module worker,
-      // also notify its parent; the UI side de-dupes by request id.
+      // BroadcastChannel is the topology-independent route: nested pthread
+      // workers can only postMessage to their spawning worker, not to the UI.
+      // When this is the outer module worker, also notify its UI parent because
+      // that path was observed to avoid a missed/delayed request before wait.
       if (!ENVIRONMENT_IS_PTHREAD && typeof postMessage === 'function')
         postMessage(message);
 
@@ -202,8 +203,8 @@ EM_JS(int, js_http_fetch_copy_response, (
         mimeDataPtrPtr: mime_data_ptr_i32_ptr,
       };
       channel.postMessage(message);
-      // Match the first-phase delivery path: direct parent notification avoids
-      // depending only on BroadcastChannel while this worker is blocked.
+      // Same delivery rules as phase one: nested pthread workers rely on the
+      // channel, while the outer module worker can also notify its UI parent.
       if (!ENVIRONMENT_IS_PTHREAD && typeof postMessage === 'function')
         postMessage(message);
 
