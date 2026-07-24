@@ -26,9 +26,9 @@ function previewUrl(port: number) {
 const BENCH_TIMEOUT_MS = Number(
   process.env.BENCH_TIMEOUT_MS ?? 4 * 60 * 60 * 1000,
 );
-const BENCH_RUNS = Number(process.env.BENCH_RUNS ?? 5);
-/** 7 variants × 2 daemons. */
-const CELLS_PER_RUN = 14;
+const BENCH_RUNS = Number(process.env.BENCH_RUNS ?? 10);
+/** local: 8 variants + cake: 3 variants. */
+const CELLS_PER_RUN = 11;
 
 export default defineConfig({
   testDir: "./tests/bench",

@@ -15,7 +15,13 @@ export type NativeSyncResult = {
   avgCoresUsed: number;
   addressPrefix: string | null;
   blocksReceived: number | null;
+  /** Process /proc/<pid>/io rchar delta (includes socket reads). */
+  rxBytes: number | null;
+  /** Process /proc/<pid>/io wchar delta (includes socket writes). */
+  txBytes: number | null;
 };
+
+export type NativeMaxConcurrency = 0 | 1 | 2 | 4;
 
 const CLK_TCK = (() => {
   try {
@@ -53,6 +59,24 @@ function readProcRssBytes(pid: number): number {
   }
 }
 
+/**
+ * Process I/O counters. rchar/wchar include bytes read/written via syscalls
+ * (network sockets included), so deltas approximate inbound/outbound traffic.
+ */
+function readProcIoChars(pid: number): { rchar: number; wchar: number } | null {
+  try {
+    const io = readFileSync(`/proc/${pid}/io`, "utf8");
+    const rchar = /^rchar:\s+(\d+)$/m.exec(io);
+    const wchar = /^wchar:\s+(\d+)$/m.exec(io);
+    if (!rchar || !wchar) {
+      return null;
+    }
+    return { rchar: Number(rchar[1]), wchar: Number(wchar[1]) };
+  } catch {
+    return null;
+  }
+}
+
 /** Convert http(s)://host:port to CLI --daemon-address host:port (+ SSL flags). */
 export function cliDaemonArgs(daemonHttpUrl: string): string[] {
   const url = new URL(daemonHttpUrl);
@@ -85,13 +109,17 @@ export async function assertWalletCliExists(cliPath: string): Promise<void> {
 /**
  * Restore+sync with monero-wallet-cli.
  * Stdin: empty seed-offset passphrase, N (background mining), exit.
+ *
+ * `--max-concurrency` is the correct knob (wallet_args → tools::set_max_concurrency).
+ * In Monero, n < 1 is treated as boost::thread::hardware_concurrency() (all cores),
+ * so `--max-concurrency 0` means "use all cores", not "zero threads".
  */
 export async function runNativeWalletCliSync(params: {
   walletCliPath: string;
   seed: string;
   restoreHeight: number;
   daemonHttpUrl: string;
-  maxConcurrency: 0 | 2 | 4;
+  maxConcurrency: NativeMaxConcurrency;
   timeoutMs: number;
   progressLabel: string;
   logEveryMs?: number;
@@ -140,7 +168,10 @@ export async function runNativeWalletCliSync(params: {
 
   const startedAt = Date.now();
   let baselineCpu: number | null = null;
+  let baselineIo: { rchar: number; wchar: number } | null = null;
   let lastCpuWorkSec = 0;
+  let lastRxBytes = 0;
+  let lastTxBytes = 0;
   let peakRssBytes = 0;
   let lastLogAt = 0;
 
@@ -161,9 +192,17 @@ export async function runNativeWalletCliSync(params: {
       if (baselineCpu === null) {
         baselineCpu = readProcCpuSec(child.pid);
       }
+      if (baselineIo === null) {
+        baselineIo = readProcIoChars(child.pid);
+      }
       const cpuNow = readProcCpuSec(child.pid);
       if (baselineCpu !== null && cpuNow !== null) {
         lastCpuWorkSec = Math.max(0, cpuNow - baselineCpu);
+      }
+      const ioNow = readProcIoChars(child.pid);
+      if (baselineIo !== null && ioNow !== null) {
+        lastRxBytes = Math.max(0, ioNow.rchar - baselineIo.rchar);
+        lastTxBytes = Math.max(0, ioNow.wchar - baselineIo.wchar);
       }
       peakRssBytes = Math.max(peakRssBytes, readProcRssBytes(child.pid));
       const elapsedMs = Date.now() - startedAt;
@@ -174,7 +213,9 @@ export async function runNativeWalletCliSync(params: {
             `elapsed=${(elapsedMs / 1000).toFixed(1)}s ` +
             `rss=${(peakRssBytes / (1024 * 1024)).toFixed(1)} MiB ` +
             `cpuWork=${lastCpuWorkSec.toFixed(2)}s ` +
-            `avgCores=${averageCoresUsed(lastCpuWorkSec, elapsedMs).toFixed(2)}`,
+            `avgCores=${averageCoresUsed(lastCpuWorkSec, elapsedMs).toFixed(2)} ` +
+            `rx=${(lastRxBytes / (1024 * 1024)).toFixed(1)} MiB ` +
+            `tx=${(lastTxBytes / (1024 * 1024)).toFixed(1)} MiB`,
         );
       }
     }, 500);
@@ -228,6 +269,8 @@ export async function runNativeWalletCliSync(params: {
     avgCoresUsed: averageCoresUsed(lastCpuWorkSec, durationMs),
     addressPrefix: addressMatch ? addressMatch[1].slice(0, 6) : null,
     blocksReceived: blocksMatch ? Number(blocksMatch[1]) : null,
+    rxBytes: baselineIo === null ? null : lastRxBytes,
+    txBytes: baselineIo === null ? null : lastTxBytes,
   };
 }
 

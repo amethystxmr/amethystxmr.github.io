@@ -3,22 +3,17 @@
  *
  * One restore height: tip - BENCH_HEIGHT_DIFF (default 20160 ≈ 4 weeks).
  * Execution order: run → daemon → variant (full matrix per run, local first).
- * Summary table order: daemon → variant → run (same daemon/variant rows stay adjacent).
+ * Summary table order: daemon → variant → run.
  *
- * Variants:
- * - asyncify
- * - threads (full navigator.hardwareConcurrency)
- * - threads2 / threads4 (hardwareConcurrency forced to 2 / 4 in the wallet worker)
- * - native0 (monero-wallet-cli --max-concurrency 0 = all cores)
- * - native2 / native4 (--max-concurrency 2 / 4)
+ * Local: asyncify, threads, threads2, threads4, native0/1/2/4.
+ * Cake: asyncify, threads4, native0 only.
  *
- * BENCH_RUNS (default 5) repeats the full matrix; summary lists run1, run2, … under each
- * daemon/variant group.
- *
- * CPU: cpuWorkSec (total CPU-seconds) and avgCores (cpuWork/wall).
+ * BENCH_RUNS (default 10). Console output is appended to a timestamped .txt log.
  */
+import { appendFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { inspect } from "node:util";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import {
   APP_HOST,
@@ -37,6 +32,7 @@ import {
   assertWalletCliExists,
   resolveWalletCliPath,
   runNativeWalletCliSync,
+  type NativeMaxConcurrency,
 } from "./helpers/nativeWalletCli";
 import {
   createProcessMetricsTracker,
@@ -48,14 +44,9 @@ import {
 import { waitUntilWalletSynced } from "./helpers/syncWait";
 
 type DaemonKind = "local" | "cake";
-type BenchVariant =
-  | "asyncify"
-  | "threads"
-  | "threads2"
-  | "threads4"
-  | "native0"
-  | "native2"
-  | "native4";
+type WasmBenchVariant = "asyncify" | "threads" | "threads2" | "threads4";
+type NativeBenchVariant = "native0" | "native1" | "native2" | "native4";
+type BenchVariant = WasmBenchVariant | NativeBenchVariant;
 
 type CellResult = {
   run: number;
@@ -73,6 +64,10 @@ type CellResult = {
   avgCoresUsed: number;
   peakMainJsHeapUsedBytes: number | null;
   blocksReceived: number | null;
+  rxBytes: number | null;
+  txBytes: number | null;
+  /** page.workers().length after sync (WASM only). */
+  workers: number | null;
 };
 
 const DEFAULT_SEED =
@@ -80,10 +75,24 @@ const DEFAULT_SEED =
 
 /** ~4 weeks at 720 blocks/day. */
 const DEFAULT_HEIGHT_DIFF = 20_160;
-const DEFAULT_RUNS = 5;
+const DEFAULT_RUNS = 10;
 
 const DEFAULT_LOCAL = "http://localhost:18081";
 const DEFAULT_CAKE = "https://xmr-node.cakewallet.com:18081";
+
+const DAEMON_REPORT_ORDER: DaemonKind[] = ["local", "cake"];
+const LOCAL_VARIANTS: BenchVariant[] = [
+  "asyncify",
+  "threads",
+  "threads2",
+  "threads4",
+  "native0",
+  "native1",
+  "native2",
+  "native4",
+];
+const CAKE_VARIANTS: BenchVariant[] = ["asyncify", "threads4", "native0"];
+const VARIANT_REPORT_ORDER: BenchVariant[] = LOCAL_VARIANTS;
 
 function envOr(name: string, fallback: string): string {
   const value = process.env[name];
@@ -114,6 +123,31 @@ function parseRuns(): number {
   return value;
 }
 
+/** Comma-separated: local,cake (default both). Use BENCH_DAEMONS=local to skip cake. */
+function parseDaemons(): DaemonKind[] {
+  const raw = process.env.BENCH_DAEMONS;
+  if (!raw || raw.trim().length === 0) {
+    return ["local", "cake"];
+  }
+  const kinds = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  const out: DaemonKind[] = [];
+  for (const kind of kinds) {
+    if (kind !== "local" && kind !== "cake") {
+      throw new Error(`Invalid BENCH_DAEMONS entry=${kind}`);
+    }
+    if (!out.includes(kind)) {
+      out.push(kind);
+    }
+  }
+  if (out.length === 0) {
+    throw new Error(`Invalid BENCH_DAEMONS=${raw}`);
+  }
+  return out;
+}
+
 function previewUrl(variant: BenchVariant): string {
   if (variant === "asyncify") {
     return `http://${APP_HOST}:${E2E_ASYNCIFY_PREVIEW_PORT}`;
@@ -121,15 +155,17 @@ function previewUrl(variant: BenchVariant): string {
   return `http://${APP_HOST}:${E2E_THREADS_PREVIEW_PORT}`;
 }
 
-function isWasmVariant(
-  variant: BenchVariant,
-): variant is "asyncify" | "threads" | "threads2" | "threads4" {
+function isWasmVariant(variant: BenchVariant): variant is WasmBenchVariant {
   return (
     variant === "asyncify" ||
     variant === "threads" ||
     variant === "threads2" ||
     variant === "threads4"
   );
+}
+
+function variantsForDaemon(daemon: DaemonKind): BenchVariant[] {
+  return daemon === "cake" ? CAKE_VARIANTS : LOCAL_VARIANTS;
 }
 
 function wasmConcurrencyOverride(variant: BenchVariant): number | null {
@@ -143,15 +179,71 @@ function wasmConcurrencyOverride(variant: BenchVariant): number | null {
 }
 
 function nativeMaxConcurrency(
-  variant: "native0" | "native2" | "native4",
-): 0 | 2 | 4 {
+  variant: NativeBenchVariant,
+): NativeMaxConcurrency {
   if (variant === "native0") {
     return 0;
+  }
+  if (variant === "native1") {
+    return 1;
   }
   if (variant === "native2") {
     return 2;
   }
   return 4;
+}
+
+function formatStampForFilename(date = new Date()): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}_` +
+    `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`
+  );
+}
+
+function formatMiB(bytes: number | null): string {
+  if (bytes === null) {
+    return "-";
+  }
+  return (bytes / (1024 * 1024)).toFixed(1);
+}
+
+/** Append the same text console.log/warn would print; never truncates the file. */
+function installConsoleLogTee(logPath: string): () => void {
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+
+  const formatArgs = (args: unknown[]): string =>
+    args
+      .map((arg) => {
+        if (typeof arg === "string") {
+          return arg;
+        }
+        return inspect(arg, { depth: 4, colors: false, breakLength: 120 });
+      })
+      .join(" ");
+
+  const append = (args: unknown[]) => {
+    try {
+      appendFileSync(logPath, `${formatArgs(args)}\n`, "utf8");
+    } catch {
+      // Never fail the bench because the tee could not write.
+    }
+  };
+
+  console.log = (...args: unknown[]) => {
+    originalLog(...args);
+    append(args);
+  };
+  console.warn = (...args: unknown[]) => {
+    originalWarn(...args);
+    append(args);
+  };
+
+  return () => {
+    console.log = originalLog;
+    console.warn = originalWarn;
+  };
 }
 
 async function applyBenchSettings(
@@ -270,18 +362,6 @@ function padCell(value: string, width: number): string {
     : `${value}${" ".repeat(width - value.length)}`;
 }
 
-const DAEMON_REPORT_ORDER: DaemonKind[] = ["local", "cake"];
-const VARIANT_REPORT_ORDER: BenchVariant[] = [
-  "asyncify",
-  "threads",
-  "threads2",
-  "threads4",
-  "native0",
-  "native2",
-  "native4",
-];
-
-/** Table/report order: daemon → variant → run (independent of execution order). */
 function sortResultsForReport(results: CellResult[]): CellResult[] {
   return [...results].sort((a, b) => {
     const daemonCmp =
@@ -300,7 +380,7 @@ function sortResultsForReport(results: CellResult[]): CellResult[] {
   });
 }
 
-function printSummary(results: CellResult[]): void {
+function formatSummaryTable(results: CellResult[]): string {
   const headers = [
     "daemon",
     "variant",
@@ -312,6 +392,9 @@ function printSummary(results: CellResult[]): void {
     "rssMiB",
     "cpuWork",
     "avgCores",
+    "rxMiB",
+    "txMiB",
+    "workers",
     "blocks",
     "finalH",
   ] as const;
@@ -327,6 +410,9 @@ function printSummary(results: CellResult[]): void {
     (result.peakRssBytes / (1024 * 1024)).toFixed(1),
     `${result.cpuWorkSec.toFixed(2)}s`,
     result.avgCoresUsed.toFixed(2),
+    formatMiB(result.rxBytes),
+    formatMiB(result.txBytes),
+    result.workers === null ? "-" : String(result.workers),
     result.blocksReceived === null ? "-" : String(result.blocksReceived),
     `${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"}`,
   ]);
@@ -342,13 +428,14 @@ function printSummary(results: CellResult[]): void {
     cells.map((cell, i) => padCell(cell, widths[i])).join("  ");
 
   const separator = widths.map((width) => "-".repeat(width)).join("  ");
+  return [formatRow([...headers]), separator, ...rows.map(formatRow)].join(
+    "\n",
+  );
+}
 
+function printSummary(results: CellResult[]): void {
   console.log("\n[bench] ===== SUMMARY =====");
-  console.log(formatRow([...headers]));
-  console.log(separator);
-  for (const row of rows) {
-    console.log(formatRow(row));
-  }
+  console.log(formatSummaryTable(results));
   console.log("[bench] ====================\n");
 }
 
@@ -361,6 +448,9 @@ function printCellResult(result: CellResult): void {
       `peakRss=${formatBytes(result.peakRssBytes)} ` +
       `cpuWork=${result.cpuWorkSec.toFixed(2)}s ` +
       `avgCores=${result.avgCoresUsed.toFixed(2)}` +
+      (result.rxBytes !== null ? ` rx=${formatMiB(result.rxBytes)} MiB` : "") +
+      (result.txBytes !== null ? ` tx=${formatMiB(result.txBytes)} MiB` : "") +
+      (result.workers !== null ? ` workers=${result.workers}` : "") +
       (result.blocksReceived !== null
         ? ` blocks=${result.blocksReceived}`
         : "") +
@@ -370,9 +460,28 @@ function printCellResult(result: CellResult): void {
   );
 }
 
+async function writeResultsJson(
+  jsonPath: string,
+  meta: Record<string, unknown>,
+  results: CellResult[],
+): Promise<void> {
+  await writeFile(
+    jsonPath,
+    JSON.stringify(
+      {
+        ...meta,
+        results: sortResultsForReport(results),
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+}
+
 async function runWasmCell(params: {
   browser: Browser;
-  variant: "asyncify" | "threads" | "threads2" | "threads4";
+  variant: WasmBenchVariant;
   daemon: DaemonKind;
   daemonAddress: string;
   heightDiff: number;
@@ -437,6 +546,8 @@ async function runWasmCell(params: {
       progressLabel: label,
     });
 
+    const workers = page.workers().length;
+
     return {
       run: params.run,
       variant: params.variant,
@@ -453,6 +564,9 @@ async function runWasmCell(params: {
       avgCoresUsed: sync.avgCoresUsed,
       peakMainJsHeapUsedBytes: sync.peakMainJsHeapUsedBytes,
       blocksReceived: null,
+      rxBytes: null,
+      txBytes: null,
+      workers,
     };
   } finally {
     await preSnapshot.session.detach().catch(() => undefined);
@@ -464,7 +578,7 @@ async function runWasmCell(params: {
 }
 
 async function runNativeCell(params: {
-  variant: "native0" | "native2" | "native4";
+  variant: NativeBenchVariant;
   daemon: DaemonKind;
   daemonAddress: string;
   heightDiff: number;
@@ -503,6 +617,9 @@ async function runNativeCell(params: {
     avgCoresUsed: sync.avgCoresUsed,
     peakMainJsHeapUsedBytes: null,
     blocksReceived: sync.blocksReceived,
+    rxBytes: sync.rxBytes,
+    txBytes: sync.txBytes,
+    workers: null,
   };
 }
 
@@ -515,107 +632,137 @@ test("mainnet sync performance matrix", async ({ browser }) => {
   const timeoutMs = Number(process.env.BENCH_TIMEOUT_MS ?? 4 * 60 * 60 * 1000);
   const heightDiff = parseHeightDiff();
   const runs = parseRuns();
+  const enabledDaemons = parseDaemons();
   const walletCliPath = resolveWalletCliPath();
+  const cellsPerRun =
+    (enabledDaemons.includes("local") ? LOCAL_VARIANTS.length : 0) +
+    (enabledDaemons.includes("cake") ? CAKE_VARIANTS.length : 0);
 
-  test.setTimeout(Math.max(timeoutMs * 14 * runs, 60_000));
+  test.setTimeout(Math.max(timeoutMs * cellsPerRun * runs, 60_000));
 
   await assertWalletCliExists(walletCliPath);
 
-  const localInfo = await assertDaemonReadyForBench(localAddress, "local");
-  const cakeInfo = await assertDaemonReadyForBench(cakeAddress, "cake");
+  const localInfo = enabledDaemons.includes("local")
+    ? await assertDaemonReadyForBench(localAddress, "local")
+    : null;
+  const cakeInfo = enabledDaemons.includes("cake")
+    ? await assertDaemonReadyForBench(cakeAddress, "cake")
+    : null;
 
-  const tipHeight = Math.min(localInfo.height, cakeInfo.height);
+  const tipCandidates = [localInfo?.height, cakeInfo?.height].filter(
+    (h): h is number => typeof h === "number",
+  );
+  const tipHeight = Math.min(...tipCandidates);
   const restoreHeight = Math.max(0, tipHeight - heightDiff);
+  const tipDaemonAddress = localInfo !== null ? localAddress : cakeAddress;
   const restoreBlockTimestamp = await fetchBlockTimestamp(
-    localAddress,
+    tipDaemonAddress,
     restoreHeight,
   );
   const restoreAge = formatAgeFromUnixSeconds(restoreBlockTimestamp);
 
-  console.log(
-    `[bench] local tip=${localInfo.height} synchronized=${localInfo.synchronized}`,
-  );
-  console.log(
-    `[bench] cake tip=${cakeInfo.height} synchronized=${cakeInfo.synchronized}`,
-  );
-  console.log(
-    `[bench] heightDiff=${heightDiff} restoreHeight=${restoreHeight} (from tip ${tipHeight}, block age ${restoreAge})`,
-  );
-  console.log(`[bench] runs=${runs}`);
-  console.log(`[bench] wallet-cli=${walletCliPath}`);
-
-  const daemons: Array<{ kind: DaemonKind; address: string }> = [
-    { kind: "local", address: localAddress },
-    { kind: "cake", address: cakeAddress },
-  ];
-  const variants: BenchVariant[] = VARIANT_REPORT_ORDER;
-  const results: CellResult[] = [];
-
-  for (let run = 1; run <= runs; run++) {
-    console.log(`[bench] ===== RUN ${run}/${runs} =====`);
-    for (const daemon of daemons) {
-      for (const variant of variants) {
-        console.log(
-          `[bench] START ${daemon.kind}/${variant}/run${run} ` +
-            `restoreHeight=${restoreHeight} daemon=${daemon.address}`,
-        );
-        const result = isWasmVariant(variant)
-          ? await runWasmCell({
-              browser,
-              variant,
-              daemon: daemon.kind,
-              daemonAddress: daemon.address,
-              heightDiff,
-              restoreHeight,
-              tipHeight,
-              seed,
-              timeoutMs,
-              run,
-            })
-          : await runNativeCell({
-              variant,
-              daemon: daemon.kind,
-              daemonAddress: daemon.address,
-              heightDiff,
-              restoreHeight,
-              tipHeight,
-              seed,
-              timeoutMs,
-              walletCliPath,
-              run,
-            });
-        results.push(result);
-        printCellResult(result);
-        printSummary(results);
-      }
-    }
-  }
-
-  printSummary(results);
-
   const resultsDir = path.join(process.cwd(), "tests/bench/results");
   await mkdir(resultsDir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const outPath = path.join(resultsDir, `sync-perf-${stamp}.json`);
-  const resultsForReport = sortResultsForReport(results);
-  await writeFile(
-    outPath,
-    JSON.stringify(
-      {
-        startedTips: { local: localInfo, cake: cakeInfo },
-        heightDiff,
-        tipHeight,
-        restoreHeight,
-        restoreBlockTimestamp,
-        restoreAge,
-        runs,
-        seedWordCount: seed.trim().split(/\s+/).length,
-        walletCliPath,
-        results: resultsForReport,
-      },
-      null,
-      2,
-    ),
-  );
-  console.log(`[bench] wrote ${outPath}`);
+  const stamp = formatStampForFilename();
+  const logPath = path.join(resultsDir, `sync-perf-${stamp}.txt`);
+  const jsonPath = path.join(resultsDir, `sync-perf-${stamp}.json`);
+  appendFileSync(logPath, "", "utf8");
+  const restoreConsole = installConsoleLogTee(logPath);
+
+  try {
+    if (localInfo !== null) {
+      console.log(
+        `[bench] local tip=${localInfo.height} synchronized=${localInfo.synchronized}`,
+      );
+    }
+    if (cakeInfo !== null) {
+      console.log(
+        `[bench] cake tip=${cakeInfo.height} synchronized=${cakeInfo.synchronized}`,
+      );
+    }
+    console.log(
+      `[bench] heightDiff=${heightDiff} restoreHeight=${restoreHeight} (from tip ${tipHeight}, block age ${restoreAge})`,
+    );
+    console.log(`[bench] runs=${runs}`);
+    console.log(`[bench] daemons=${enabledDaemons.join(",")}`);
+    console.log(
+      `[bench] local variants=${LOCAL_VARIANTS.join(",")} cake variants=${CAKE_VARIANTS.join(",")}`,
+    );
+    console.log(`[bench] wallet-cli=${walletCliPath}`);
+    console.log(`[bench] log file=${logPath}`);
+
+    const daemons: Array<{ kind: DaemonKind; address: string }> = [
+      ...(enabledDaemons.includes("local")
+        ? [{ kind: "local" as const, address: localAddress }]
+        : []),
+      ...(enabledDaemons.includes("cake")
+        ? [{ kind: "cake" as const, address: cakeAddress }]
+        : []),
+    ];
+    const results: CellResult[] = [];
+    const metaBase = {
+      startedTips: { local: localInfo, cake: cakeInfo },
+      heightDiff,
+      tipHeight,
+      restoreHeight,
+      restoreBlockTimestamp,
+      restoreAge,
+      runs,
+      daemons: enabledDaemons,
+      localVariants: LOCAL_VARIANTS,
+      cakeVariants: CAKE_VARIANTS,
+      seedWordCount: seed.trim().split(/\s+/).length,
+      walletCliPath,
+      logPath,
+    };
+
+    await writeResultsJson(jsonPath, metaBase, results);
+
+    for (let run = 1; run <= runs; run++) {
+      console.log(`[bench] ===== RUN ${run}/${runs} =====`);
+      for (const daemon of daemons) {
+        for (const variant of variantsForDaemon(daemon.kind)) {
+          console.log(
+            `[bench] START ${daemon.kind}/${variant}/run${run} ` +
+              `restoreHeight=${restoreHeight} daemon=${daemon.address}`,
+          );
+          const result = isWasmVariant(variant)
+            ? await runWasmCell({
+                browser,
+                variant,
+                daemon: daemon.kind,
+                daemonAddress: daemon.address,
+                heightDiff,
+                restoreHeight,
+                tipHeight,
+                seed,
+                timeoutMs,
+                run,
+              })
+            : await runNativeCell({
+                variant,
+                daemon: daemon.kind,
+                daemonAddress: daemon.address,
+                heightDiff,
+                restoreHeight,
+                tipHeight,
+                seed,
+                timeoutMs,
+                walletCliPath,
+                run,
+              });
+          results.push(result);
+          printCellResult(result);
+          printSummary(results);
+          await writeResultsJson(jsonPath, metaBase, results);
+        }
+      }
+    }
+
+    printSummary(results);
+    console.log(`[bench] final log ${logPath}`);
+    console.log(`[bench] final json ${jsonPath}`);
+  } finally {
+    restoreConsole();
+  }
 });

@@ -90,11 +90,12 @@ npm run test:e2e -- tests/wasm_variant_matrix.spec.ts
 
 Mainnet restore/sync benchmark. One restore height = current tip −
 `BENCH_HEIGHT_DIFF` (default **20160** ≈ 4 weeks at 720 blocks/day).
-`BENCH_RUNS` (default **5**) repeats the full matrix. Execution order is
+`BENCH_RUNS` (default **10**) repeats the full matrix. Execution order is
 **run → daemon → variant**; summary/JSON rows are grouped as
 **daemon → variant → run** (run1, run2, … under each cell).
 
-Compares seven variants × Cake vs local daemon:
+**Local** runs the full matrix; **Cake** only runs `asyncify`, `threads4`,
+and `native0` (all cores).
 
 | Variant     | What it runs                                              |
 | ----------- | --------------------------------------------------------- |
@@ -103,8 +104,13 @@ Compares seven variants × Cake vs local daemon:
 | `threads2`  | WASM Threads with `hardwareConcurrency` forced to 2       |
 | `threads4`  | WASM Threads with `hardwareConcurrency` forced to 4       |
 | `native0`   | `./bin/monero-wallet-cli --max-concurrency 0` (all cores) |
+| `native1`   | `./bin/monero-wallet-cli --max-concurrency 1`             |
 | `native2`   | `./bin/monero-wallet-cli --max-concurrency 2`             |
 | `native4`   | `./bin/monero-wallet-cli --max-concurrency 4`             |
+
+`--max-concurrency` is the correct Monero CLI option. Value `0` means all
+cores (`tools::set_max_concurrency` treats `n < 1` as
+`boost::thread::hardware_concurrency()`).
 
 Not part of CI e2e.
 
@@ -113,7 +119,7 @@ Not part of CI e2e.
 1. Production WASM + web build (both variants):
 
 ```bash
-cd monero-wasm-src && ./build.sh Release Threads && ./build.sh Release Asyncify && cd .. && npm run build && echo All_Ok
+cd monero-wasm-src && ./init.sh && ./build.sh Release Threads && ./build.sh Release Asyncify && cd .. && npm run build && echo All_Ok
 ```
 
 2. Local `monerod` already running and **synced** on mainnet at
@@ -123,7 +129,7 @@ cd monero-wasm-src && ./build.sh Release Threads && ./build.sh Release Asyncify 
 5. Official `monero-wallet-cli` in `./bin` (gitignored). Download:
 
 ```bash
-mkdir -p bin && cd bin && curl -fL -o monero.tar.bz2 "https://downloads.getmonero.org/cli/linux64" && tar -xjf monero.tar.bz2 && cp monero-*-linux-x64/monero-wallet-cli ./monero-wallet-cli && chmod +x monero-wallet-cli && rm -rf monero.tar.bz2 monero-*-linux-x64 && cd .. && ./bin/monero-wallet-cli --version
+mkdir -p bin && cd bin && curl -fL -o monero.tar.bz2 "https://downloads.getmonero.org/cli/linux64" && tar -xjf monero.tar.bz2 && CLI=$(find . -maxdepth 2 -type f -name monero-wallet-cli | head -n 1) && test -n "$CLI" && cp "$CLI" ./monero-wallet-cli && chmod +x monero-wallet-cli && rm -rf monero.tar.bz2 monero-*-linux-gnu* && cd .. && ./bin/monero-wallet-cli --version
 ```
 
 Optional: `BENCH_WALLET_CLI_PATH=/path/to/monero-wallet-cli` to override.
@@ -143,16 +149,22 @@ BENCH_HEIGHT_DIFF=720 BENCH_RUNS=2 npm run bench:sync
 Other overrides:
 
 ```bash
-BENCH_SEED="dogs zero ..." BENCH_HEIGHT_DIFF=20160 BENCH_RUNS=5 BENCH_DAEMON_LOCAL="http://localhost:18081" BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" BENCH_TIMEOUT_MS=14400000 npm run bench:sync
+BENCH_SEED="dogs zero ..." BENCH_HEIGHT_DIFF=20160 BENCH_RUNS=10 BENCH_DAEMON_LOCAL="http://localhost:18081" BENCH_DAEMON_REMOTE="https://xmr-node.cakewallet.com:18081" BENCH_TIMEOUT_MS=14400000 npm run bench:sync
 ```
 
-Progress prints during each cell; JSON under `tests/bench/results/` (gitignored).
+Progress prints during each cell. Console output is appended (not rewritten)
+to `tests/bench/results/sync-perf-YYYY-MM-DD_HH-MM-SS.txt`; structured JSON
+is updated after each cell under the matching `.json` name. Each invocation
+uses a new timestamp so older runs are kept.
 
-CPU columns:
+CPU / traffic columns:
 
 - `cpuWorkSec`: total CPU-seconds (WASM: page renderer incl. worker/pthreads;
   native: CLI process via `/proc`)
 - `avgCores`: `cpuWorkSec / wallSec` (parallelism)
+- `rxMiB` / `txMiB` (native only): process `/proc/<pid>/io` `rchar`/`wchar`
+  deltas (includes network socket I/O)
+- `workers` (WASM only): `page.workers().length` after sync finishes
 
 ## Building web
 
