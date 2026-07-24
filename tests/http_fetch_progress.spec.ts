@@ -93,18 +93,8 @@ test("http fetch progress reports intermediate download progress", async ({
     });
     expect(await wallet.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
     await wallet.waitForPaymentTypeCountAtLeast("block", 1);
-    await expect(page.getByText("Synced", { exact: true })).toBeVisible({
-      timeout: 300_000,
-    });
-    const walletHeight = (
-      await page.getByLabel("Wallet current height").first().textContent()
-    )?.trim();
-    const daemonHeight = (
-      await page.getByLabel("Daemon current height").first().textContent()
-    )?.trim();
-    expect(walletHeight).toBe(daemonHeight);
     // Fresh regtest: genesis + mined blocks (same as multisig_flow).
-    expect(Number(walletHeight)).toBe(INITIAL_MINED_BLOCKS + 1);
+    await wallet.waitForExactSyncedHeight(INITIAL_MINED_BLOCKS + 1, 300_000);
   });
 
   await test.step("Assert intermediate HTTP progress events were received", async () => {
