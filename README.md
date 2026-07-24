@@ -96,6 +96,8 @@ npm run dev
 ```
 
 `npm run dev` serves COOP/COEP headers so the Threads build can run locally.
+In Vite development builds, wallet concurrency is capped to `2` so the threaded
+WASM build does not consume all CPU cores on a developer machine.
 
 In production, startup chooses the WASM variant dynamically:
 
