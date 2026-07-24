@@ -49,7 +49,7 @@ if(EMSCRIPTEN)
         )
         list(APPEND AMETHYST_WASM_LINK_OPTIONS
             -sUSE_PTHREADS=1
-            "-sPTHREAD_POOL_SIZE=(navigator.hardwareConcurrency||2)"
+            "-sPTHREAD_POOL_SIZE=Module['pthreadPoolSize']"
             -sPTHREAD_POOL_SIZE_STRICT=1
         )
     else()

@@ -11,8 +11,8 @@ import {
   max64,
   NetworkTypes,
   type FeePriority as FeePriorityType,
+  type InitModuleOptions,
   type MoneroWasmWallet,
-  type WasmBuildVariant,
   type WalletNewBlockCallback,
 } from "./walletApi";
 
@@ -48,6 +48,11 @@ export type {
   WasmBuildVariant,
 } from "./walletApi";
 
+export type WorkerClientInitModuleOptions = Omit<
+  InitModuleOptions,
+  "httpFetchEventChannelName"
+>;
+
 export type RemoteApi = Comlink.Remote<typeof exposedApi>;
 
 const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
@@ -57,18 +62,18 @@ const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
 export const api = Comlink.wrap<typeof exposedApi>(worker);
 
 export const initModule: (
-  variant: WasmBuildVariant,
+  options: WorkerClientInitModuleOptions,
   onProgress?: Parameters<typeof exposedApi.initModule>[0],
 ) => ReturnType<typeof exposedApi.initModule> = async (
-  variant,
+  options,
   onProgress = null,
 ) => {
   ensureHttpFetchEventChannel();
   await api.initModule(onProgress ? Comlink.proxy(onProgress) : null, {
-    variant,
+    ...options,
     httpFetchEventChannelName,
   });
-  if (variant === "threads") {
+  if (options.variant === "threads") {
     setHttpFetchWasmMemory(await api.getWasmMemory());
   }
 };
