@@ -29,18 +29,16 @@ type HttpFetchRequestMessage = {
   url: string;
   requestUrl: string;
   method: string;
-  body: Uint8Array | null;
+  bodyPtr: number;
+  bodyLen: number;
   timeoutMs: number;
   requestIdHi: number;
   requestIdLo: number;
   phaseOneLockPtr: number;
-  phaseTwoLockPtr: number;
   responseCodePtr: number;
   failureStatePtr: number;
   bodySizePtr: number;
   mimeSizePtr: number;
-  bodyDataPtrPtr: number;
-  mimeDataPtrPtr: number;
 };
 
 type HttpFetchCopyResponseMessage = {
@@ -110,14 +108,6 @@ function getPointerMessageProperty(value: object, property: string) {
     : null;
 }
 
-function getOptionalUint8ArrayMessageProperty(value: object, property: string) {
-  const propertyValue = Reflect.get(value, property);
-  if (propertyValue === undefined || propertyValue === null) {
-    return null;
-  }
-  return propertyValue instanceof Uint8Array ? propertyValue : null;
-}
-
 function parseHttpFetchState(value: string | null): HttpFetchState | null {
   switch (value) {
     case "start":
@@ -168,34 +158,31 @@ function parseHttpFetchRequestMessage(
   const url = getStringMessageProperty(value, "url");
   const requestUrl = getStringMessageProperty(value, "requestUrl");
   const method = getStringMessageProperty(value, "method");
-  const body = getOptionalUint8ArrayMessageProperty(value, "body");
+  const bodyPtr = getPointerMessageProperty(value, "bodyPtr");
+  const bodyLen = getPointerMessageProperty(value, "bodyLen");
   const timeoutMs = getNumberMessageProperty(value, "timeoutMs");
   const requestIdHi = getUint32MessageProperty(value, "requestIdHi");
   const requestIdLo = getUint32MessageProperty(value, "requestIdLo");
   const phaseOneLockPtr = getPointerMessageProperty(value, "phaseOneLockPtr");
-  const phaseTwoLockPtr = getPointerMessageProperty(value, "phaseTwoLockPtr");
   const responseCodePtr = getPointerMessageProperty(value, "responseCodePtr");
   const failureStatePtr = getPointerMessageProperty(value, "failureStatePtr");
   const bodySizePtr = getPointerMessageProperty(value, "bodySizePtr");
   const mimeSizePtr = getPointerMessageProperty(value, "mimeSizePtr");
-  const bodyDataPtrPtr = getPointerMessageProperty(value, "bodyDataPtrPtr");
-  const mimeDataPtrPtr = getPointerMessageProperty(value, "mimeDataPtrPtr");
 
   if (
     !url ||
     !requestUrl ||
     !method ||
+    bodyPtr === null ||
+    bodyLen === null ||
     timeoutMs === null ||
     requestIdHi === null ||
     requestIdLo === null ||
     phaseOneLockPtr === null ||
-    phaseTwoLockPtr === null ||
     responseCodePtr === null ||
     failureStatePtr === null ||
     bodySizePtr === null ||
-    mimeSizePtr === null ||
-    bodyDataPtrPtr === null ||
-    mimeDataPtrPtr === null
+    mimeSizePtr === null
   ) {
     return null;
   }
@@ -205,18 +192,16 @@ function parseHttpFetchRequestMessage(
     url,
     requestUrl,
     method,
-    body,
+    bodyPtr,
+    bodyLen,
     timeoutMs,
     requestIdHi,
     requestIdLo,
     phaseOneLockPtr,
-    phaseTwoLockPtr,
     responseCodePtr,
     failureStatePtr,
     bodySizePtr,
     mimeSizePtr,
-    bodyDataPtrPtr,
-    mimeDataPtrPtr,
   };
 }
 
@@ -294,10 +279,7 @@ function getHttpFetchWasmMemoryBuffer() {
     throw new Error("HTTP fetch WASM memory is not initialized");
   }
   const buffer = httpFetchWasmMemory.buffer;
-  if (
-    typeof SharedArrayBuffer === "function" &&
-    Object.prototype.toString.call(buffer) !== "[object SharedArrayBuffer]"
-  ) {
+  if (!(buffer instanceof SharedArrayBuffer)) {
     throw new Error("HTTP fetch WASM memory is not shared");
   }
   return buffer;
@@ -427,12 +409,21 @@ function failureOutcome(failureState: number): HttpFetchOutcome {
   };
 }
 
-function requestBodyInit(method: string, body: Uint8Array | null) {
-  if (method === "GET" || !body || body.byteLength === 0) {
+function requestBodyInit(request: HttpFetchRequestMessage) {
+  if (
+    request.method === "GET" ||
+    request.bodyPtr === 0 ||
+    request.bodyLen === 0
+  ) {
     return undefined;
   }
-  const requestBody = new ArrayBuffer(body.byteLength);
-  new Uint8Array(requestBody).set(body);
+  const bodyEnd = request.bodyPtr + request.bodyLen;
+  const source = heapU8();
+  if (bodyEnd < request.bodyPtr || bodyEnd > source.byteLength) {
+    throw new Error("HTTP request body is outside WASM memory");
+  }
+  const requestBody = new ArrayBuffer(request.bodyLen);
+  new Uint8Array(requestBody).set(source.subarray(request.bodyPtr, bodyEnd));
   return requestBody;
 }
 
@@ -461,7 +452,7 @@ async function fetchHttpResponse(
   try {
     const response = await fetch(request.requestUrl, {
       method: request.method,
-      body: requestBodyInit(request.method, request.body),
+      body: requestBodyInit(request),
       signal: controller.signal,
     });
 
@@ -552,10 +543,6 @@ async function fetchHttpResponse(
 
 async function handleHttpFetchRequest(request: HttpFetchRequestMessage) {
   const key = requestKey(request.requestIdHi, request.requestIdLo);
-  if (pendingHttpFetchResponses.has(key)) {
-    notifyLock(request.phaseOneLockPtr, LOCK_ERROR);
-    return;
-  }
   let outcome: HttpFetchOutcome;
   try {
     outcome = await fetchHttpResponse(request);

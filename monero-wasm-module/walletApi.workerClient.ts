@@ -68,7 +68,9 @@ export const initModule: (
     variant,
     httpFetchEventChannelName,
   });
-  setHttpFetchWasmMemory(await api.getWasmMemory());
+  if (variant === "threads") {
+    setHttpFetchWasmMemory(await api.getWasmMemory());
+  }
 };
 
 export async function setWalletNewBlockCallback(

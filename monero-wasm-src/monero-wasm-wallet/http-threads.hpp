@@ -56,7 +56,6 @@ enum class HttpFetchFailureState : std::int32_t
 
 enum class HttpFetchLockState : std::int32_t
 {
-    Empty = 0,
     Done = 2,
     Error = 3,
 };
@@ -83,49 +82,34 @@ EM_JS(int, js_http_fetch_request, (
     int request_id_hi,
     int request_id_lo,
     int phase_one_lock_ptr,
-    int phase_two_lock_ptr,
     int response_code_i32_ptr,
     int failure_state_i32_ptr,
     int body_size_i32_ptr,
-    int mime_size_i32_ptr,
-    int body_data_ptr_i32_ptr,
-    int mime_data_ptr_i32_ptr),
+    int mime_size_i32_ptr),
 {
     const uri = UTF8ToString(uri_ptr, uri_len);
     const method = UTF8ToString(method_ptr, method_len);
     const baseUrl = UTF8ToString(base_url_ptr, base_url_len);
     const channelName =
       channel_name_len > 0 ? UTF8ToString(channel_name_ptr, channel_name_len) : "";
-    const heapU8 = () => {
-      if (typeof growMemViews === 'function')
-        growMemViews();
-      return HEAPU8;
-    };
     const waitForLock = (lockPtr, timeoutMs) => {
       const lockIndex = lockPtr >> 2;
-      const deadline =
-        timeoutMs > 0 ? Date.now() + timeoutMs + 10000 : 0;
-      for (;;) {
-        const locks = new Int32Array(wasmMemory.buffer);
-        const value = Atomics.load(locks, lockIndex);
-        if (value === 2 || value === 3)
-          return value;
-        if (deadline && Date.now() >= deadline)
-          return 0;
-        const waitMs = deadline
-          ? Math.max(1, Math.min(1000, deadline - Date.now()))
-          : undefined;
-        Atomics.wait(locks, lockIndex, value, waitMs);
-      }
+      const locks = new Int32Array(wasmMemory.buffer);
+      const value = Atomics.load(locks, lockIndex);
+      if (value === 2 || value === 3)
+        return value;
+      Atomics.wait(
+        locks,
+        lockIndex,
+        0,
+        timeoutMs > 0 ? timeoutMs + 10000 : undefined);
+      const finalValue = Atomics.load(new Int32Array(wasmMemory.buffer), lockIndex);
+      return finalValue === 2 || finalValue === 3 ? finalValue : 0;
     };
 
     try {
       if (!channelName || typeof BroadcastChannel !== 'function')
         return 0;
-      const bodyCopyNonShared =
-        method !== 'GET' && body_len > 0
-          ? new Uint8Array(new Uint8Array(heapU8().buffer, body_ptr, body_len))
-          : null;
 
       if (!globalThis.__amethystHttpFetchChannels)
         globalThis.__amethystHttpFetchChannels = new Map();
@@ -140,18 +124,16 @@ EM_JS(int, js_http_fetch_request, (
         url: uri,
         requestUrl: baseUrl + uri,
         method,
-        body: bodyCopyNonShared,
+        bodyPtr: method !== 'GET' && body_len > 0 ? body_ptr : 0,
+        bodyLen: method !== 'GET' && body_len > 0 ? body_len : 0,
         timeoutMs: timeout_ms,
         requestIdHi: request_id_hi >>> 0,
         requestIdLo: request_id_lo >>> 0,
         phaseOneLockPtr: phase_one_lock_ptr,
-        phaseTwoLockPtr: phase_two_lock_ptr,
         responseCodePtr: response_code_i32_ptr,
         failureStatePtr: failure_state_i32_ptr,
         bodySizePtr: body_size_i32_ptr,
         mimeSizePtr: mime_size_i32_ptr,
-        bodyDataPtrPtr: body_data_ptr_i32_ptr,
-        mimeDataPtrPtr: mime_data_ptr_i32_ptr,
       };
       channel.postMessage(message);
 
@@ -177,20 +159,13 @@ EM_JS(int, js_http_fetch_copy_response, (
       channel_name_len > 0 ? UTF8ToString(channel_name_ptr, channel_name_len) : "";
     const waitForLock = (lockPtr) => {
       const lockIndex = lockPtr >> 2;
-      const deadline = Date.now() + 60000;
-      for (;;) {
-        const locks = new Int32Array(wasmMemory.buffer);
-        const value = Atomics.load(locks, lockIndex);
-        if (value === 2 || value === 3)
-          return value;
-        if (Date.now() >= deadline)
-          return 0;
-        Atomics.wait(
-          locks,
-          lockIndex,
-          value,
-          Math.max(1, Math.min(1000, deadline - Date.now())));
-      }
+      const locks = new Int32Array(wasmMemory.buffer);
+      const value = Atomics.load(locks, lockIndex);
+      if (value === 2 || value === 3)
+        return value;
+      Atomics.wait(locks, lockIndex, 0, 60000);
+      const finalValue = Atomics.load(new Int32Array(wasmMemory.buffer), lockIndex);
+      return finalValue === 2 || finalValue === 3 ? finalValue : 0;
     };
 
     try {
@@ -353,13 +328,10 @@ public:
                 static_cast<int>(request_id_hi),
                 static_cast<int>(request_id_lo),
                 reinterpret_cast<int>(std::addressof(g_http_fetch_phase_one_lock)),
-                reinterpret_cast<int>(std::addressof(g_http_fetch_phase_two_lock)),
                 reinterpret_cast<int>(std::addressof(response_code)),
                 reinterpret_cast<int>(std::addressof(failure_state)),
                 reinterpret_cast<int>(std::addressof(body_size)),
-                reinterpret_cast<int>(std::addressof(mime_size)),
-                reinterpret_cast<int>(std::addressof(body_data_ptr)),
-                reinterpret_cast<int>(std::addressof(mime_data_ptr)));
+                reinterpret_cast<int>(std::addressof(mime_size)));
 
         m_response_info.m_response_code = response_code.load(std::memory_order_acquire);
         const auto failure = static_cast<HttpFetchFailureState>(failure_state.load(std::memory_order_acquire));
