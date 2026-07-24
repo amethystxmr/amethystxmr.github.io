@@ -182,14 +182,12 @@ export class InitialWalletListPage {
     return walletMainPage;
   }
 
-  async restoreWalletFromKeys(params: {
+  private async fillRestoreFromKeysFields(params: {
     walletName: string;
     address: string;
     secretViewKey: string;
     secretSpendKey?: string;
-    startingHeight?: string;
-    startingHeightDate?: string;
-  }): Promise<WalletMainPage> {
+  }): Promise<void> {
     await this.walletNameInput().fill(params.walletName);
     await this.page.getByRole("tab", { name: /from keys/i }).click();
     await this.page
@@ -214,6 +212,17 @@ export class InitialWalletListPage {
     } else {
       await spendKeyInput.fill("");
     }
+  }
+
+  async restoreWalletFromKeys(params: {
+    walletName: string;
+    address: string;
+    secretViewKey: string;
+    secretSpendKey?: string;
+    startingHeight?: string;
+    startingHeightDate?: string;
+  }): Promise<WalletMainPage> {
+    await this.fillRestoreFromKeysFields(params);
     if (params.startingHeightDate) {
       await this.pickRestoreStartingHeightDate(params.startingHeightDate);
     } else {
@@ -222,10 +231,46 @@ export class InitialWalletListPage {
       await expect(heightInput).toHaveValue(params.startingHeight ?? "0");
     }
 
-    await this.page.getByRole("button", { name: /restore wallet/i }).click();
+    await this.submitRestoreWalletForm();
 
     const walletMainPage = new WalletMainPage(this.page);
     await walletMainPage.waitUntilLoaded();
     return walletMainPage;
+  }
+
+  private noHeightConfirmDialog(): Locator {
+    return this.page.getByText(
+      /No height is provided\. Do you want to use current blockchain height\?/i,
+    );
+  }
+
+  /** Fills the from-keys form leaving the starting height empty, then submits. */
+  async submitRestoreFromKeysWithoutHeight(params: {
+    walletName: string;
+    address: string;
+    secretViewKey: string;
+    secretSpendKey?: string;
+  }): Promise<void> {
+    await this.fillRestoreFromKeysFields(params);
+    const heightInput = this.startingHeightInput();
+    await heightInput.fill("");
+    await expect(heightInput).toHaveValue("");
+    await this.submitRestoreWalletForm();
+  }
+
+  async expectNoHeightConfirmVisible(): Promise<void> {
+    await expect(this.noHeightConfirmDialog()).toBeVisible();
+  }
+
+  async confirmUseDaemonHeight(): Promise<WalletMainPage> {
+    await this.page.getByRole("button", { name: /^Yes$/ }).click();
+    const walletMainPage = new WalletMainPage(this.page);
+    await walletMainPage.waitUntilLoaded();
+    return walletMainPage;
+  }
+
+  async declineUseDaemonHeight(): Promise<void> {
+    await this.page.getByRole("button", { name: /^No$/ }).click();
+    await expect(this.noHeightConfirmDialog()).toHaveCount(0);
   }
 }

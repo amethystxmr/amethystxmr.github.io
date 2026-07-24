@@ -207,6 +207,36 @@ export class WalletMainPage {
     await expect(this.page.getByText("Network fee")).toBeVisible();
   }
 
+  async expectSendReviewAddress(address: string): Promise<void> {
+    const reviewAddress = this.page.getByLabel(
+      "Send review destination address",
+    );
+    await expect(reviewAddress).toBeVisible();
+    await expect
+      .poll(async () => (await reviewAddress.innerText()).replace(/\s+/g, ""))
+      .toBe(address);
+  }
+
+  async expectLatestTransactionDestinationAddress(
+    typeLabel: "Pending" | "Outgoing",
+    address: string,
+  ): Promise<void> {
+    await this.openTab("transactions");
+    const card = this.page.getByLabel(`Transaction card: ${typeLabel}`).first();
+    await expect(card).toBeVisible();
+    await card.click();
+    await expect(card.getByText("Destinations:")).toBeVisible();
+    const destinationAddress = card.getByLabel(
+      `${typeLabel} transaction destination address`,
+    );
+    await expect(destinationAddress).toHaveCount(1);
+    await expect
+      .poll(async () =>
+        (await destinationAddress.innerText()).replace(/\s+/g, ""),
+      )
+      .toBe(address);
+  }
+
   async confirmSend(): Promise<void> {
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
@@ -262,7 +292,7 @@ export class WalletMainPage {
   }
 
   async expectLatestTransactionAmount(
-    typeLabel: "Mined" | "Pending" | "Mempool In",
+    typeLabel: "Mined" | "Pending" | "Mempool In" | "Incoming" | "Outgoing",
     amountXmr: string,
     sign: "+" | "-",
   ): Promise<void> {
@@ -635,6 +665,7 @@ export class WalletMainPage {
     if (isFinalSigner) {
       await finalizeButton.click();
       await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
+      await this.dismissSentScreen();
       return { exportedData: null, sent: true };
     }
 
@@ -705,15 +736,23 @@ export class WalletMainPage {
     const mempool = await this.page
       .getByLabel("Transaction type: Mempool In")
       .count();
+    const incoming = await this.page
+      .getByLabel("Transaction type: Incoming")
+      .count();
+    const outgoing = await this.page
+      .getByLabel("Transaction type: Outgoing")
+      .count();
     return {
       block: mined,
       pending,
       mempool,
+      in: incoming,
+      out: outgoing,
     };
   }
 
   async waitForPaymentTypeCountAtLeast(
-    paymentType: "block" | "pending" | "mempool",
+    paymentType: "block" | "pending" | "mempool" | "in" | "out",
     minCount: number,
     timeoutMs = 180_000,
   ): Promise<number> {
@@ -746,6 +785,14 @@ export class WalletMainPage {
         .getByLabel("XMR available value")
         .first()
         .textContent()) ?? "";
+    const parsed = WalletMainPage.parseXmrTextToAtomic(text);
+    return parsed;
+  }
+
+  async getLockedBalanceAtomic(): Promise<bigint | null> {
+    const text =
+      (await this.page.getByLabel("XMR locked value").first().textContent()) ??
+      "";
     const parsed = WalletMainPage.parseXmrTextToAtomic(text);
     return parsed;
   }
@@ -787,6 +834,45 @@ export class WalletMainPage {
 
     throw new Error(
       `Unlocked balance did not reach ${minBalanceAtomic} atomic units. Last value: ${last}. Last UI text: ${lastUi}`,
+    );
+  }
+
+  async waitForLockedBalanceAtLeast(
+    minBalanceAtomic: bigint,
+    timeoutMs = 120_000,
+  ): Promise<bigint> {
+    const startedAt = Date.now();
+    let last = 0n;
+    let lastUi = "";
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        await this.clickRefreshWallet();
+        const balance = await this.getLockedBalanceAtomic();
+        if (balance !== null) {
+          last = balance;
+        }
+        if (balance !== null && balance >= minBalanceAtomic) {
+          return last;
+        }
+      } catch {
+        // Wallet may still be refreshing, retry.
+      }
+      try {
+        lastUi = (
+          (await this.page
+            .getByLabel("XMR locked value")
+            .first()
+            .textContent()) ?? ""
+        ).trim();
+      } catch {
+        // Ignore UI probe errors.
+      }
+      await this.page.waitForTimeout(1_000);
+    }
+
+    throw new Error(
+      `Locked balance did not reach ${minBalanceAtomic} atomic units. Last value: ${last}. Last UI text: ${lastUi}`,
     );
   }
 

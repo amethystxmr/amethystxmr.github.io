@@ -239,6 +239,7 @@ export function TransactionsTab({
 
               return (
                 <SurfaceCard
+                  aria-label={`Transaction card: ${getTypeLabel(p.type)}`}
                   key={`${p.tx_hash}-${indexFromEnd}`}
                   className="py-2.5"
                   onClick={() =>
@@ -335,6 +336,7 @@ export function TransactionsTab({
                                   className="rounded-lg border border-white/10 bg-white/4 px-2.5 py-2"
                                 >
                                   <div
+                                    aria-label={`${getTypeLabel(p.type)} transaction destination address`}
                                     className="break-all whitespace-normal text-white/80"
                                     title={d.address}
                                   >

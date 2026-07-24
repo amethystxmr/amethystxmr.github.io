@@ -153,6 +153,46 @@ function summarizeTransfers(transfers: TransferInfoItem[]) {
   return { destinations, totalOutgoing, totalFee, totalChange };
 }
 
+/** Compact address for exact string compare (strip whitespace). */
+function compactAddress(address: string): string {
+  return address.replace(/\s+/g, "").trim();
+}
+
+/**
+ * Ensure prepared tx destinations match the addresses the user typed.
+ * Returns an error message when a mismatch is found.
+ */
+function findPreparedAddressMismatch(
+  enteredAddresses: string[],
+  transferInfo: TransferInfoItem[],
+): string | null {
+  const entered = enteredAddresses.map(compactAddress);
+  const shown = transferInfo.flatMap((tx) =>
+    tx.destinations.map((d) => compactAddress(d.dstAddress)),
+  );
+
+  if (entered.length === 0) {
+    return "A bug detected: no entered destination addresses to verify";
+  }
+  if (shown.length === 0) {
+    return "A bug detected: prepared transaction has no destination addresses";
+  }
+
+  // wallet2 may split one destination across multiple pending transactions, so
+  // verify membership instead of relying on flattened order or exact counts.
+  for (const address of shown) {
+    if (!entered.includes(address)) {
+      return `A bug detected: address ${address} does not match entered destination(s)`;
+    }
+  }
+  for (const address of entered) {
+    if (!shown.includes(address)) {
+      return `A bug detected: entered address ${address} does not match prepared destination(s)`;
+    }
+  }
+  return null;
+}
+
 function getPostSendBalances(
   currentTotalNonStrictBalance: bigint | null,
   currentUnlockedNonStrictBalance: bigint | null,
@@ -345,6 +385,22 @@ export function SendTab({
               null,
             );
       const transferInfo = await wallet.get_transfers_info(txHandle);
+      const addressMismatch = findPreparedAddressMismatch(
+        destinations,
+        transferInfo,
+      );
+      if (addressMismatch !== null) {
+        await wallet.destroy_tx_handle(txHandle);
+        txHandle = null;
+        if (isUnmountedRef.current) {
+          return;
+        }
+        setState({
+          type: "error",
+          message: addressMismatch,
+        });
+        return;
+      }
       const multisigStatus = await wallet.get_multisig_status();
       if (isUnmountedRef.current) {
         await wallet.destroy_tx_handle(txHandle);
@@ -1427,7 +1483,10 @@ export function SendTab({
                           <div className="text-xs text-white/60 pt-2">
                             To address
                           </div>
-                          <div className="break-all font-mono text-xs text-white/80">
+                          <div
+                            aria-label="Send review destination address"
+                            className="break-all font-mono text-xs text-white/80"
+                          >
                             {splitAddressBy6(
                               summary.destinations[0].dstAddress,
                             )}
@@ -1445,7 +1504,10 @@ export function SendTab({
                               key={`${recipient.dstAddress}-${recipient.dspAmount.toString()}-${index}`}
                               className="rounded-lg bg-white/5 p-2"
                             >
-                              <div className="break-all font-mono text-[11px] text-white/75">
+                              <div
+                                aria-label={`Send review recipient ${index + 1} address`}
+                                className="break-all font-mono text-[11px] text-white/75"
+                              >
                                 {splitAddressBy6(recipient.dstAddress)}
                               </div>
                               <div className="mt-1 text-xs text-white">
