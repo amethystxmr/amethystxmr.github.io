@@ -4,6 +4,7 @@ import {
   MONERO_MINING_ADDRESS,
   MONERO_RESTORE_SEED,
 } from "./constants";
+import { startMonerod } from "./helpers/monerod";
 import { generateBlocks } from "./helpers/moneroRpc";
 import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
@@ -67,6 +68,9 @@ function isIntermediateProgress(event: HttpFetchEvent): boolean {
 }
 
 test.beforeEach(async ({ page }) => {
+  // Fresh chain so waitForExactSyncedHeight(INITIAL_MINED_BLOCKS + 1) is valid
+  // even when earlier specs mined on the shared globalSetup monerod.
+  await startMonerod();
   await initializeAppTestSettings(page);
 });
 
