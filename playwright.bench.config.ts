@@ -45,6 +45,8 @@ export default defineConfig({
   reporter: [["list", { printSteps: true }]],
   use: {
     ...devices["Desktop Chrome"],
+    // Headed by default (easier to diagnose stalls). BENCH_HEADLESS=1 or CI → headless.
+    headless: process.env.BENCH_HEADLESS === "1" || Boolean(process.env.CI),
     serviceWorkers: "block",
     viewport: { width: 1460, height: 920 },
     trace: "off",

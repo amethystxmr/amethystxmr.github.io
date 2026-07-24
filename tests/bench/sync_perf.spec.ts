@@ -66,7 +66,7 @@ type CellResult = {
   blocksReceived: number | null;
   rxBytes: number | null;
   txBytes: number | null;
-  /** page.workers().length after sync (WASM only). */
+  /** Dedicated page workers after sync (WASM only): page.workers().length - 1. */
   workers: number | null;
 };
 
@@ -546,7 +546,8 @@ async function runWasmCell(params: {
       progressLabel: label,
     });
 
-    const workers = page.workers().length;
+    // page.workers() includes the primary wallet worker; report dedicated extras only.
+    const workers = Math.max(0, page.workers().length - 1);
 
     return {
       run: params.run,
@@ -759,6 +760,7 @@ test("mainnet sync performance matrix", async ({ browser }) => {
       }
     }
 
+    console.log(`[bench] ===== MATRIX COMPLETE =====`);
     printSummary(results);
     console.log(`[bench] final log ${logPath}`);
     console.log(`[bench] final json ${jsonPath}`);

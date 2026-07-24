@@ -1,10 +1,9 @@
-import { execSync, spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { averageCoresUsed } from "./processMetrics";
-import { access } from "node:fs/promises";
 
 export type NativeSyncResult = {
   durationMs: number;
@@ -32,6 +31,52 @@ const CLK_TCK = (() => {
     return 100;
   }
 })();
+
+/** Headed by default; set BENCH_HEADLESS=1 (or CI) for headless. */
+export function isBenchHeaded(): boolean {
+  if (process.env.BENCH_HEADLESS === "1") {
+    return false;
+  }
+  if (process.env.CI) {
+    return false;
+  }
+  return true;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function commandExists(command: string): boolean {
+  try {
+    execSync(`command -v ${shellQuote(command)}`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Terminal emulator used to show monero-wallet-cli when headed. */
+function resolveBenchTerminal(): string | null {
+  if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+    return null;
+  }
+  const fromEnv = process.env.BENCH_TERMINAL;
+  if (fromEnv && fromEnv.length > 0) {
+    return fromEnv;
+  }
+  for (const candidate of [
+    "gnome-terminal",
+    "x-terminal-emulator",
+    "konsole",
+    "xterm",
+  ]) {
+    if (commandExists(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
 
 function readProcCpuSec(pid: number): number | null {
   try {
@@ -106,6 +151,158 @@ export async function assertWalletCliExists(cliPath: string): Promise<void> {
   }
 }
 
+type CliRunHandle = {
+  getPid: () => number | null;
+  getOutput: () => string;
+  waitForExit: () => Promise<number>;
+  dispose: () => void;
+};
+
+function startHeadlessCli(walletCliPath: string, args: string[]): CliRunHandle {
+  const child = spawn(walletCliPath, args, {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout?.on("data", (chunk: Buffer) => {
+    output += chunk.toString("utf8");
+  });
+  child.stderr?.on("data", (chunk: Buffer) => {
+    output += chunk.toString("utf8");
+  });
+  child.stdin?.write("\nN\nexit\n");
+  child.stdin?.end();
+
+  return {
+    getPid: () => child.pid ?? null,
+    getOutput: () => output,
+    waitForExit: () =>
+      new Promise<number>((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", (code) => resolve(code ?? 1));
+      }),
+    dispose: () => {
+      if (!child.killed) {
+        child.kill("SIGKILL");
+      }
+    },
+  };
+}
+
+/**
+ * Run monero-wallet-cli in a visible terminal (no GUI binary exists).
+ * Output is tee'd to a log file so the bench can still parse results.
+ */
+async function startHeadedCli(params: {
+  walletCliPath: string;
+  args: string[];
+  workDir: string;
+  progressLabel: string;
+  terminal: string;
+}): Promise<CliRunHandle> {
+  const outPath = path.join(params.workDir, "cli.out");
+  const pidPath = path.join(params.workDir, "cli.pid");
+  const exitPath = path.join(params.workDir, "cli.exit");
+  const promptsPath = path.join(params.workDir, "cli.prompts");
+  const runnerPath = path.join(params.workDir, "run-cli.sh");
+
+  await writeFile(promptsPath, "\nN\nexit\n", "utf8");
+  await writeFile(outPath, "", "utf8");
+
+  const quotedArgs = params.args.map(shellQuote).join(" ");
+  const script = `#!/usr/bin/env bash
+set -uo pipefail
+cd ${shellQuote(params.workDir)}
+printf '%s\\n' ${shellQuote(params.progressLabel)} 
+set +e
+${shellQuote(params.walletCliPath)} ${quotedArgs} < ${shellQuote(promptsPath)} > >(tee ${shellQuote(outPath)}) 2>&1 &
+echo $! > ${shellQuote(pidPath)}
+wait "$(cat ${shellQuote(pidPath)})"
+echo $? > ${shellQuote(exitPath)}
+set -e
+`;
+  await writeFile(runnerPath, script, { mode: 0o755 });
+
+  let terminalChild: ChildProcess | null = null;
+  const termArgs =
+    params.terminal === "gnome-terminal" ||
+    params.terminal.endsWith("gnome-terminal")
+      ? ["--", "bash", runnerPath]
+      : params.terminal === "konsole"
+        ? ["-e", "bash", runnerPath]
+        : ["-e", "bash", runnerPath];
+
+  terminalChild = spawn(params.terminal, termArgs, {
+    stdio: "ignore",
+    detached: true,
+  });
+  terminalChild.unref();
+
+  const startedAt = Date.now();
+  while (!existsSync(pidPath)) {
+    if (Date.now() - startedAt > 15_000) {
+      throw new Error(
+        `Timed out waiting for headed monero-wallet-cli pid (${params.progressLabel})`,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  return {
+    getPid: () => {
+      try {
+        const raw = readFileSync(pidPath, "utf8").trim();
+        const pid = Number(raw);
+        return Number.isNaN(pid) ? null : pid;
+      } catch {
+        return null;
+      }
+    },
+    getOutput: () => {
+      try {
+        return readFileSync(outPath, "utf8");
+      } catch {
+        return "";
+      }
+    },
+    waitForExit: async () => {
+      const waitStarted = Date.now();
+      while (!existsSync(exitPath)) {
+        if (Date.now() - waitStarted > 24 * 60 * 60 * 1000) {
+          throw new Error(
+            `Timed out waiting for headed CLI exit file (${params.progressLabel})`,
+          );
+        }
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      const code = Number(readFileSync(exitPath, "utf8").trim());
+      return Number.isNaN(code) ? 1 : code;
+    },
+    dispose: () => {
+      const pid = (() => {
+        try {
+          return Number(readFileSync(pidPath, "utf8").trim());
+        } catch {
+          return NaN;
+        }
+      })();
+      if (!Number.isNaN(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // already exited
+        }
+      }
+      if (terminalChild && !terminalChild.killed) {
+        try {
+          terminalChild.kill("SIGTERM");
+        } catch {
+          // ignore
+        }
+      }
+    },
+  };
+}
+
 /**
  * Restore+sync with monero-wallet-cli.
  * Stdin: empty seed-offset passphrase, N (background mining), exit.
@@ -113,6 +310,9 @@ export async function assertWalletCliExists(cliPath: string): Promise<void> {
  * `--max-concurrency` is the correct knob (wallet_args → tools::set_max_concurrency).
  * In Monero, n < 1 is treated as boost::thread::hardware_concurrency() (all cores),
  * so `--max-concurrency 0` means "use all cores", not "zero threads".
+ *
+ * Headed mode (default): opens the CLI in a terminal emulator when DISPLAY is
+ * available. There is no GUI for monero-wallet-cli; this is the closest analogue.
  */
 export async function runNativeWalletCliSync(params: {
   walletCliPath: string;
@@ -151,20 +351,23 @@ export async function runNativeWalletCliSync(params: {
     "1",
   ];
 
-  const child = spawn(params.walletCliPath, args, {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const terminal = isBenchHeaded() ? resolveBenchTerminal() : null;
+  const handle =
+    terminal !== null
+      ? await startHeadedCli({
+          walletCliPath: params.walletCliPath,
+          args,
+          workDir,
+          progressLabel: params.progressLabel,
+          terminal,
+        })
+      : startHeadlessCli(params.walletCliPath, args);
 
-  let output = "";
-  child.stdout?.on("data", (chunk: Buffer) => {
-    output += chunk.toString("utf8");
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    output += chunk.toString("utf8");
-  });
-
-  child.stdin?.write("\nN\nexit\n");
-  child.stdin?.end();
+  if (terminal !== null) {
+    console.log(
+      `[bench] ${params.progressLabel} native CLI headed via ${terminal}`,
+    );
+  }
 
   const startedAt = Date.now();
   let baselineCpu: number | null = null;
@@ -175,64 +378,73 @@ export async function runNativeWalletCliSync(params: {
   let peakRssBytes = 0;
   let lastLogAt = 0;
 
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(
-        new Error(
-          `Native CLI timed out after ${params.timeoutMs}ms (${params.progressLabel})`,
-        ),
-      );
-    }, params.timeoutMs);
-
-    const sample = setInterval(() => {
-      if (!child.pid) {
-        return;
-      }
-      if (baselineCpu === null) {
-        baselineCpu = readProcCpuSec(child.pid);
-      }
-      if (baselineIo === null) {
-        baselineIo = readProcIoChars(child.pid);
-      }
-      const cpuNow = readProcCpuSec(child.pid);
-      if (baselineCpu !== null && cpuNow !== null) {
-        lastCpuWorkSec = Math.max(0, cpuNow - baselineCpu);
-      }
-      const ioNow = readProcIoChars(child.pid);
-      if (baselineIo !== null && ioNow !== null) {
-        lastRxBytes = Math.max(0, ioNow.rchar - baselineIo.rchar);
-        lastTxBytes = Math.max(0, ioNow.wchar - baselineIo.wchar);
-      }
-      peakRssBytes = Math.max(peakRssBytes, readProcRssBytes(child.pid));
-      const elapsedMs = Date.now() - startedAt;
-      if (elapsedMs - lastLogAt >= logEveryMs) {
-        lastLogAt = elapsedMs;
-        console.log(
-          `[bench] ${params.progressLabel} ` +
-            `elapsed=${(elapsedMs / 1000).toFixed(1)}s ` +
-            `rss=${(peakRssBytes / (1024 * 1024)).toFixed(1)} MiB ` +
-            `cpuWork=${lastCpuWorkSec.toFixed(2)}s ` +
-            `avgCores=${averageCoresUsed(lastCpuWorkSec, elapsedMs).toFixed(2)} ` +
-            `rx=${(lastRxBytes / (1024 * 1024)).toFixed(1)} MiB ` +
-            `tx=${(lastTxBytes / (1024 * 1024)).toFixed(1)} MiB`,
+  let exitCode: number;
+  try {
+    exitCode = await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        handle.dispose();
+        reject(
+          new Error(
+            `Native CLI timed out after ${params.timeoutMs}ms (${params.progressLabel})`,
+          ),
         );
-      }
-    }, 500);
+      }, params.timeoutMs);
 
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      clearInterval(sample);
-      reject(error);
+      const sample = setInterval(() => {
+        const pid = handle.getPid();
+        if (pid === null) {
+          return;
+        }
+        if (baselineCpu === null) {
+          baselineCpu = readProcCpuSec(pid);
+        }
+        if (baselineIo === null) {
+          baselineIo = readProcIoChars(pid);
+        }
+        const cpuNow = readProcCpuSec(pid);
+        if (baselineCpu !== null && cpuNow !== null) {
+          lastCpuWorkSec = Math.max(0, cpuNow - baselineCpu);
+        }
+        const ioNow = readProcIoChars(pid);
+        if (baselineIo !== null && ioNow !== null) {
+          lastRxBytes = Math.max(0, ioNow.rchar - baselineIo.rchar);
+          lastTxBytes = Math.max(0, ioNow.wchar - baselineIo.wchar);
+        }
+        peakRssBytes = Math.max(peakRssBytes, readProcRssBytes(pid));
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs - lastLogAt >= logEveryMs) {
+          lastLogAt = elapsedMs;
+          console.log(
+            `[bench] ${params.progressLabel} ` +
+              `elapsed=${(elapsedMs / 1000).toFixed(1)}s ` +
+              `rss=${(peakRssBytes / (1024 * 1024)).toFixed(1)} MiB ` +
+              `cpuWork=${lastCpuWorkSec.toFixed(2)}s ` +
+              `avgCores=${averageCoresUsed(lastCpuWorkSec, elapsedMs).toFixed(2)} ` +
+              `rx=${(lastRxBytes / (1024 * 1024)).toFixed(1)} MiB ` +
+              `tx=${(lastTxBytes / (1024 * 1024)).toFixed(1)} MiB`,
+          );
+        }
+      }, 500);
+
+      handle
+        .waitForExit()
+        .then((code) => {
+          clearTimeout(timer);
+          clearInterval(sample);
+          resolve(code);
+        })
+        .catch((error: unknown) => {
+          clearTimeout(timer);
+          clearInterval(sample);
+          reject(error);
+        });
     });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      clearInterval(sample);
-      resolve(code ?? 1);
-    });
-  });
+  } finally {
+    // headed terminal exits on its own; ensure CLI is gone on errors
+  }
 
   const durationMs = Date.now() - startedAt;
+  const output = handle.getOutput();
 
   try {
     await rm(workDir, { recursive: true, force: true });

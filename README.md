@@ -136,6 +136,12 @@ Optional: `BENCH_WALLET_CLI_PATH=/path/to/monero-wallet-cli` to override.
 
 ### Run
 
+Runs **headed by default** (Chromium window + native CLI in a terminal
+emulator when `DISPLAY`/`WAYLAND_DISPLAY` is set). There is no GUI for
+`monero-wallet-cli`; headed native means a visible terminal. Force headless
+with `BENCH_HEADLESS=1`. Optional: `BENCH_TERMINAL=gnome-terminal` (or
+`xterm` / `konsole`). Daemon filter: `BENCH_DAEMONS=local` or `local,cake`.
+
 ```bash
 npm run bench:sync
 ```
@@ -164,7 +170,8 @@ CPU / traffic columns:
 - `avgCores`: `cpuWorkSec / wallSec` (parallelism)
 - `rxMiB` / `txMiB` (native only): process `/proc/<pid>/io` `rchar`/`wchar`
   deltas (includes network socket I/O)
-- `workers` (WASM only): `page.workers().length` after sync finishes
+- `workers` (WASM only): `max(0, page.workers().length - 1)` after sync
+  (dedicated workers; excludes the primary wallet worker)
 
 ## Building web
 
