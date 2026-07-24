@@ -54,6 +54,13 @@ enum class HttpFetchFailureState : std::int32_t
     ProtocolError = 4,
 };
 
+enum class HttpFetchLockState : std::int32_t
+{
+    Empty = 0,
+    Done = 2,
+    Error = 3,
+};
+
 std::string get_http_base_url()
 {
     std::lock_guard<std::mutex> lock(g_http_config_mutex);
@@ -94,14 +101,21 @@ EM_JS(int, js_http_fetch_request, (
         growMemViews();
       return HEAPU8;
     };
-    const waitForLock = (lockPtr) => {
+    const waitForLock = (lockPtr, timeoutMs) => {
       const lockIndex = lockPtr >> 2;
+      const deadline =
+        timeoutMs > 0 ? Date.now() + timeoutMs + 10000 : 0;
       for (;;) {
         const locks = new Int32Array(wasmMemory.buffer);
         const value = Atomics.load(locks, lockIndex);
-        if (value !== 0)
+        if (value === 2 || value === 3)
           return value;
-        Atomics.wait(locks, lockIndex, 0);
+        if (deadline && Date.now() >= deadline)
+          return 0;
+        const waitMs = deadline
+          ? Math.max(1, Math.min(1000, deadline - Date.now()))
+          : undefined;
+        Atomics.wait(locks, lockIndex, value, waitMs);
       }
     };
 
@@ -130,7 +144,6 @@ EM_JS(int, js_http_fetch_request, (
         timeoutMs: timeout_ms,
         requestIdHi: request_id_hi >>> 0,
         requestIdLo: request_id_lo >>> 0,
-        wasmMemory,
         phaseOneLockPtr: phase_one_lock_ptr,
         phaseTwoLockPtr: phase_two_lock_ptr,
         responseCodePtr: response_code_i32_ptr,
@@ -141,14 +154,8 @@ EM_JS(int, js_http_fetch_request, (
         mimeDataPtrPtr: mime_data_ptr_i32_ptr,
       };
       channel.postMessage(message);
-      // BroadcastChannel is the topology-independent route: nested pthread
-      // workers can only postMessage to their spawning worker, not to the UI.
-      // When this is the outer module worker, also notify its UI parent because
-      // that path was observed to avoid a missed/delayed request before wait.
-      if (!ENVIRONMENT_IS_PTHREAD && typeof postMessage === 'function')
-        postMessage(message);
 
-      return waitForLock(phase_one_lock_ptr);
+      return waitForLock(phase_one_lock_ptr, timeout_ms);
     }
     catch (e)
     {
@@ -170,12 +177,19 @@ EM_JS(int, js_http_fetch_copy_response, (
       channel_name_len > 0 ? UTF8ToString(channel_name_ptr, channel_name_len) : "";
     const waitForLock = (lockPtr) => {
       const lockIndex = lockPtr >> 2;
+      const deadline = Date.now() + 60000;
       for (;;) {
         const locks = new Int32Array(wasmMemory.buffer);
         const value = Atomics.load(locks, lockIndex);
-        if (value !== 0)
+        if (value === 2 || value === 3)
           return value;
-        Atomics.wait(locks, lockIndex, 0);
+        if (Date.now() >= deadline)
+          return 0;
+        Atomics.wait(
+          locks,
+          lockIndex,
+          value,
+          Math.max(1, Math.min(1000, deadline - Date.now())));
       }
     };
 
@@ -195,7 +209,6 @@ EM_JS(int, js_http_fetch_copy_response, (
         type: 'amethyst-http-fetch-copy-response',
         requestIdHi: request_id_hi >>> 0,
         requestIdLo: request_id_lo >>> 0,
-        wasmMemory,
         phaseTwoLockPtr: phase_two_lock_ptr,
         bodySizePtr: body_size_i32_ptr,
         mimeSizePtr: mime_size_i32_ptr,
@@ -203,10 +216,6 @@ EM_JS(int, js_http_fetch_copy_response, (
         mimeDataPtrPtr: mime_data_ptr_i32_ptr,
       };
       channel.postMessage(message);
-      // Same delivery rules as phase one: nested pthread workers rely on the
-      // channel, while the outer module worker can also notify its UI parent.
-      if (!ENVIRONMENT_IS_PTHREAD && typeof postMessage === 'function')
-        postMessage(message);
 
       return waitForLock(phase_two_lock_ptr);
     }
@@ -357,7 +366,7 @@ public:
         const auto body_size_value = body_size.load(std::memory_order_acquire);
         const auto mime_size_value = mime_size.load(std::memory_order_acquire);
 
-        if (phase_one_ok != 1 || failure != HttpFetchFailureState::None || body_size_value < 0 || mime_size_value < 0)
+        if (phase_one_ok != static_cast<std::int32_t>(HttpFetchLockState::Done) || failure != HttpFetchFailureState::None || body_size_value < 0 || mime_size_value < 0)
         {
             m_response_info.m_mime_tipe.resize(0);
             m_response_info.m_body.resize(0);
@@ -381,7 +390,7 @@ public:
                     reinterpret_cast<int>(std::addressof(mime_size)),
                     reinterpret_cast<int>(std::addressof(body_data_ptr)),
                     reinterpret_cast<int>(std::addressof(mime_data_ptr)));
-            if (phase_two_ok != 1)
+            if (phase_two_ok != static_cast<std::int32_t>(HttpFetchLockState::Done))
             {
                 m_response_info.m_mime_tipe.resize(0);
                 m_response_info.m_body.resize(0);

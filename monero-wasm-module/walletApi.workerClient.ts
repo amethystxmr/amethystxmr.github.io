@@ -2,8 +2,8 @@ import * as Comlink from "comlink";
 import type { exposedApi } from "./walletApi.worker";
 import {
   ensureHttpFetchEventChannel,
-  handleHttpFetchChannelMessage,
   httpFetchEventChannelName,
+  setHttpFetchWasmMemory,
 } from "./httpFetchEventChannel";
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
@@ -54,9 +54,6 @@ const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
   name: "monero-wallet-api",
   type: "module",
 });
-worker.addEventListener("message", (message) => {
-  handleHttpFetchChannelMessage(message.data);
-});
 export const api = Comlink.wrap<typeof exposedApi>(worker);
 
 export const initModule: (
@@ -71,6 +68,7 @@ export const initModule: (
     variant,
     httpFetchEventChannelName,
   });
+  setHttpFetchWasmMemory(await api.getWasmMemory());
 };
 
 export async function setWalletNewBlockCallback(

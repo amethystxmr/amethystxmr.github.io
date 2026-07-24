@@ -343,6 +343,7 @@ interface Module {
   decrementExceptionRefcount?(exn: WasmExceptionValue): void;
   /** Monero logging categories (`mlog_set_categories` from wasm). */
   mlog_set_categories(categories: string): void;
+  wasmMemory: WebAssembly.Memory;
   set_http_base_url(baseUrl: string): void;
   set_http_fetch_event_channel(channelName: string): void;
   FS: {
@@ -816,6 +817,13 @@ export function getWasmBuildVariant(): WasmBuildVariant {
     throw new Error("Module not initialized");
   }
   return loadedWasmBuildVariant;
+}
+
+export function getWasmMemory(): WebAssembly.Memory {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.wasmMemory;
 }
 
 export function setDaemonAddress(daemonAddress: string) {

@@ -8,19 +8,22 @@ export type { HttpFetchCallback, HttpFetchEvent, HttpFetchState };
 
 let httpFetchEventChannel: BroadcastChannel | null = null;
 let httpFetchCallback: HttpFetchCallback | null = null;
+let httpFetchWasmMemory: WebAssembly.Memory | null = null;
 
 const HTTP_FETCH_FAILURE_NONE = 0;
 const HTTP_FETCH_FAILURE_ERROR = 1;
 const HTTP_FETCH_FAILURE_TIMEOUT = 2;
 const HTTP_FETCH_FAILURE_ABORT = 3;
 const HTTP_FETCH_FAILURE_PROTOCOL_ERROR = 4;
-const LOCK_OK = 1;
-const LOCK_ERROR = 2;
+const LOCK_DONE = 2;
+const LOCK_ERROR = 3;
 const MAX_I32 = 0x7fffffff;
 
 // Threads-mode HTTP uses a synchronous two-phase handoff. The WASM worker asks
 // the UI thread to fetch, waits for response sizes, allocates C++ strings, then
-// asks the UI thread to copy bytes into the newly allocated addresses.
+// asks the UI thread to copy bytes into the newly allocated addresses. Channel
+// messages carry only cloneable metadata; the UI reads a fresh buffer from the
+// registered WebAssembly.Memory because memory.buffer can change after growth.
 type HttpFetchRequestMessage = {
   type: "amethyst-http-fetch-request";
   url: string;
@@ -30,7 +33,6 @@ type HttpFetchRequestMessage = {
   timeoutMs: number;
   requestIdHi: number;
   requestIdLo: number;
-  wasmMemory: WebAssembly.Memory;
   phaseOneLockPtr: number;
   phaseTwoLockPtr: number;
   responseCodePtr: number;
@@ -45,7 +47,6 @@ type HttpFetchCopyResponseMessage = {
   type: "amethyst-http-fetch-copy-response";
   requestIdHi: number;
   requestIdLo: number;
-  wasmMemory: WebAssembly.Memory;
   phaseTwoLockPtr: number;
   bodySizePtr: number;
   mimeSizePtr: number;
@@ -66,8 +67,6 @@ type PendingHttpFetchResponse = {
 };
 
 const pendingHttpFetchResponses = new Map<string, PendingHttpFetchResponse>();
-const activeHttpFetchRequests = new Set<string>();
-const completedHttpFetchRequests = new Set<string>();
 const textEncoder = new TextEncoder();
 
 function createHttpFetchEventChannelName() {
@@ -117,24 +116,6 @@ function getOptionalUint8ArrayMessageProperty(value: object, property: string) {
     return null;
   }
   return propertyValue instanceof Uint8Array ? propertyValue : null;
-}
-
-function isWasmMemory(value: unknown): value is WebAssembly.Memory {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-  const buffer = Reflect.get(value, "buffer");
-  // Structured-cloned WebAssembly.Memory can cross realms, so checking the
-  // shared backing buffer is more reliable here than instanceof Memory.
-  return (
-    typeof SharedArrayBuffer === "function" &&
-    buffer instanceof SharedArrayBuffer
-  );
-}
-
-function getWasmMemoryMessageProperty(value: object, property: string) {
-  const propertyValue = Reflect.get(value, property);
-  return isWasmMemory(propertyValue) ? propertyValue : null;
 }
 
 function parseHttpFetchState(value: string | null): HttpFetchState | null {
@@ -191,7 +172,6 @@ function parseHttpFetchRequestMessage(
   const timeoutMs = getNumberMessageProperty(value, "timeoutMs");
   const requestIdHi = getUint32MessageProperty(value, "requestIdHi");
   const requestIdLo = getUint32MessageProperty(value, "requestIdLo");
-  const wasmMemory = getWasmMemoryMessageProperty(value, "wasmMemory");
   const phaseOneLockPtr = getPointerMessageProperty(value, "phaseOneLockPtr");
   const phaseTwoLockPtr = getPointerMessageProperty(value, "phaseTwoLockPtr");
   const responseCodePtr = getPointerMessageProperty(value, "responseCodePtr");
@@ -208,7 +188,6 @@ function parseHttpFetchRequestMessage(
     timeoutMs === null ||
     requestIdHi === null ||
     requestIdLo === null ||
-    !wasmMemory ||
     phaseOneLockPtr === null ||
     phaseTwoLockPtr === null ||
     responseCodePtr === null ||
@@ -230,7 +209,6 @@ function parseHttpFetchRequestMessage(
     timeoutMs,
     requestIdHi,
     requestIdLo,
-    wasmMemory,
     phaseOneLockPtr,
     phaseTwoLockPtr,
     responseCodePtr,
@@ -254,7 +232,6 @@ function parseHttpFetchCopyResponseMessage(
 
   const requestIdHi = getUint32MessageProperty(value, "requestIdHi");
   const requestIdLo = getUint32MessageProperty(value, "requestIdLo");
-  const wasmMemory = getWasmMemoryMessageProperty(value, "wasmMemory");
   const phaseTwoLockPtr = getPointerMessageProperty(value, "phaseTwoLockPtr");
   const bodySizePtr = getPointerMessageProperty(value, "bodySizePtr");
   const mimeSizePtr = getPointerMessageProperty(value, "mimeSizePtr");
@@ -264,7 +241,6 @@ function parseHttpFetchCopyResponseMessage(
   if (
     requestIdHi === null ||
     requestIdLo === null ||
-    !wasmMemory ||
     phaseTwoLockPtr === null ||
     bodySizePtr === null ||
     mimeSizePtr === null ||
@@ -278,7 +254,6 @@ function parseHttpFetchCopyResponseMessage(
     type: "amethyst-http-fetch-copy-response",
     requestIdHi,
     requestIdLo,
-    wasmMemory,
     phaseTwoLockPtr,
     bodySizePtr,
     mimeSizePtr,
@@ -314,35 +289,38 @@ function emitHttpFetchCallback(
   );
 }
 
-function rememberCompletedRequest(key: string) {
-  completedHttpFetchRequests.add(key);
-  globalThis.setTimeout(() => {
-    completedHttpFetchRequests.delete(key);
-  }, 60_000);
+function getHttpFetchWasmMemoryBuffer() {
+  if (!httpFetchWasmMemory) {
+    throw new Error("HTTP fetch WASM memory is not initialized");
+  }
+  const buffer = httpFetchWasmMemory.buffer;
+  if (
+    typeof SharedArrayBuffer === "function" &&
+    Object.prototype.toString.call(buffer) !== "[object SharedArrayBuffer]"
+  ) {
+    throw new Error("HTTP fetch WASM memory is not shared");
+  }
+  return buffer;
 }
 
-function heapI32(memory: WebAssembly.Memory) {
-  return new Int32Array(memory.buffer);
+function heapI32() {
+  return new Int32Array(getHttpFetchWasmMemoryBuffer());
 }
 
-function heapU8(memory: WebAssembly.Memory) {
-  return new Uint8Array(memory.buffer);
+function heapU8() {
+  return new Uint8Array(getHttpFetchWasmMemoryBuffer());
 }
 
-function storeI32(memory: WebAssembly.Memory, ptr: number, value: number) {
-  Atomics.store(heapI32(memory), ptr >> 2, value);
+function storeI32(ptr: number, value: number) {
+  Atomics.store(heapI32(), ptr >> 2, value);
 }
 
-function loadI32(memory: WebAssembly.Memory, ptr: number) {
-  return Atomics.load(heapI32(memory), ptr >> 2);
+function loadI32(ptr: number) {
+  return Atomics.load(heapI32(), ptr >> 2);
 }
 
-function notifyLock(
-  memory: WebAssembly.Memory,
-  lockPtr: number,
-  value: number,
-) {
-  const locks = heapI32(memory);
+function notifyLock(lockPtr: number, value: number) {
+  const locks = heapI32();
   const lockIndex = lockPtr >> 2;
   Atomics.store(locks, lockIndex, value);
   Atomics.notify(locks, lockIndex);
@@ -352,21 +330,19 @@ function writeFetchOutcome(
   request: HttpFetchRequestMessage,
   outcome: HttpFetchOutcome,
 ) {
-  storeI32(request.wasmMemory, request.responseCodePtr, outcome.responseCode);
-  storeI32(request.wasmMemory, request.failureStatePtr, outcome.failureState);
-  storeI32(request.wasmMemory, request.bodySizePtr, outcome.bodyBytes.length);
-  storeI32(request.wasmMemory, request.mimeSizePtr, outcome.mimeBytes.length);
+  storeI32(request.responseCodePtr, outcome.responseCode);
+  storeI32(request.failureStatePtr, outcome.failureState);
+  storeI32(request.bodySizePtr, outcome.bodyBytes.length);
+  storeI32(request.mimeSizePtr, outcome.mimeBytes.length);
 }
 
 function notifyMalformedHttpFetchRequest(value: object) {
-  const wasmMemory = getWasmMemoryMessageProperty(value, "wasmMemory");
   const phaseOneLockPtr = getPointerMessageProperty(value, "phaseOneLockPtr");
   const responseCodePtr = getPointerMessageProperty(value, "responseCodePtr");
   const failureStatePtr = getPointerMessageProperty(value, "failureStatePtr");
   const bodySizePtr = getPointerMessageProperty(value, "bodySizePtr");
   const mimeSizePtr = getPointerMessageProperty(value, "mimeSizePtr");
   if (
-    !wasmMemory ||
     phaseOneLockPtr === null ||
     responseCodePtr === null ||
     failureStatePtr === null ||
@@ -375,20 +351,19 @@ function notifyMalformedHttpFetchRequest(value: object) {
   ) {
     return;
   }
-  storeI32(wasmMemory, responseCodePtr, 0);
-  storeI32(wasmMemory, failureStatePtr, HTTP_FETCH_FAILURE_PROTOCOL_ERROR);
-  storeI32(wasmMemory, bodySizePtr, 0);
-  storeI32(wasmMemory, mimeSizePtr, 0);
-  notifyLock(wasmMemory, phaseOneLockPtr, LOCK_ERROR);
+  storeI32(responseCodePtr, 0);
+  storeI32(failureStatePtr, HTTP_FETCH_FAILURE_PROTOCOL_ERROR);
+  storeI32(bodySizePtr, 0);
+  storeI32(mimeSizePtr, 0);
+  notifyLock(phaseOneLockPtr, LOCK_ERROR);
 }
 
 function notifyMalformedHttpFetchCopyResponse(value: object) {
-  const wasmMemory = getWasmMemoryMessageProperty(value, "wasmMemory");
   const phaseTwoLockPtr = getPointerMessageProperty(value, "phaseTwoLockPtr");
-  if (!wasmMemory || phaseTwoLockPtr === null) {
+  if (phaseTwoLockPtr === null) {
     return;
   }
-  notifyLock(wasmMemory, phaseTwoLockPtr, LOCK_ERROR);
+  notifyLock(phaseTwoLockPtr, LOCK_ERROR);
 }
 
 function parseContentLength(response: Response) {
@@ -577,24 +552,15 @@ async function fetchHttpResponse(
 
 async function handleHttpFetchRequest(request: HttpFetchRequestMessage) {
   const key = requestKey(request.requestIdHi, request.requestIdLo);
-  // The outer module worker sends through both BroadcastChannel and parent
-  // postMessage; nested pthread workers use BroadcastChannel only. De-dupe here
-  // so the bridge stays idempotent when both outer-worker paths arrive.
-  if (
-    activeHttpFetchRequests.has(key) ||
-    pendingHttpFetchResponses.has(key) ||
-    completedHttpFetchRequests.has(key)
-  ) {
+  if (pendingHttpFetchResponses.has(key)) {
+    notifyLock(request.phaseOneLockPtr, LOCK_ERROR);
     return;
   }
-  activeHttpFetchRequests.add(key);
   let outcome: HttpFetchOutcome;
   try {
     outcome = await fetchHttpResponse(request);
   } catch {
     outcome = failureOutcome(HTTP_FETCH_FAILURE_PROTOCOL_ERROR);
-  } finally {
-    activeHttpFetchRequests.delete(key);
   }
 
   writeFetchOutcome(request, outcome);
@@ -608,9 +574,8 @@ async function handleHttpFetchRequest(request: HttpFetchRequestMessage) {
     });
   } else {
     pendingHttpFetchResponses.delete(key);
-    rememberCompletedRequest(key);
   }
-  notifyLock(request.wasmMemory, request.phaseOneLockPtr, LOCK_OK);
+  notifyLock(request.phaseOneLockPtr, LOCK_DONE);
 }
 
 function handleHttpFetchCopyResponse(message: HttpFetchCopyResponseMessage) {
@@ -618,19 +583,14 @@ function handleHttpFetchCopyResponse(message: HttpFetchCopyResponseMessage) {
   const pending = pendingHttpFetchResponses.get(key);
   pendingHttpFetchResponses.delete(key);
   if (!pending) {
-    if (!completedHttpFetchRequests.has(key)) {
-      notifyLock(message.wasmMemory, message.phaseTwoLockPtr, LOCK_ERROR);
-    }
+    notifyLock(message.phaseTwoLockPtr, LOCK_ERROR);
     return;
   }
 
-  // The worker sends WebAssembly.Memory again after allocating response strings:
-  // the Memory object is stable, but ALLOW_MEMORY_GROWTH can replace its
-  // .buffer. Fresh views avoid writing through a stale SharedArrayBuffer.
-  const bodySize = loadI32(message.wasmMemory, message.bodySizePtr);
-  const mimeSize = loadI32(message.wasmMemory, message.mimeSizePtr);
-  const bodyDataPtr = loadI32(message.wasmMemory, message.bodyDataPtrPtr) >>> 0;
-  const mimeDataPtr = loadI32(message.wasmMemory, message.mimeDataPtrPtr) >>> 0;
+  const bodySize = loadI32(message.bodySizePtr);
+  const mimeSize = loadI32(message.mimeSizePtr);
+  const bodyDataPtr = loadI32(message.bodyDataPtrPtr) >>> 0;
+  const mimeDataPtr = loadI32(message.mimeDataPtrPtr) >>> 0;
 
   if (
     bodySize !== pending.bodyBytes.length ||
@@ -638,22 +598,21 @@ function handleHttpFetchCopyResponse(message: HttpFetchCopyResponseMessage) {
     (bodyDataPtr === 0 && bodySize > 0) ||
     (mimeDataPtr === 0 && mimeSize > 0)
   ) {
-    notifyLock(message.wasmMemory, message.phaseTwoLockPtr, LOCK_ERROR);
+    notifyLock(message.phaseTwoLockPtr, LOCK_ERROR);
     return;
   }
 
-  const out = heapU8(message.wasmMemory);
+  const out = heapU8();
   if (mimeSize > 0) {
     out.set(pending.mimeBytes, mimeDataPtr);
   }
   if (bodySize > 0) {
     out.set(pending.bodyBytes, bodyDataPtr);
   }
-  rememberCompletedRequest(key);
-  notifyLock(message.wasmMemory, message.phaseTwoLockPtr, LOCK_OK);
+  notifyLock(message.phaseTwoLockPtr, LOCK_DONE);
 }
 
-export function handleHttpFetchChannelMessage(value: unknown) {
+function handleHttpFetchChannelMessage(value: unknown) {
   if (typeof value !== "object" || value === null) {
     return;
   }
@@ -703,6 +662,10 @@ export function ensureHttpFetchEventChannel() {
   httpFetchEventChannel.onmessage = (message) => {
     handleHttpFetchChannelMessage(message.data);
   };
+}
+
+export function setHttpFetchWasmMemory(memory: WebAssembly.Memory) {
+  httpFetchWasmMemory = memory;
 }
 
 export const setHttpFetchCallback = (

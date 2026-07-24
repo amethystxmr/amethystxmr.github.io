@@ -91,7 +91,7 @@ if(EMSCRIPTEN)
         -lembind
         -lidbfs.js
         -sFORCE_FILESYSTEM=1
-        -sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','getExceptionMessage','decrementExceptionRefcount']
+        -sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','getExceptionMessage','decrementExceptionRefcount','wasmMemory']
     )
 
     include_directories(SYSTEM "${CMAKE_SOURCE_DIR}/unbound-stub")
