@@ -6,10 +6,23 @@ export type ProcessSample = {
   /** Cumulative CPU-seconds on the tracked page renderer (all threads in that process). */
   cpuWorkSec: number;
   rendererRssBytes: number;
+  rendererRssAnonBytes: number | null;
+  rendererRssFileBytes: number | null;
+  rendererRssShmemBytes: number | null;
+  rendererVmHwmBytes: number | null;
+  rendererThreads: number | null;
   /** Current WebAssembly.Memory buffer size, read from the wallet worker through the page. */
   wasmMemoryBytes: number | null;
   /** Main-isolate JS heap only — does not include the wallet web worker. */
   mainJsHeapUsedBytes: number | null;
+  mainJsHeapTotalBytes: number | null;
+  documents: number | null;
+  nodes: number | null;
+  layoutObjects: number | null;
+  runtimeHeapUsedBytes: number | null;
+  runtimeHeapTotalBytes: number | null;
+  runtimeHeapEmbedderHeapUsedBytes: number | null;
+  runtimeHeapBackingStorageBytes: number | null;
 };
 
 export type ProcessMetricsTracker = {
@@ -24,16 +37,60 @@ type CdpProcessInfo = {
   cpuTime: number;
 };
 
-function readVmRssBytes(pid: number): number {
+type PagePerformanceMetrics = {
+  mainJsHeapUsedBytes: number | null;
+  mainJsHeapTotalBytes: number | null;
+  documents: number | null;
+  nodes: number | null;
+  layoutObjects: number | null;
+};
+
+type RuntimeHeapUsage = {
+  runtimeHeapUsedBytes: number | null;
+  runtimeHeapTotalBytes: number | null;
+  runtimeHeapEmbedderHeapUsedBytes: number | null;
+  runtimeHeapBackingStorageBytes: number | null;
+};
+
+type ProcStatusMetrics = {
+  rendererRssBytes: number;
+  rendererRssAnonBytes: number | null;
+  rendererRssFileBytes: number | null;
+  rendererRssShmemBytes: number | null;
+  rendererVmHwmBytes: number | null;
+  rendererThreads: number | null;
+};
+
+function parseStatusBytes(status: string, name: string): number | null {
+  const match = new RegExp(`^${name}:\\s+(\\d+)\\s+kB$`, "m").exec(status);
+  return match ? Number(match[1]) * 1024 : null;
+}
+
+function parseStatusNumber(status: string, name: string): number | null {
+  const match = new RegExp(`^${name}:\\s+(\\d+)$`, "m").exec(status);
+  return match ? Number(match[1]) : null;
+}
+
+function readProcStatusMetrics(pid: number): ProcStatusMetrics {
   try {
     const status = readFileSync(`/proc/${pid}/status`, "utf8");
-    const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(status);
-    if (!match) {
-      return 0;
-    }
-    return Number(match[1]) * 1024;
+    return {
+      rendererRssBytes: parseStatusBytes(status, "VmRSS") ?? 0,
+      rendererRssAnonBytes: parseStatusBytes(status, "RssAnon"),
+      rendererRssFileBytes: parseStatusBytes(status, "RssFile"),
+      rendererRssShmemBytes: parseStatusBytes(status, "RssShmem"),
+      rendererVmHwmBytes: parseStatusBytes(status, "VmHWM"),
+      rendererThreads: parseStatusNumber(status, "Threads"),
+    };
   } catch {
-    return 0;
+    return {
+      rendererRssBytes: 0,
+      rendererRssAnonBytes: null,
+      rendererRssFileBytes: null,
+      rendererRssShmemBytes: null,
+      rendererVmHwmBytes: null,
+      rendererThreads: null,
+    };
   }
 }
 
@@ -84,21 +141,64 @@ export function pickPageRendererPid(
   return candidates[0].pid;
 }
 
-async function readMainJsHeapUsedBytes(
+async function readPagePerformanceMetrics(
   pageSession: CDPSession | null,
-): Promise<number | null> {
+): Promise<PagePerformanceMetrics> {
+  const emptyMetrics = {
+    mainJsHeapUsedBytes: null,
+    mainJsHeapTotalBytes: null,
+    documents: null,
+    nodes: null,
+    layoutObjects: null,
+  };
   if (!pageSession) {
-    return null;
+    return emptyMetrics;
   }
   try {
     const { metrics } = await pageSession.send("Performance.getMetrics");
-    const heap = metrics.find(
-      (metric: { name: string; value: number }) =>
-        metric.name === "JSHeapUsedSize",
-    );
-    return heap ? heap.value : null;
+    const byName = new Map<string, number>();
+    for (const metric of metrics as Array<{ name: string; value: number }>) {
+      byName.set(metric.name, metric.value);
+    }
+    return {
+      mainJsHeapUsedBytes: byName.get("JSHeapUsedSize") ?? null,
+      mainJsHeapTotalBytes: byName.get("JSHeapTotalSize") ?? null,
+      documents: byName.get("Documents") ?? null,
+      nodes: byName.get("Nodes") ?? null,
+      layoutObjects: byName.get("LayoutObjects") ?? null,
+    };
   } catch {
-    return null;
+    return emptyMetrics;
+  }
+}
+
+async function readRuntimeHeapUsage(
+  pageSession: CDPSession | null,
+): Promise<RuntimeHeapUsage> {
+  const emptyUsage = {
+    runtimeHeapUsedBytes: null,
+    runtimeHeapTotalBytes: null,
+    runtimeHeapEmbedderHeapUsedBytes: null,
+    runtimeHeapBackingStorageBytes: null,
+  };
+  if (!pageSession) {
+    return emptyUsage;
+  }
+  try {
+    const usage = (await pageSession.send("Runtime.getHeapUsage")) as {
+      usedSize?: number;
+      totalSize?: number;
+      embedderHeapUsedSize?: number;
+      backingStorageSize?: number;
+    };
+    return {
+      runtimeHeapUsedBytes: usage.usedSize ?? null,
+      runtimeHeapTotalBytes: usage.totalSize ?? null,
+      runtimeHeapEmbedderHeapUsedBytes: usage.embedderHeapUsedSize ?? null,
+      runtimeHeapBackingStorageBytes: usage.backingStorageSize ?? null,
+    };
+  } catch {
+    return emptyUsage;
   }
 }
 
@@ -147,17 +247,19 @@ export async function createProcessMetricsTracker(
     async sample(): Promise<ProcessSample> {
       const byPid = await listRendererCpuByPid(browserSession);
       let cpuWorkSec = 0;
-      let rendererRssBytes = 0;
+      const procStatus = readProcStatusMetrics(trackedPid);
       for (const pid of trackedPids) {
         cpuWorkSec += byPid.get(pid) ?? 0;
-        rendererRssBytes += readVmRssBytes(pid);
       }
+      const performanceMetrics = await readPagePerformanceMetrics(pageSession);
+      const runtimeHeapUsage = await readRuntimeHeapUsage(pageSession);
       return {
         atMs: Date.now(),
         cpuWorkSec,
-        rendererRssBytes,
+        ...procStatus,
         wasmMemoryBytes: await readWasmMemoryBytes(page),
-        mainJsHeapUsedBytes: await readMainJsHeapUsedBytes(pageSession),
+        ...performanceMetrics,
+        ...runtimeHeapUsage,
       };
     },
     async dispose(): Promise<void> {

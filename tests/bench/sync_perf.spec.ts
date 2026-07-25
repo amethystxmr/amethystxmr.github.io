@@ -77,6 +77,14 @@ type CellResult = {
   avgCoresUsed: number;
   peakWasmMemoryBytes: number | null;
   peakMainJsHeapUsedBytes: number | null;
+  peakMainJsHeapTotalBytes: number | null;
+  peakDocuments: number | null;
+  peakNodes: number | null;
+  peakLayoutObjects: number | null;
+  peakRuntimeHeapUsedBytes: number | null;
+  peakRuntimeHeapTotalBytes: number | null;
+  peakRuntimeHeapEmbedderHeapUsedBytes: number | null;
+  peakRuntimeHeapBackingStorageBytes: number | null;
   blocksReceived: number | null;
   rxBytes: number | null;
   txBytes: number | null;
@@ -473,6 +481,13 @@ function formatSummaryTable(results: CellResult[]): string {
     "durHuman",
     "rssMiB",
     "wasmMiB",
+    "jsUsedMiB",
+    "jsTotalMiB",
+    "rtUsedMiB",
+    "rtTotalMiB",
+    "nodes",
+    "docs",
+    "layouts",
     "cpuWork",
     "avgCores",
     "rxMiB",
@@ -492,6 +507,13 @@ function formatSummaryTable(results: CellResult[]): string {
     formatDurationHuman(result.durationMs),
     (result.peakRssBytes / (1024 * 1024)).toFixed(1),
     formatMiB(result.peakWasmMemoryBytes),
+    formatMiB(result.peakMainJsHeapUsedBytes),
+    formatMiB(result.peakMainJsHeapTotalBytes),
+    formatMiB(result.peakRuntimeHeapUsedBytes),
+    formatMiB(result.peakRuntimeHeapTotalBytes),
+    result.peakNodes === null ? "-" : String(result.peakNodes),
+    result.peakDocuments === null ? "-" : String(result.peakDocuments),
+    result.peakLayoutObjects === null ? "-" : String(result.peakLayoutObjects),
     `${result.cpuWorkSec.toFixed(2)}s`,
     result.avgCoresUsed.toFixed(2),
     formatMiB(result.rxBytes),
@@ -542,7 +564,21 @@ function printCellResult(result: CellResult): void {
         ? ` blocks=${result.blocksReceived}`
         : "") +
       (result.peakMainJsHeapUsedBytes !== null
-        ? ` mainHeapPeak=${formatBytes(result.peakMainJsHeapUsedBytes)}`
+        ? ` jsHeapPeak=${formatBytes(result.peakMainJsHeapUsedBytes)}/${result.peakMainJsHeapTotalBytes === null ? "?" : formatBytes(result.peakMainJsHeapTotalBytes)}`
+        : "") +
+      (result.peakNodes !== null ||
+      result.peakDocuments !== null ||
+      result.peakLayoutObjects !== null
+        ? ` domPeak=${result.peakNodes ?? "?"}/${result.peakDocuments ?? "?"}/${result.peakLayoutObjects ?? "?"}`
+        : "") +
+      (result.peakRuntimeHeapUsedBytes !== null
+        ? ` runtimeHeapPeak=${formatBytes(result.peakRuntimeHeapUsedBytes)}/${result.peakRuntimeHeapTotalBytes === null ? "?" : formatBytes(result.peakRuntimeHeapTotalBytes)}`
+        : "") +
+      (result.peakRuntimeHeapBackingStorageBytes !== null
+        ? ` runtimeBackingPeak=${formatBytes(result.peakRuntimeHeapBackingStorageBytes)}`
+        : "") +
+      (result.peakRuntimeHeapEmbedderHeapUsedBytes !== null
+        ? ` runtimeEmbedderPeak=${formatBytes(result.peakRuntimeHeapEmbedderHeapUsedBytes)}`
         : ""),
   );
 }
@@ -693,6 +729,16 @@ async function runWasmCellOnce(params: {
       avgCoresUsed: sync.avgCoresUsed,
       peakWasmMemoryBytes: sync.peakWasmMemoryBytes,
       peakMainJsHeapUsedBytes: sync.peakMainJsHeapUsedBytes,
+      peakMainJsHeapTotalBytes: sync.peakMainJsHeapTotalBytes,
+      peakDocuments: sync.peakDocuments,
+      peakNodes: sync.peakNodes,
+      peakLayoutObjects: sync.peakLayoutObjects,
+      peakRuntimeHeapUsedBytes: sync.peakRuntimeHeapUsedBytes,
+      peakRuntimeHeapTotalBytes: sync.peakRuntimeHeapTotalBytes,
+      peakRuntimeHeapEmbedderHeapUsedBytes:
+        sync.peakRuntimeHeapEmbedderHeapUsedBytes,
+      peakRuntimeHeapBackingStorageBytes:
+        sync.peakRuntimeHeapBackingStorageBytes,
       blocksReceived: null,
       rxBytes: null,
       txBytes: null,
@@ -777,6 +823,14 @@ async function runNativeCell(params: {
     avgCoresUsed: sync.avgCoresUsed,
     peakWasmMemoryBytes: null,
     peakMainJsHeapUsedBytes: null,
+    peakMainJsHeapTotalBytes: null,
+    peakDocuments: null,
+    peakNodes: null,
+    peakLayoutObjects: null,
+    peakRuntimeHeapUsedBytes: null,
+    peakRuntimeHeapTotalBytes: null,
+    peakRuntimeHeapEmbedderHeapUsedBytes: null,
+    peakRuntimeHeapBackingStorageBytes: null,
     blocksReceived: sync.blocksReceived,
     rxBytes: sync.rxBytes,
     txBytes: sync.txBytes,

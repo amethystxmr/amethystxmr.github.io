@@ -23,6 +23,14 @@ export type SyncWaitResult = {
   avgCoresUsed: number;
   peakWasmMemoryBytes: number | null;
   peakMainJsHeapUsedBytes: number | null;
+  peakMainJsHeapTotalBytes: number | null;
+  peakDocuments: number | null;
+  peakNodes: number | null;
+  peakLayoutObjects: number | null;
+  peakRuntimeHeapUsedBytes: number | null;
+  peakRuntimeHeapTotalBytes: number | null;
+  peakRuntimeHeapEmbedderHeapUsedBytes: number | null;
+  peakRuntimeHeapBackingStorageBytes: number | null;
   samples: ProcessSample[];
 };
 
@@ -69,6 +77,24 @@ async function readSyncProgress(page: Page): Promise<SyncProgress> {
   };
 }
 
+function maxNullable(
+  current: number | null,
+  next: number | null,
+): number | null {
+  if (next === null) {
+    return current;
+  }
+  return current === null ? next : Math.max(current, next);
+}
+
+function formatMaybeBytes(bytes: number | null): string {
+  return bytes === null ? "?" : formatBytes(bytes);
+}
+
+function formatMaybeNumber(value: number | null): string {
+  return value === null ? "?" : String(value);
+}
+
 /**
  * Passively wait until the wallet UI reports synced while the main refresh loop runs.
  * Does not click Refresh or reload (that would distort the benchmark).
@@ -87,6 +113,16 @@ export async function waitUntilWalletSynced(params: {
   let peakRendererRssBytes = params.baseline.rendererRssBytes;
   let peakWasmMemoryBytes = params.baseline.wasmMemoryBytes;
   let peakMainJsHeapUsedBytes = params.baseline.mainJsHeapUsedBytes;
+  let peakMainJsHeapTotalBytes = params.baseline.mainJsHeapTotalBytes;
+  let peakDocuments = params.baseline.documents;
+  let peakNodes = params.baseline.nodes;
+  let peakLayoutObjects = params.baseline.layoutObjects;
+  let peakRuntimeHeapUsedBytes = params.baseline.runtimeHeapUsedBytes;
+  let peakRuntimeHeapTotalBytes = params.baseline.runtimeHeapTotalBytes;
+  let peakRuntimeHeapEmbedderHeapUsedSizeBytes =
+    params.baseline.runtimeHeapEmbedderHeapUsedBytes;
+  let peakRuntimeHeapBackingStorageBytes =
+    params.baseline.runtimeHeapBackingStorageBytes;
   const samples: ProcessSample[] = [params.baseline];
   let lastProgress: SyncProgress = {
     walletHeight: null,
@@ -108,12 +144,33 @@ export async function waitUntilWalletSynced(params: {
           ? sample.wasmMemoryBytes
           : Math.max(peakWasmMemoryBytes, sample.wasmMemoryBytes);
     }
-    if (sample.mainJsHeapUsedBytes !== null) {
-      peakMainJsHeapUsedBytes =
-        peakMainJsHeapUsedBytes === null
-          ? sample.mainJsHeapUsedBytes
-          : Math.max(peakMainJsHeapUsedBytes, sample.mainJsHeapUsedBytes);
-    }
+    peakMainJsHeapUsedBytes = maxNullable(
+      peakMainJsHeapUsedBytes,
+      sample.mainJsHeapUsedBytes,
+    );
+    peakMainJsHeapTotalBytes = maxNullable(
+      peakMainJsHeapTotalBytes,
+      sample.mainJsHeapTotalBytes,
+    );
+    peakDocuments = maxNullable(peakDocuments, sample.documents);
+    peakNodes = maxNullable(peakNodes, sample.nodes);
+    peakLayoutObjects = maxNullable(peakLayoutObjects, sample.layoutObjects);
+    peakRuntimeHeapUsedBytes = maxNullable(
+      peakRuntimeHeapUsedBytes,
+      sample.runtimeHeapUsedBytes,
+    );
+    peakRuntimeHeapTotalBytes = maxNullable(
+      peakRuntimeHeapTotalBytes,
+      sample.runtimeHeapTotalBytes,
+    );
+    peakRuntimeHeapEmbedderHeapUsedSizeBytes = maxNullable(
+      peakRuntimeHeapEmbedderHeapUsedSizeBytes,
+      sample.runtimeHeapEmbedderHeapUsedBytes,
+    );
+    peakRuntimeHeapBackingStorageBytes = maxNullable(
+      peakRuntimeHeapBackingStorageBytes,
+      sample.runtimeHeapBackingStorageBytes,
+    );
 
     const elapsedMs = Date.now() - params.startedAtMs;
     const cpuWorkSec = sample.cpuWorkSec - params.baseline.cpuWorkSec;
@@ -128,6 +185,20 @@ export async function waitUntilWalletSynced(params: {
           (sample.wasmMemoryBytes !== null
             ? `wasmMem=${formatBytes(sample.wasmMemoryBytes)} `
             : "") +
+          `jsHeap=${formatMaybeBytes(sample.mainJsHeapUsedBytes)}/${formatMaybeBytes(sample.mainJsHeapTotalBytes)} ` +
+          `dom=${formatMaybeNumber(sample.nodes)}/${formatMaybeNumber(sample.documents)}/${formatMaybeNumber(sample.layoutObjects)} ` +
+          `runtimeHeap=${formatMaybeBytes(sample.runtimeHeapUsedBytes)}/${formatMaybeBytes(sample.runtimeHeapTotalBytes)} ` +
+          (sample.runtimeHeapBackingStorageBytes !== null
+            ? `runtimeBacking=${formatBytes(sample.runtimeHeapBackingStorageBytes)} `
+            : "") +
+          (sample.runtimeHeapEmbedderHeapUsedBytes !== null
+            ? `runtimeEmbedder=${formatBytes(sample.runtimeHeapEmbedderHeapUsedBytes)} `
+            : "") +
+          `rssAnon=${formatMaybeBytes(sample.rendererRssAnonBytes)} ` +
+          `rssFile=${formatMaybeBytes(sample.rendererRssFileBytes)} ` +
+          `rssShmem=${formatMaybeBytes(sample.rendererRssShmemBytes)} ` +
+          `vmHwm=${formatMaybeBytes(sample.rendererVmHwmBytes)} ` +
+          `threads=${formatMaybeNumber(sample.rendererThreads)} ` +
           `cpuWork=${cpuWorkSec.toFixed(2)}s ` +
           `avgCores=${avgCores.toFixed(2)}`,
       );
@@ -143,6 +214,15 @@ export async function waitUntilWalletSynced(params: {
         avgCoresUsed: avgCores,
         peakWasmMemoryBytes,
         peakMainJsHeapUsedBytes,
+        peakMainJsHeapTotalBytes,
+        peakDocuments,
+        peakNodes,
+        peakLayoutObjects,
+        peakRuntimeHeapUsedBytes,
+        peakRuntimeHeapTotalBytes,
+        peakRuntimeHeapEmbedderHeapUsedBytes:
+          peakRuntimeHeapEmbedderHeapUsedSizeBytes,
+        peakRuntimeHeapBackingStorageBytes,
         samples,
       };
     }
