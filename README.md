@@ -193,8 +193,8 @@ CPU / traffic columns:
 - `cpuWorkSec`: total CPU-seconds (WASM: page renderer incl. worker/pthreads;
   native: CLI process via `/proc`)
 - `avgCores`: `cpuWorkSec / wallSec` (parallelism)
-- `rxMiB` / `txMiB` (native only): process `/proc/<pid>/io` `rchar`/`wchar`
-  deltas (includes network socket I/O)
+- `rxMiB` / `txMiB` (native only): from CLI `net_stats` (`bytes received` /
+  `bytes sent` over the daemon HTTP client)
 - `workers` (WASM only): `max(0, page.workers().length - 1)` after sync
   (dedicated workers; excludes the primary wallet worker)
 

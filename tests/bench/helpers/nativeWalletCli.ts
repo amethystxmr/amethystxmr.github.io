@@ -14,9 +14,9 @@ export type NativeSyncResult = {
   avgCoresUsed: number;
   addressPrefix: string | null;
   blocksReceived: number | null;
-  /** Process /proc/<pid>/io rchar delta (includes socket reads). */
+  /** From CLI `net_stats`: bytes received (daemon → wallet). */
   rxBytes: number | null;
-  /** Process /proc/<pid>/io wchar delta (includes socket writes). */
+  /** From CLI `net_stats`: bytes sent (wallet → daemon). */
   txBytes: number | null;
 };
 
@@ -104,22 +104,18 @@ function readProcRssBytes(pid: number): number {
   }
 }
 
-/**
- * Process I/O counters. rchar/wchar include bytes read/written via syscalls
- * (network sockets included), so deltas approximate inbound/outbound traffic.
- */
-function readProcIoChars(pid: number): { rchar: number; wchar: number } | null {
-  try {
-    const io = readFileSync(`/proc/${pid}/io`, "utf8");
-    const rchar = /^rchar:\s+(\d+)$/m.exec(io);
-    const wchar = /^wchar:\s+(\d+)$/m.exec(io);
-    if (!rchar || !wchar) {
-      return null;
-    }
-    return { rchar: Number(rchar[1]), wchar: Number(wchar[1]) };
-  } catch {
-    return null;
-  }
+function parseNetStats(output: string): {
+  rxBytes: number | null;
+  txBytes: number | null;
+} {
+  const sentMatches = [...output.matchAll(/(\d+)\s+bytes sent/g)];
+  const receivedMatches = [...output.matchAll(/(\d+)\s+bytes received/g)];
+  const sent = sentMatches.at(-1);
+  const received = receivedMatches.at(-1);
+  return {
+    txBytes: sent ? Number(sent[1]) : null,
+    rxBytes: received ? Number(received[1]) : null,
+  };
 }
 
 /** Convert http(s)://host:port to CLI --daemon-address host:port (+ SSL flags). */
@@ -163,14 +159,20 @@ function startHeadlessCli(walletCliPath: string, args: string[]): CliRunHandle {
     stdio: ["pipe", "pipe", "pipe"],
   });
   let output = "";
-  child.stdout?.on("data", (chunk: Buffer) => {
+  let postRefreshSent = false;
+  const onChunk = (chunk: Buffer) => {
     output += chunk.toString("utf8");
-  });
-  child.stderr?.on("data", (chunk: Buffer) => {
-    output += chunk.toString("utf8");
-  });
-  child.stdin?.write("\nN\nexit\n");
-  child.stdin?.end();
+    // net_stats must run after refresh; early stdin is consumed by restore prompts.
+    if (!postRefreshSent && output.includes("Refresh done")) {
+      postRefreshSent = true;
+      child.stdin?.write("net_stats\nexit\n");
+      child.stdin?.end();
+    }
+  };
+  child.stdout?.on("data", onChunk);
+  child.stderr?.on("data", onChunk);
+  // Empty seed-offset passphrase, decline background mining; keep stdin open.
+  child.stdin?.write("\nN\n");
 
   return {
     getPid: () => child.pid ?? null,
@@ -202,19 +204,25 @@ async function startHeadedCli(params: {
   const outPath = path.join(params.workDir, "cli.out");
   const pidPath = path.join(params.workDir, "cli.pid");
   const exitPath = path.join(params.workDir, "cli.exit");
-  const promptsPath = path.join(params.workDir, "cli.prompts");
   const runnerPath = path.join(params.workDir, "run-cli.sh");
 
-  await writeFile(promptsPath, "\nN\nexit\n", "utf8");
   await writeFile(outPath, "", "utf8");
 
   const quotedArgs = params.args.map(shellQuote).join(" ");
+  // Feed restore prompts first; after "Refresh done", run net_stats then exit.
   const script = `#!/usr/bin/env bash
 set -uo pipefail
 cd ${shellQuote(params.workDir)}
-printf '%s\\n' ${shellQuote(params.progressLabel)} 
+printf '%s\\n' ${shellQuote(params.progressLabel)}
+OUT=${shellQuote(outPath)}
 set +e
-${shellQuote(params.walletCliPath)} ${quotedArgs} < ${shellQuote(promptsPath)} > >(tee ${shellQuote(outPath)}) 2>&1 &
+(
+  printf '\\nN\\n'
+  while ! grep -q 'Refresh done' "$OUT" 2>/dev/null; do
+    sleep 0.2
+  done
+  printf 'net_stats\\nexit\\n'
+) | ${shellQuote(params.walletCliPath)} ${quotedArgs} > >(stdbuf -oL -eL tee "$OUT") 2>&1 &
 echo $! > ${shellQuote(pidPath)}
 wait "$(cat ${shellQuote(pidPath)})"
 echo $? > ${shellQuote(exitPath)}
@@ -305,7 +313,8 @@ set -e
 
 /**
  * Restore+sync with monero-wallet-cli.
- * Stdin: empty seed-offset passphrase, N (background mining), exit.
+ * Stdin: empty seed-offset passphrase, N (background mining); after refresh,
+ * `net_stats` then `exit` (RPC rx/tx from the wallet HTTP client).
  *
  * `--max-concurrency` is the correct knob (wallet_args → tools::set_max_concurrency).
  * In Monero, n < 1 is treated as boost::thread::hardware_concurrency() (all cores),
@@ -371,10 +380,7 @@ export async function runNativeWalletCliSync(params: {
 
   const startedAt = Date.now();
   let baselineCpu: number | null = null;
-  let baselineIo: { rchar: number; wchar: number } | null = null;
   let lastCpuWorkSec = 0;
-  let lastRxBytes = 0;
-  let lastTxBytes = 0;
   let peakRssBytes = 0;
   let lastLogAt = 0;
 
@@ -398,17 +404,9 @@ export async function runNativeWalletCliSync(params: {
         if (baselineCpu === null) {
           baselineCpu = readProcCpuSec(pid);
         }
-        if (baselineIo === null) {
-          baselineIo = readProcIoChars(pid);
-        }
         const cpuNow = readProcCpuSec(pid);
         if (baselineCpu !== null && cpuNow !== null) {
           lastCpuWorkSec = Math.max(0, cpuNow - baselineCpu);
-        }
-        const ioNow = readProcIoChars(pid);
-        if (baselineIo !== null && ioNow !== null) {
-          lastRxBytes = Math.max(0, ioNow.rchar - baselineIo.rchar);
-          lastTxBytes = Math.max(0, ioNow.wchar - baselineIo.wchar);
         }
         peakRssBytes = Math.max(peakRssBytes, readProcRssBytes(pid));
         const elapsedMs = Date.now() - startedAt;
@@ -419,9 +417,7 @@ export async function runNativeWalletCliSync(params: {
               `elapsed=${(elapsedMs / 1000).toFixed(1)}s ` +
               `rss=${(peakRssBytes / (1024 * 1024)).toFixed(1)} MiB ` +
               `cpuWork=${lastCpuWorkSec.toFixed(2)}s ` +
-              `avgCores=${averageCoresUsed(lastCpuWorkSec, elapsedMs).toFixed(2)} ` +
-              `rx=${(lastRxBytes / (1024 * 1024)).toFixed(1)} MiB ` +
-              `tx=${(lastTxBytes / (1024 * 1024)).toFixed(1)} MiB`,
+              `avgCores=${averageCoresUsed(lastCpuWorkSec, elapsedMs).toFixed(2)}`,
           );
         }
       }, 500);
@@ -471,6 +467,13 @@ export async function runNativeWalletCliSync(params: {
   const blocksMatch = /blocks received:\s*(\d+)/.exec(output);
   const heightMatches = [...output.matchAll(/Height\s+(\d+)\s*\/\s*(\d+)/g)];
   const lastHeight = heightMatches.at(-1);
+  const netStats = parseNetStats(output);
+  if (netStats.rxBytes === null || netStats.txBytes === null) {
+    throw new Error(
+      `Native CLI net_stats missing for ${params.progressLabel}.\n` +
+        output.slice(-2000),
+    );
+  }
 
   return {
     durationMs,
@@ -481,8 +484,8 @@ export async function runNativeWalletCliSync(params: {
     avgCoresUsed: averageCoresUsed(lastCpuWorkSec, durationMs),
     addressPrefix: addressMatch ? addressMatch[1].slice(0, 6) : null,
     blocksReceived: blocksMatch ? Number(blocksMatch[1]) : null,
-    rxBytes: baselineIo === null ? null : lastRxBytes,
-    txBytes: baselineIo === null ? null : lastTxBytes,
+    rxBytes: netStats.rxBytes,
+    txBytes: netStats.txBytes,
   };
 }
 
