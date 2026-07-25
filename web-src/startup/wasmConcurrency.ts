@@ -62,7 +62,7 @@ export function isWasmThreadingDisabledByUser(): boolean {
   return getSelectedWasmThreadingMode() === "none";
 }
 
-export function getWasmPthreadPoolSize(): number {
+export function getWasmMaxConcurrency(): number {
   const mode = getSelectedWasmThreadingMode();
   switch (mode) {
     case "all":

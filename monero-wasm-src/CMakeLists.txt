@@ -44,12 +44,19 @@ if(EMSCRIPTEN)
     set(AMETHYST_WASM_LINK_OPTIONS)
     if(AMETHYST_WASM_VARIANT STREQUAL "Threads")
         add_compile_definitions(AMETHYST_WASM_THREADS=1)
+        string(CONCAT AMETHYST_WASM_PTHREAD_POOL_SIZE_JS
+            "Number.isInteger(Module['maxConcurrency']) && "
+            "Module['maxConcurrency'] >= 1 ? "
+            "Module['maxConcurrency'] - 1 : "
+            "(() => { throw new Error(\"Module['maxConcurrency'] must be a positive integer "
+            "before initializing the threaded wallet module\") })()"
+        )
         list(APPEND AMETHYST_WASM_COMPILE_OPTIONS
             -sUSE_PTHREADS=1
         )
         list(APPEND AMETHYST_WASM_LINK_OPTIONS
             -sUSE_PTHREADS=1
-            "-sPTHREAD_POOL_SIZE=Module['pthreadPoolSize']"
+            "-sPTHREAD_POOL_SIZE=${AMETHYST_WASM_PTHREAD_POOL_SIZE_JS}"
             -sPTHREAD_POOL_SIZE_STRICT=1
         )
     else()
