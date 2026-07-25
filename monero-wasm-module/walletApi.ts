@@ -20,7 +20,8 @@ type IDBFS = unknown & { readonly __nominal: unique symbol };
  * With `-sWASM_BIGINT`, Embind passes these as `bigint`.
  */
 export type WalletNewBlockCallback =
-  ((height: bigint, timestamp: bigint) => void) | null;
+  | ((height: bigint, timestamp: bigint) => void)
+  | null;
 export type WalletTxHandle = number;
 
 export declare class MoneroWasmWallet {
@@ -214,8 +215,7 @@ export interface PaymentDestination {
 
 export interface PaymentDetails {
   payment_id: string;
-  type:
-    // Mined
+  type: // Mined
     | "block"
     // Incoming
     | "in"
@@ -383,7 +383,8 @@ export type ModuleLoadProgress =
   | { phase: "moduleReady" };
 
 export type ModuleLoadProgressCallback =
-  ((progress: ModuleLoadProgress) => void) | null;
+  | ((progress: ModuleLoadProgress) => void)
+  | null;
 
 type ModuleFactoryOptions = {
   monitorRunDependencies?: (left: number) => void;
@@ -554,7 +555,12 @@ export function wasmThrownValueToError(thrown: unknown): Error {
 }
 
 type HttpFetchState =
-  "start" | "progress" | "end" | "error" | "timeout" | "abort";
+  | "start"
+  | "progress"
+  | "end"
+  | "error"
+  | "timeout"
+  | "abort";
 
 export type { HttpFetchState };
 
