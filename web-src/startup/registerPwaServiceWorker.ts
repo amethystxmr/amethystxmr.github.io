@@ -1,4 +1,4 @@
-import { isAsyncifyBuildForced } from "./wasmVariant";
+import { isWasmThreadingDisabledByUser } from "./wasmConcurrency";
 
 function getServiceWorkerUrl() {
   const path = window.location.pathname;
@@ -13,7 +13,7 @@ export type PwaServiceWorkerBootstrapResult =
       reason:
         | "non-production-build"
         | "native-app"
-        | "asyncify-build-forced"
+        | "threading-disabled-by-user"
         | "shared-array-buffer-available"
         | "insecure-context"
         | "service-worker-unavailable";
@@ -154,12 +154,12 @@ export function registerPwaServiceWorker(): Promise<PwaServiceWorkerBootstrapRes
   }
 
   bootstrapPromise = (async () => {
-    if (isAsyncifyBuildForced()) {
-      // The user pinned the Asyncify build, which does not need isolation.
+    if (isWasmThreadingDisabledByUser()) {
+      // The user selected the Asyncify build, which does not need isolation.
       clearServiceWorkerReloadAttempt();
       return {
         type: "skipped",
-        reason: "asyncify-build-forced",
+        reason: "threading-disabled-by-user",
         sharedArrayBufferAvailable: isSharedArrayBufferAvailable(),
       } as const;
     }

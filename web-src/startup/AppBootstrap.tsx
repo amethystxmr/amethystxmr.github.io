@@ -5,7 +5,7 @@ import type { ModuleLoadProgress } from "../../monero-wasm-module/walletApi.work
 import { APP_OVERLAY_ROOT_ATTRIBUTE } from "../components/ui/OverlayPrimitives";
 import { ProgressBar } from "../components/ui/ProgressBar";
 import { registerPwaServiceWorker } from "./registerPwaServiceWorker";
-import { getDefaultWasmPthreadPoolSize } from "./wasmConcurrency";
+import { getWasmPthreadPoolSize } from "./wasmConcurrency";
 import { selectWasmBuildVariant } from "./wasmVariant";
 
 /** App-only phase after the worker module is ready (dynamic import of wallet UI). */
@@ -194,7 +194,7 @@ export function AppBootstrap({ loadUiModule }: { loadUiModule: LoadUiModule }) {
         await initModule(
           {
             variant: selectWasmBuildVariant(),
-            pthreadPoolSize: getDefaultWasmPthreadPoolSize(),
+            pthreadPoolSize: getWasmPthreadPoolSize(),
           },
           (progress) => {
             if (cancelled) {

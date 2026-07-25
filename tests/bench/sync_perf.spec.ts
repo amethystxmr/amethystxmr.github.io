@@ -27,7 +27,6 @@ import {
   E2E_THREADS_PREVIEW_PORT,
 } from "../constants";
 import { NetworkTypes } from "../../monero-wasm-module/walletApi";
-import { wasmPthreadPoolSizeOverrideStorageKey } from "../../web-src/startup/wasmConcurrencyOverride";
 import { InitialWalletListPage } from "../pages/initial-wallet-list.page";
 import { WalletMainPage } from "../pages/wallet-main.page";
 import {
@@ -60,6 +59,7 @@ type WasmBenchVariant =
   | "threads4";
 type NativeBenchVariant = "native0" | "native1" | "native2" | "native4";
 type BenchVariant = WasmBenchVariant | NativeBenchVariant;
+type WasmThreadingMode = "none" | "1" | "2" | "4" | "all";
 
 type CellResult = {
   run: number;
@@ -92,6 +92,7 @@ const DEFAULT_RUNS = 10;
 
 const DEFAULT_LOCAL = "http://localhost:18081";
 const DEFAULT_CAKE = "https://xmr-node.cakewallet.com:18081";
+const WASM_THREADING_MODE_STORAGE_KEY = "amethystxmr:threads-mode";
 
 const DAEMON_REPORT_ORDER: DaemonKind[] = ["local", "cake"];
 const LOCAL_VARIANTS: BenchVariant[] = [
@@ -260,17 +261,24 @@ function variantsForDaemon(
   return base.filter((variant) => filter.includes(variant));
 }
 
-function wasmPthreadPoolSizeOverride(variant: BenchVariant): number | null {
+function wasmThreadingMode(variant: WasmBenchVariant): WasmThreadingMode {
+  if (variant === "asyncify") {
+    return "none";
+  }
   if (variant === "thread1") {
-    return 1;
+    return "1";
+  }
+  if (variant === "threads") {
+    return "all";
   }
   if (variant === "threads2") {
-    return 2;
+    return "2";
   }
   if (variant === "threads4") {
-    return 4;
+    return "4";
   }
-  return null;
+  const _exhaustive: never = variant;
+  return _exhaustive;
 }
 
 function nativeMaxConcurrency(
@@ -344,14 +352,14 @@ function installConsoleLogTee(logPath: string): () => void {
 async function applyBenchSettings(
   page: Page,
   daemonAddress: string,
-  pthreadPoolSizeOverride: number | null,
+  threadingMode: WasmThreadingMode,
 ): Promise<void> {
   await page.addInitScript(
     ({
       daemonAddress,
       networkType,
-      pthreadPoolSizeOverride,
-      pthreadPoolSizeOverrideStorageKey,
+      threadingMode,
+      threadingModeStorageKey,
     }) => {
       localStorage.setItem(
         "options",
@@ -362,44 +370,15 @@ async function applyBenchSettings(
           allowMismatchedDaemonVersion: true,
         }),
       );
-      if (pthreadPoolSizeOverride !== null) {
-        sessionStorage.setItem(
-          pthreadPoolSizeOverrideStorageKey,
-          String(pthreadPoolSizeOverride),
-        );
-      } else {
-        sessionStorage.removeItem(pthreadPoolSizeOverrideStorageKey);
-      }
+      localStorage.setItem(threadingModeStorageKey, threadingMode);
     },
     {
       daemonAddress,
       networkType: NetworkTypes.MAINNET,
-      pthreadPoolSizeOverride,
-      pthreadPoolSizeOverrideStorageKey: wasmPthreadPoolSizeOverrideStorageKey,
+      threadingMode,
+      threadingModeStorageKey: WASM_THREADING_MODE_STORAGE_KEY,
     },
   );
-}
-
-function patchWorkerHardwareConcurrency(
-  page: Page,
-  hardwareConcurrencyOverride: number | null,
-): void {
-  if (hardwareConcurrencyOverride === null) {
-    return;
-  }
-  page.on("worker", (worker) => {
-    void worker
-      .evaluate((n) => {
-        Object.defineProperty(navigator, "hardwareConcurrency", {
-          configurable: true,
-          enumerable: true,
-          get: () => n,
-        });
-      }, hardwareConcurrencyOverride)
-      .catch(() => {
-        // Worker may exit before evaluate runs; WASM download usually leaves enough time.
-      });
-  });
 }
 
 async function assertActiveWasmVariant(
@@ -634,7 +613,7 @@ async function runWasmCellOnce(params: {
   run: number;
 }): Promise<CellResult> {
   const label = `${params.daemon}/${params.variant}/run${params.run}`;
-  const pthreadPoolSizeOverride = wasmPthreadPoolSizeOverride(params.variant);
+  const threadingMode = wasmThreadingMode(params.variant);
   // Fresh browser per cell: a shared headed Chromium often dies mid-matrix on Wayland.
   const browser = await launchBenchBrowser();
   let preSnapshot: Awaited<ReturnType<typeof snapshotRendererCpuByPid>> | null =
@@ -651,13 +630,8 @@ async function runWasmCellOnce(params: {
       viewport: { width: 1460, height: 920 },
     });
     const page = await context.newPage();
-    patchWorkerHardwareConcurrency(page, pthreadPoolSizeOverride);
 
-    await applyBenchSettings(
-      page,
-      params.daemonAddress,
-      pthreadPoolSizeOverride,
-    );
+    await applyBenchSettings(page, params.daemonAddress, threadingMode);
     await page.goto("/");
     const initial = new InitialWalletListPage(page);
     await initial.waitUntilLoaded();

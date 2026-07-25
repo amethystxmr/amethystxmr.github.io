@@ -7,6 +7,7 @@ import {
   ConfirmByTextDialog,
   ConfirmDialog,
   Toggle,
+  Hint,
   Header,
   Input,
   Label,
@@ -27,9 +28,12 @@ import {
   api as walletApi,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import {
-  isAsyncifyBuildForced,
-  setAsyncifyBuildForced,
-} from "../../startup/wasmVariant";
+  canWasmThreadingBeEnabledAfterReload,
+  getHardwareConcurrency,
+  getSelectedWasmThreadingMode,
+  setSelectedWasmThreadingMode,
+  type WasmThreadingMode,
+} from "../../startup/wasmConcurrency";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { DAEMON_PRESET_OPTIONS, options } from "../options";
@@ -52,6 +56,7 @@ const DAEMON_CUSTOM_OPTION = "__custom__";
 const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
 const PROJECT_GITHUB_URL =
   "https://github.com/amethystxmr/amethystxmr.github.io";
+const PROJECT_GITHUB_ISSUES_URL = `${PROJECT_GITHUB_URL}/issues`;
 const DONATION_ADDRESS =
   "8C8sVurTyRh9Y2XSon7nbXYg4XTVqzcNoJiTgqxvkbseRRUNpH64Ptu396tTaxKuoPNY6jwUhCfjURpUwrNqe8dn5YUghK2";
 const NETWORK_TYPE_OPTIONS = [
@@ -60,12 +65,21 @@ const NETWORK_TYPE_OPTIONS = [
   { value: NetworkTypes.STAGENET, label: "Stagenet" },
   { value: NetworkTypes.FAKECHAIN, label: "Fakenet" },
 ] as const;
+const THREADING_MODE_OPTIONS: Array<{
+  value: WasmThreadingMode;
+  label: string;
+}> = [
+  { value: "none", label: "No threading" },
+  { value: "1", label: "1 thread" },
+  { value: "2", label: "2 threads" },
+  { value: "4", label: "4 threads" },
+  { value: "all", label: "All CPU cores" },
+];
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
 
-function ProjectSupportCard() {
+function ProjectSupportDialog({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = React.useState<"idle" | "ok" | "fail">("idle");
-  const [isQrOpen, setIsQrOpen] = React.useState(false);
 
   async function onCopyDonationAddress() {
     setCopied("idle");
@@ -76,74 +90,66 @@ function ProjectSupportCard() {
   const formattedAddress = splitAddressBy6(DONATION_ADDRESS);
 
   return (
-    <SurfaceCard className="lg:mt-auto">
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-white/90">
-            Support Amethyst XMR
+    <OverlayDialog onClose={onClose}>
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-base font-semibold text-white">
+              Support AmethystXMR
+            </div>
+            <a
+              href={PROJECT_GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-0.5 block truncate text-xs text-white/55 transition hover:text-white/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            >
+              {PROJECT_GITHUB_URL}
+            </a>
           </div>
-          <a
-            href={PROJECT_GITHUB_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-0.5 block truncate text-xs text-white/55 transition hover:text-white/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-          >
-            Source code and feedback: {PROJECT_GITHUB_URL}
-          </a>
-        </div>
 
-        <div className="flex shrink-0 gap-2">
           <Button
             type="button"
-            onClick={() => setIsQrOpen((next) => !next)}
-            variant="primary"
+            onClick={onClose}
+            variant="soft"
             className="flex-none! rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            {isQrOpen ? (
-              <>
-                <span aria-hidden="true">✖</span> Hide QR
-              </>
-            ) : (
-              <>
-                <span aria-hidden="true">▣</span> QR
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            onClick={onCopyDonationAddress}
-            variant="primary"
-            className="flex-none! rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-          >
-            {copied === "ok" ? (
-              <>
-                <span aria-hidden="true">✓</span> Copied
-              </>
-            ) : copied === "fail" ? (
-              <>
-                <span aria-hidden="true">✖</span> Copy failed
-              </>
-            ) : (
-              <>
-                <span aria-hidden="true">⎘</span> Copy
-              </>
-            )}
+            ✖ Close
           </Button>
         </div>
-      </div>
 
-      <div className="relative">
-        <Input
-          aria-label="Donation address"
-          readOnly
-          value={formattedAddress}
-          onFocus={(e) => e.currentTarget.select()}
-          className="overflow-x-auto rounded-lg border-white/10 bg-black/20 py-2 font-mono text-xs whitespace-nowrap text-white/85 focus-visible:ring-white/30"
-        />
-      </div>
+        <div className="space-y-1 text-xs text-white/70">
+          <div className="text-white/45">donation address</div>
+          <Input
+            aria-label="Donation address"
+            readOnly
+            value={formattedAddress}
+            onFocus={(e) => e.currentTarget.select()}
+            className="overflow-x-auto rounded-lg border-white/10 bg-black/20 py-2 font-mono text-xs whitespace-nowrap text-white/85 focus-visible:ring-white/30"
+          />
+        </div>
 
-      {isQrOpen && (
-        <div className="mt-3 flex flex-col items-center gap-2 rounded-lg bg-black/20 p-3 ring-1 ring-white/10">
+        <Button
+          type="button"
+          onClick={onCopyDonationAddress}
+          variant="primary"
+          className="w-full flex-none! rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        >
+          {copied === "ok" ? (
+            <>
+              <span aria-hidden="true">✓</span> Copied
+            </>
+          ) : copied === "fail" ? (
+            <>
+              <span aria-hidden="true">✖</span> Copy failed
+            </>
+          ) : (
+            <>
+              <span aria-hidden="true">⎘</span> Copy donation address
+            </>
+          )}
+        </Button>
+
+        <div className="flex flex-col items-center gap-2 rounded-lg bg-black/20 p-3 ring-1 ring-white/10">
           <div className="rounded-md bg-white p-2">
             <QRCodeSVG value={DONATION_ADDRESS} size={240} />
           </div>
@@ -151,8 +157,20 @@ function ProjectSupportCard() {
             Scan to copy donation address
           </div>
         </div>
-      )}
-    </SurfaceCard>
+
+        <div className="text-center text-sm text-white/70">
+          Feel free to create issues in{" "}
+          <a
+            href={PROJECT_GITHUB_ISSUES_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-white/90 underline decoration-white/35 underline-offset-4 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            github
+          </a>
+        </div>
+      </div>
+    </OverlayDialog>
   );
 }
 
@@ -244,8 +262,47 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
   return NetworkTypes.MAINNET;
 }
 
+function getThreadingModeLabel(value: WasmThreadingMode): string {
+  return (
+    THREADING_MODE_OPTIONS.find((item) => item.value === value)?.label ??
+    "No threading"
+  );
+}
+
+function parseThreadingModeSelectValue(value: string): WasmThreadingMode {
+  const option = THREADING_MODE_OPTIONS.find((item) => item.value === value);
+  return option?.value ?? "none";
+}
+
+function getVisibleThreadingMode(
+  selectedMode: WasmThreadingMode,
+  wasmBuildVariantText: string,
+): WasmThreadingMode {
+  if (wasmBuildVariantText === "asyncify" && selectedMode !== "none") {
+    return "none";
+  }
+  return selectedMode;
+}
+
+function getThreadingModeReloadMessage(next: WasmThreadingMode): string {
+  const lines = ["This change will take effect after AmethystXMR reloads."];
+  const selectedThreadCount = Number(next);
+  const hardwareConcurrency = getHardwareConcurrency();
+  if (
+    Number.isInteger(selectedThreadCount) &&
+    selectedThreadCount > hardwareConcurrency
+  ) {
+    const coreWord = hardwareConcurrency === 1 ? "core" : "cores";
+    lines.push(
+      `Your system reports ${hardwareConcurrency} CPU ${coreWord}, so using ${selectedThreadCount} threads is unlikely to improve sync speed.`,
+    );
+  }
+  return lines.join("\n\n");
+}
+
 export function WalletsList() {
   const alert = useAlert();
+  const [isSupportDialogOpen, setIsSupportDialogOpen] = React.useState(false);
   const [view, setView] = React.useState<
     | {
         type: "initial loading";
@@ -586,7 +643,21 @@ export function WalletsList() {
               ⚙ Options
             </Button>
           </div>
+
+          {view.walletNames.length > 0 && (
+            <button
+              type="button"
+              className="mx-auto block cursor-pointer rounded-md px-2 py-1 text-sm font-semibold text-white/75 underline decoration-white/30 underline-offset-4 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              onClick={() => setIsSupportDialogOpen(true)}
+            >
+              Support AmethystXMR, make a donation →
+            </button>
+          )}
         </SectionPanel>
+
+        {isSupportDialogOpen && (
+          <ProjectSupportDialog onClose={() => setIsSupportDialogOpen(false)} />
+        )}
       </div>
     );
   } else if (view.type === "manage-wallets") {
@@ -1731,6 +1802,7 @@ function OpenWalletView({
 }
 
 function OptionsView({ onBack }: { onBack: () => void }) {
+  const alert = useAlert();
   const loadLastWallet = options.getValue("loadLastWallet");
   const networkType = options.getValue("networkType");
   const [networkTypeSelectValue, setNetworkTypeSelectValue] = React.useState(
@@ -1762,6 +1834,10 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
   const [moneroVersionText, setMoneroVersionText] = React.useState("");
   const [wasmBuildVariantText, setWasmBuildVariantText] = React.useState("");
+  const [threadingModeSelectValue, setThreadingModeSelectValue] =
+    React.useState<WasmThreadingMode>(() =>
+      getVisibleThreadingMode(getSelectedWasmThreadingMode(), ""),
+    );
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1774,47 +1850,36 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       }
       setMoneroVersionText(`Monero ${version}`);
       setWasmBuildVariantText(wasmBuildVariant);
+      // The initial state only knows the user's preference/default. Once the
+      // module has loaded, reflect an asyncify fallback as "No threading".
+      setThreadingModeSelectValue(
+        getVisibleThreadingMode(
+          getSelectedWasmThreadingMode(),
+          wasmBuildVariant,
+        ),
+      );
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const asyncifyForced = isAsyncifyBuildForced();
-  const [wasmVariantDialog, setWasmVariantDialog] = React.useState<
-    "none" | "force-asyncify" | "restore-threads"
-  >("none");
-  const threadsClickCountRef = React.useRef(0);
-  const isWasmVariantInteractive =
-    asyncifyForced || wasmBuildVariantText === "threads";
-  const handleWasmVariantClick = () => {
-    if (asyncifyForced) {
-      setWasmVariantDialog("restore-threads");
+  const selectedThreadingMode = getSelectedWasmThreadingMode();
+  const canSelectThreadedMode =
+    wasmBuildVariantText === "threads" ||
+    (selectedThreadingMode === "none" &&
+      canWasmThreadingBeEnabledAfterReload());
+  const handleThreadingModeChange = async (next: string) => {
+    const parsed = parseThreadingModeSelectValue(next);
+    if (parsed === threadingModeSelectValue) {
       return;
     }
-    if (wasmBuildVariantText !== "threads") {
-      return;
-    }
-    threadsClickCountRef.current += 1;
-    if (threadsClickCountRef.current >= 3) {
-      threadsClickCountRef.current = 0;
-      setWasmVariantDialog("force-asyncify");
-    }
+
+    setThreadingModeSelectValue(parsed);
+    setSelectedWasmThreadingMode(parsed);
+    await alert(getThreadingModeReloadMessage(parsed));
+    window.location.reload();
   };
-  const wasmVariantLabel = (
-    <span
-      className={
-        asyncifyForced
-          ? "cursor-pointer text-red-400"
-          : isWasmVariantInteractive
-            ? "cursor-pointer"
-            : undefined
-      }
-      onClick={isWasmVariantInteractive ? handleWasmVariantClick : undefined}
-    >
-      {wasmBuildVariantText}
-    </span>
-  );
 
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
@@ -1863,31 +1928,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>Options</Header>
-
-      <ConfirmDialog
-        open={wasmVariantDialog === "force-asyncify"}
-        title="Switch WASM build"
-        message="Do you want to switch to Asyncify build?"
-        confirmText="Switch"
-        cancelText="Cancel"
-        onCancel={() => setWasmVariantDialog("none")}
-        onConfirm={() => {
-          setAsyncifyBuildForced(true);
-          window.location.reload();
-        }}
-      />
-      <ConfirmDialog
-        open={wasmVariantDialog === "restore-threads"}
-        title="Switch WASM build"
-        message="Asyncify mode is enforced. Do you want to switch back to Threads?"
-        confirmText="Switch"
-        cancelText="Cancel"
-        onCancel={() => setWasmVariantDialog("none")}
-        onConfirm={() => {
-          setAsyncifyBuildForced(false);
-          window.location.reload();
-        }}
-      />
 
       <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <div className="space-y-4 scrollbar-glass lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-auto lg:pr-1">
@@ -1979,18 +2019,53 @@ function OptionsView({ onBack }: { onBack: () => void }) {
             )}
           </FormRow>
 
-          <ProjectSupportCard />
+          <FormRow>
+            <div className="mb-1 flex items-center gap-2">
+              <Label>Threads mode</Label>
+              <Hint>
+                <p>
+                  More threads can make wallet sync faster, but they use more
+                  CPU and memory. Threading requires browser isolation; without
+                  server isolation, AmethystXMR uses a service worker for that.
+                  If neither path is available, it runs without threads.
+                </p>
+              </Hint>
+            </div>
+            <Select.Root
+              value={threadingModeSelectValue}
+              onValueChange={(next) => {
+                void handleThreadingModeChange(next);
+              }}
+            >
+              <Select.Trigger aria-label="Threads mode">
+                <Select.Value>
+                  {getThreadingModeLabel(threadingModeSelectValue)}
+                </Select.Value>
+              </Select.Trigger>
+              <Select.Content>
+                {THREADING_MODE_OPTIONS.map((item) => (
+                  <Select.Option
+                    key={item.value}
+                    value={item.value}
+                    disabled={item.value !== "none" && !canSelectThreadedMode}
+                  >
+                    {item.label}
+                  </Select.Option>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </FormRow>
         </div>
 
         <div className="mt-2 lg:shrink-0">
           <div className="mb-3 px-2 text-center text-[10px] text-white/45">
             <div className="space-y-1 sm:hidden">
               <div>{buildInfoText}</div>
-              <div>{wasmVariantLabel}</div>
+              <div>{wasmBuildVariantText}</div>
               <div>{moneroVersionText}</div>
             </div>
             <div aria-label="Build information" className="hidden sm:block">
-              {buildInfoText}, {wasmVariantLabel}, {moneroVersionText}
+              {buildInfoText}, {wasmBuildVariantText}, {moneroVersionText}
             </div>
           </div>
           <ButtonsHolder>

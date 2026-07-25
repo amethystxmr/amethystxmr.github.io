@@ -216,8 +216,8 @@ npm run dev
 ```
 
 `npm run dev` serves COOP/COEP headers so the Threads build can run locally.
-In Vite development builds, wallet concurrency is capped to `2` so the threaded
-WASM build does not consume all CPU cores on a developer machine.
+In Vite development builds, wallet concurrency defaults to `1` thread so the
+threaded WASM build does not consume all CPU cores on a developer machine.
 
 In production, startup chooses the WASM variant dynamically:
 
@@ -226,3 +226,7 @@ In production, startup chooses the WASM variant dynamically:
 - otherwise, in production with service worker support, register the service
   worker and reload so same-origin responses get COOP/COEP headers
 - if isolation is still unavailable, fall back to `Asyncify`
+
+The Options screen lets users choose no threading, a fixed thread count, or all
+reported CPU cores. In production, the unchanged default is the largest fixed
+option up to `4` that does not exceed `navigator.hardwareConcurrency`.
