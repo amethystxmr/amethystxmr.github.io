@@ -48,6 +48,7 @@ const DAEMON_CUSTOM_OPTION = "__custom__";
 const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
 const PROJECT_GITHUB_URL =
   "https://github.com/amethystxmr/amethystxmr.github.io";
+const PROJECT_GITHUB_ISSUES_URL = `${PROJECT_GITHUB_URL}/issues`;
 const DONATION_ADDRESS =
   "8C8sVurTyRh9Y2XSon7nbXYg4XTVqzcNoJiTgqxvkbseRRUNpH64Ptu396tTaxKuoPNY6jwUhCfjURpUwrNqe8dn5YUghK2";
 const NETWORK_TYPE_OPTIONS = [
@@ -59,9 +60,8 @@ const NETWORK_TYPE_OPTIONS = [
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
 
-function ProjectSupportCard() {
+function ProjectSupportDialog({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = React.useState<"idle" | "ok" | "fail">("idle");
-  const [isQrOpen, setIsQrOpen] = React.useState(false);
 
   async function onCopyDonationAddress() {
     setCopied("idle");
@@ -72,74 +72,66 @@ function ProjectSupportCard() {
   const formattedAddress = splitAddressBy6(DONATION_ADDRESS);
 
   return (
-    <SurfaceCard className="lg:mt-auto">
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-white/90">
-            Support Amethyst XMR
+    <OverlayDialog onClose={onClose}>
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-base font-semibold text-white">
+              Support AmethystXMR
+            </div>
+            <a
+              href={PROJECT_GITHUB_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-0.5 block truncate text-xs text-white/55 transition hover:text-white/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+            >
+              {PROJECT_GITHUB_URL}
+            </a>
           </div>
-          <a
-            href={PROJECT_GITHUB_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-0.5 block truncate text-xs text-white/55 transition hover:text-white/75 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-          >
-            Source code and feedback: {PROJECT_GITHUB_URL}
-          </a>
-        </div>
 
-        <div className="flex shrink-0 gap-2">
           <Button
             type="button"
-            onClick={() => setIsQrOpen((next) => !next)}
-            variant="primary"
+            onClick={onClose}
+            variant="soft"
             className="flex-none! rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            {isQrOpen ? (
-              <>
-                <span aria-hidden="true">✖</span> Hide QR
-              </>
-            ) : (
-              <>
-                <span aria-hidden="true">▣</span> QR
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            onClick={onCopyDonationAddress}
-            variant="primary"
-            className="flex-none! rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-          >
-            {copied === "ok" ? (
-              <>
-                <span aria-hidden="true">✓</span> Copied
-              </>
-            ) : copied === "fail" ? (
-              <>
-                <span aria-hidden="true">✖</span> Copy failed
-              </>
-            ) : (
-              <>
-                <span aria-hidden="true">⎘</span> Copy
-              </>
-            )}
+            ✖ Close
           </Button>
         </div>
-      </div>
 
-      <div className="relative">
-        <Input
-          aria-label="Donation address"
-          readOnly
-          value={formattedAddress}
-          onFocus={(e) => e.currentTarget.select()}
-          className="overflow-x-auto rounded-lg border-white/10 bg-black/20 py-2 font-mono text-xs whitespace-nowrap text-white/85 focus-visible:ring-white/30"
-        />
-      </div>
+        <div className="space-y-1 text-xs text-white/70">
+          <div className="text-white/45">donation address</div>
+          <Input
+            aria-label="Donation address"
+            readOnly
+            value={formattedAddress}
+            onFocus={(e) => e.currentTarget.select()}
+            className="overflow-x-auto rounded-lg border-white/10 bg-black/20 py-2 font-mono text-xs whitespace-nowrap text-white/85 focus-visible:ring-white/30"
+          />
+        </div>
 
-      {isQrOpen && (
-        <div className="mt-3 flex flex-col items-center gap-2 rounded-lg bg-black/20 p-3 ring-1 ring-white/10">
+        <Button
+          type="button"
+          onClick={onCopyDonationAddress}
+          variant="primary"
+          className="w-full flex-none! rounded-lg px-3 py-2 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        >
+          {copied === "ok" ? (
+            <>
+              <span aria-hidden="true">✓</span> Copied
+            </>
+          ) : copied === "fail" ? (
+            <>
+              <span aria-hidden="true">✖</span> Copy failed
+            </>
+          ) : (
+            <>
+              <span aria-hidden="true">⎘</span> Copy donation address
+            </>
+          )}
+        </Button>
+
+        <div className="flex flex-col items-center gap-2 rounded-lg bg-black/20 p-3 ring-1 ring-white/10">
           <div className="rounded-md bg-white p-2">
             <QRCodeSVG value={DONATION_ADDRESS} size={240} />
           </div>
@@ -147,8 +139,20 @@ function ProjectSupportCard() {
             Scan to copy donation address
           </div>
         </div>
-      )}
-    </SurfaceCard>
+
+        <div className="text-center text-sm text-white/70">
+          Feel free to create issues in{" "}
+          <a
+            href={PROJECT_GITHUB_ISSUES_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="text-white/90 underline decoration-white/35 underline-offset-4 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+          >
+            github
+          </a>
+        </div>
+      </div>
+    </OverlayDialog>
   );
 }
 
@@ -242,6 +246,7 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
 
 export function WalletsList() {
   const alert = useAlert();
+  const [isSupportDialogOpen, setIsSupportDialogOpen] = React.useState(false);
   const [view, setView] = React.useState<
     | {
         type: "initial loading";
@@ -582,7 +587,21 @@ export function WalletsList() {
               ⚙ Options
             </Button>
           </div>
+
+          {view.walletNames.length > 0 && (
+            <button
+              type="button"
+              className="mx-auto block cursor-pointer rounded-md px-2 py-1 text-sm font-semibold text-white/75 underline decoration-white/30 underline-offset-4 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+              onClick={() => setIsSupportDialogOpen(true)}
+            >
+              Support AmethystXMR, make a donation →
+            </button>
+          )}
         </SectionPanel>
+
+        {isSupportDialogOpen && (
+          <ProjectSupportDialog onClose={() => setIsSupportDialogOpen(false)} />
+        )}
       </div>
     );
   } else if (view.type === "manage-wallets") {
@@ -1905,8 +1924,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
               />
             )}
           </FormRow>
-
-          <ProjectSupportCard />
         </div>
 
         <div className="mt-2 lg:shrink-0">
