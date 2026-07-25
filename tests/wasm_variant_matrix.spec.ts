@@ -34,6 +34,28 @@ async function openOptionsAndExpectWasmVariant(
   await expect(buildInfo).toContainText(expectedWasmVariant);
 }
 
+function getThreadsModeTrigger(page: Page) {
+  return page.getByRole("button", { name: "Threads mode" });
+}
+
+async function selectThreadsMode(page: Page, optionName: string) {
+  await getThreadsModeTrigger(page).click();
+  await page.getByRole("option", { name: optionName }).click();
+}
+
+async function expectThreadedOptionsDisabled(page: Page) {
+  await getThreadsModeTrigger(page).click();
+  await expect(
+    page.getByRole("option", { name: "No threading" }),
+  ).toBeEnabled();
+  await expect(page.getByRole("option", { name: "1 thread" })).toBeDisabled();
+  await expect(page.getByRole("option", { name: "2 threads" })).toBeDisabled();
+  await expect(page.getByRole("option", { name: "4 threads" })).toBeDisabled();
+  await expect(
+    page.getByRole("option", { name: "All CPU cores" }),
+  ).toBeDisabled();
+}
+
 async function mockServiceWorkerRegistrationFailure(page: {
   addInitScript: Page["addInitScript"];
 }) {
@@ -238,6 +260,8 @@ test("service worker registration failure falls back to asyncify", async ({
     ),
   ).resolves.toBeNull();
   await openOptionsAndExpectWasmVariant(page, initial, "asyncify");
+  await expect(getThreadsModeTrigger(page)).toContainText("No threading");
+  await expectThreadedOptionsDisabled(page);
 });
 
 test("service worker control timeout reloads once then falls back to asyncify", async ({
@@ -274,9 +298,11 @@ test("service worker control timeout reloads once then falls back to asyncify", 
     ),
   ).resolves.toMatch(/service-worker\.js$/);
   await openOptionsAndExpectWasmVariant(page, initial, "asyncify");
+  await expect(getThreadsModeTrigger(page)).toContainText("No threading");
+  await expectThreadedOptionsDisabled(page);
 });
 
-test("options enforces asyncify build via triple-click and restores threads", async ({
+test("options switches between threaded and no-threading WASM modes", async ({
   page,
   request,
 }, testInfo) => {
@@ -295,41 +321,93 @@ test("options enforces asyncify build via triple-click and restores threads", as
   await initial.waitUntilLoaded();
   await expectPageIsolationForWasmVariant(page, "threads");
 
-  await test.step("Triple-click threads to enforce the Asyncify build", async () => {
+  await test.step("Select no threading while threads are available", async () => {
     await page.getByRole("button", { name: /options/i }).click();
     await expect(buildInfo).toContainText("threads");
-    const threadsLabel = buildInfo.getByText("threads", { exact: true });
-    await threadsLabel.click();
-    await threadsLabel.click();
-    await threadsLabel.click();
-    await page.getByRole("button", { name: "Switch" }).click();
+    await selectThreadsMode(page, "No threading");
+    await expect(
+      page.getByText(/change will take effect after AmethystXMR reloads/i),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "OK" }).click();
   });
 
-  await test.step("Reloads into the enforced Asyncify build shown in red", async () => {
+  await test.step("Reloads into Asyncify with threaded options still available", async () => {
     await initial.waitUntilLoaded();
     await page.getByRole("button", { name: /options/i }).click();
     await expect(buildInfo).toContainText("asyncify");
-    await expect(buildInfo.getByText("asyncify", { exact: true })).toHaveClass(
-      /text-red/,
-    );
+    await expect(getThreadsModeTrigger(page)).toContainText("No threading");
+    await getThreadsModeTrigger(page).click();
+    await expect(page.getByRole("option", { name: "1 thread" })).toBeEnabled();
+    await expect(page.getByRole("option", { name: "2 threads" })).toBeEnabled();
+    await expect(page.getByRole("option", { name: "4 threads" })).toBeEnabled();
     await expect(
-      page.evaluate(() =>
-        localStorage.getItem("amethystxmr:force-asyncify-build"),
-      ),
-    ).resolves.toBe("1");
+      page.getByRole("option", { name: "All CPU cores" }),
+    ).toBeEnabled();
+    await expect(
+      page.evaluate(() => localStorage.getItem("amethystxmr:threads-mode")),
+    ).resolves.toBe("none");
   });
 
   await test.step("Switches back to the Threads build", async () => {
-    await buildInfo.getByText("asyncify", { exact: true }).click();
-    await page.getByRole("button", { name: "Switch" }).click();
+    await page.getByRole("option", { name: "All CPU cores" }).click();
+    await page.getByRole("button", { name: "OK" }).click();
     await initial.waitUntilLoaded();
     await expectPageIsolationForWasmVariant(page, "threads");
     await page.getByRole("button", { name: /options/i }).click();
     await expect(buildInfo).toContainText("threads");
     await expect(
-      page.evaluate(() =>
-        localStorage.getItem("amethystxmr:force-asyncify-build"),
-      ),
-    ).resolves.toBeNull();
+      page.evaluate(() => localStorage.getItem("amethystxmr:threads-mode")),
+    ).resolves.toBe("all");
   });
+});
+
+test("default threading mode follows CPU count but explicit higher choice is allowed", async ({
+  page,
+  request,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== SERVICE_WORKER_BOOTSTRAP_PROJECT,
+    "Covers the no-server-COI service-worker bootstrap project only.",
+  );
+
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "hardwareConcurrency", {
+      configurable: true,
+      get() {
+        return 3;
+      },
+    });
+  });
+
+  const expectations = getVariantMatrixExpectations(testInfo.project.name);
+  const initial = new InitialWalletListPage(page);
+  const buildInfo = page.locator('[aria-label="Build information"]');
+
+  await expectPreviewServerCoiHeadersMatchMatrix(request, expectations);
+
+  await initial.goto();
+  await initial.waitUntilLoaded();
+  await expectPageIsolationForWasmVariant(page, "threads");
+
+  await page.getByRole("button", { name: /options/i }).click();
+  await expect(buildInfo).toContainText("threads");
+  await expect(getThreadsModeTrigger(page)).toContainText("2 threads");
+  await expect(
+    page.evaluate(() => localStorage.getItem("amethystxmr:threads-mode")),
+  ).resolves.toBeNull();
+
+  await selectThreadsMode(page, "4 threads");
+  await expect(
+    page.getByText(
+      /system reports 3 CPU cores, so using 4 threads is unlikely/i,
+    ),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "OK" }).click();
+  await initial.waitUntilLoaded();
+  await expectPageIsolationForWasmVariant(page, "threads");
+  await expect(
+    page.evaluate(() => localStorage.getItem("amethystxmr:threads-mode")),
+  ).resolves.toBe("4");
+  await page.getByRole("button", { name: /options/i }).click();
+  await expect(getThreadsModeTrigger(page)).toContainText("4 threads");
 });

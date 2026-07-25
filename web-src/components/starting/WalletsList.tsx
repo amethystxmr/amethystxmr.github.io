@@ -7,6 +7,7 @@ import {
   ConfirmByTextDialog,
   ConfirmDialog,
   Toggle,
+  Hint,
   Header,
   Input,
   Label,
@@ -27,9 +28,12 @@ import {
   api as walletApi,
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import {
-  isAsyncifyBuildForced,
-  setAsyncifyBuildForced,
-} from "../../startup/wasmVariant";
+  canWasmThreadingBeEnabledAfterReload,
+  getHardwareConcurrency,
+  getSelectedWasmThreadingMode,
+  setSelectedWasmThreadingMode,
+  type WasmThreadingMode,
+} from "../../startup/wasmConcurrency";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import { DAEMON_PRESET_OPTIONS, options } from "../options";
@@ -61,6 +65,16 @@ const NETWORK_TYPE_OPTIONS = [
   { value: NetworkTypes.STAGENET, label: "Stagenet" },
   { value: NetworkTypes.FAKECHAIN, label: "Fakenet" },
 ] as const;
+const THREADING_MODE_OPTIONS: Array<{
+  value: WasmThreadingMode;
+  label: string;
+}> = [
+  { value: "none", label: "No threading" },
+  { value: "1", label: "1 thread" },
+  { value: "2", label: "2 threads" },
+  { value: "4", label: "4 threads" },
+  { value: "all", label: "All CPU cores" },
+];
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
 
@@ -246,6 +260,44 @@ function parseNetworkTypeSelectValue(value: string): NetworkTypeValue {
     return parsed;
   }
   return NetworkTypes.MAINNET;
+}
+
+function getThreadingModeLabel(value: WasmThreadingMode): string {
+  return (
+    THREADING_MODE_OPTIONS.find((item) => item.value === value)?.label ??
+    "No threading"
+  );
+}
+
+function parseThreadingModeSelectValue(value: string): WasmThreadingMode {
+  const option = THREADING_MODE_OPTIONS.find((item) => item.value === value);
+  return option?.value ?? "none";
+}
+
+function getVisibleThreadingMode(
+  selectedMode: WasmThreadingMode,
+  wasmBuildVariantText: string,
+): WasmThreadingMode {
+  if (wasmBuildVariantText === "asyncify" && selectedMode !== "none") {
+    return "none";
+  }
+  return selectedMode;
+}
+
+function getThreadingModeReloadMessage(next: WasmThreadingMode): string {
+  const lines = ["This change will take effect after AmethystXMR reloads."];
+  const selectedThreadCount = Number(next);
+  const hardwareConcurrency = getHardwareConcurrency();
+  if (
+    Number.isInteger(selectedThreadCount) &&
+    selectedThreadCount > hardwareConcurrency
+  ) {
+    const coreWord = hardwareConcurrency === 1 ? "core" : "cores";
+    lines.push(
+      `Your system reports ${hardwareConcurrency} CPU ${coreWord}, so using ${selectedThreadCount} threads is unlikely to improve sync speed.`,
+    );
+  }
+  return lines.join("\n\n");
 }
 
 export function WalletsList() {
@@ -1750,6 +1802,7 @@ function OpenWalletView({
 }
 
 function OptionsView({ onBack }: { onBack: () => void }) {
+  const alert = useAlert();
   const loadLastWallet = options.getValue("loadLastWallet");
   const networkType = options.getValue("networkType");
   const [networkTypeSelectValue, setNetworkTypeSelectValue] = React.useState(
@@ -1781,6 +1834,10 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
   const [moneroVersionText, setMoneroVersionText] = React.useState("");
   const [wasmBuildVariantText, setWasmBuildVariantText] = React.useState("");
+  const [threadingModeSelectValue, setThreadingModeSelectValue] =
+    React.useState<WasmThreadingMode>(() =>
+      getVisibleThreadingMode(getSelectedWasmThreadingMode(), ""),
+    );
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1793,47 +1850,36 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       }
       setMoneroVersionText(`Monero ${version}`);
       setWasmBuildVariantText(wasmBuildVariant);
+      // The initial state only knows the user's preference/default. Once the
+      // module has loaded, reflect an asyncify fallback as "No threading".
+      setThreadingModeSelectValue(
+        getVisibleThreadingMode(
+          getSelectedWasmThreadingMode(),
+          wasmBuildVariant,
+        ),
+      );
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const asyncifyForced = isAsyncifyBuildForced();
-  const [wasmVariantDialog, setWasmVariantDialog] = React.useState<
-    "none" | "force-asyncify" | "restore-threads"
-  >("none");
-  const threadsClickCountRef = React.useRef(0);
-  const isWasmVariantInteractive =
-    asyncifyForced || wasmBuildVariantText === "threads";
-  const handleWasmVariantClick = () => {
-    if (asyncifyForced) {
-      setWasmVariantDialog("restore-threads");
+  const selectedThreadingMode = getSelectedWasmThreadingMode();
+  const canSelectThreadedMode =
+    wasmBuildVariantText === "threads" ||
+    (selectedThreadingMode === "none" &&
+      canWasmThreadingBeEnabledAfterReload());
+  const handleThreadingModeChange = async (next: string) => {
+    const parsed = parseThreadingModeSelectValue(next);
+    if (parsed === threadingModeSelectValue) {
       return;
     }
-    if (wasmBuildVariantText !== "threads") {
-      return;
-    }
-    threadsClickCountRef.current += 1;
-    if (threadsClickCountRef.current >= 3) {
-      threadsClickCountRef.current = 0;
-      setWasmVariantDialog("force-asyncify");
-    }
+
+    setThreadingModeSelectValue(parsed);
+    setSelectedWasmThreadingMode(parsed);
+    await alert(getThreadingModeReloadMessage(parsed));
+    window.location.reload();
   };
-  const wasmVariantLabel = (
-    <span
-      className={
-        asyncifyForced
-          ? "cursor-pointer text-red-400"
-          : isWasmVariantInteractive
-            ? "cursor-pointer"
-            : undefined
-      }
-      onClick={isWasmVariantInteractive ? handleWasmVariantClick : undefined}
-    >
-      {wasmBuildVariantText}
-    </span>
-  );
 
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
@@ -1882,31 +1928,6 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   return (
     <div className="space-y-4 lg:flex lg:h-[640px] lg:flex-col">
       <Header>Options</Header>
-
-      <ConfirmDialog
-        open={wasmVariantDialog === "force-asyncify"}
-        title="Switch WASM build"
-        message="Do you want to switch to Asyncify build?"
-        confirmText="Switch"
-        cancelText="Cancel"
-        onCancel={() => setWasmVariantDialog("none")}
-        onConfirm={() => {
-          setAsyncifyBuildForced(true);
-          window.location.reload();
-        }}
-      />
-      <ConfirmDialog
-        open={wasmVariantDialog === "restore-threads"}
-        title="Switch WASM build"
-        message="Asyncify mode is enforced. Do you want to switch back to Threads?"
-        confirmText="Switch"
-        cancelText="Cancel"
-        onCancel={() => setWasmVariantDialog("none")}
-        onConfirm={() => {
-          setAsyncifyBuildForced(false);
-          window.location.reload();
-        }}
-      />
 
       <SectionPanel className="space-y-4 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
         <div className="space-y-4 scrollbar-glass lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:overflow-auto lg:pr-1">
@@ -1997,17 +2018,54 @@ function OptionsView({ onBack }: { onBack: () => void }) {
               />
             )}
           </FormRow>
+
+          <FormRow>
+            <div className="mb-1 flex items-center gap-2">
+              <Label>Threads mode</Label>
+              <Hint>
+                <p>
+                  More threads can make wallet sync faster, but they use more
+                  CPU and memory. Threading requires browser isolation; without
+                  server isolation, AmethystXMR uses a service worker for that.
+                  If neither path is available, it runs without threads.
+                </p>
+              </Hint>
+            </div>
+            <Select.Root
+              value={threadingModeSelectValue}
+              onValueChange={(next) => {
+                void handleThreadingModeChange(next);
+              }}
+            >
+              <Select.Trigger aria-label="Threads mode">
+                <Select.Value>
+                  {getThreadingModeLabel(threadingModeSelectValue)}
+                </Select.Value>
+              </Select.Trigger>
+              <Select.Content>
+                {THREADING_MODE_OPTIONS.map((item) => (
+                  <Select.Option
+                    key={item.value}
+                    value={item.value}
+                    disabled={item.value !== "none" && !canSelectThreadedMode}
+                  >
+                    {item.label}
+                  </Select.Option>
+                ))}
+              </Select.Content>
+            </Select.Root>
+          </FormRow>
         </div>
 
         <div className="mt-2 lg:shrink-0">
           <div className="mb-3 px-2 text-center text-[10px] text-white/45">
             <div className="space-y-1 sm:hidden">
               <div>{buildInfoText}</div>
-              <div>{wasmVariantLabel}</div>
+              <div>{wasmBuildVariantText}</div>
               <div>{moneroVersionText}</div>
             </div>
             <div aria-label="Build information" className="hidden sm:block">
-              {buildInfoText}, {wasmVariantLabel}, {moneroVersionText}
+              {buildInfoText}, {wasmBuildVariantText}, {moneroVersionText}
             </div>
           </div>
           <ButtonsHolder>
