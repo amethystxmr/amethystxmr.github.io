@@ -4,7 +4,7 @@ import {
   ensureHttpFetchEventChannel,
   httpFetchEventChannelName,
   setHttpFetchWasmMemory,
-} from "./httpFetchEventChannel";
+} from "./httpFetchBridge";
 import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority as FeePriorityConst,
