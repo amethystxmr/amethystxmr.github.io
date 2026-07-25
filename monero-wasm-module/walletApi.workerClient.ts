@@ -61,6 +61,15 @@ const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
 });
 export const api = Comlink.wrap<typeof exposedApi>(worker);
 
+export async function getWasmMemoryByteLength(): Promise<number> {
+  return await api.getWasmMemoryByteLength();
+}
+
+window.amethystRuntime = {
+  ...window.amethystRuntime,
+  getWasmMemoryByteLength,
+};
+
 export const initModule: (
   options: WorkerClientInitModuleOptions,
   onProgress?: Parameters<typeof exposedApi.initModule>[0],

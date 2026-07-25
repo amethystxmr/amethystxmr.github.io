@@ -6,6 +6,8 @@ export type ProcessSample = {
   /** Cumulative CPU-seconds on the tracked page renderer (all threads in that process). */
   cpuWorkSec: number;
   rendererRssBytes: number;
+  /** Current WebAssembly.Memory buffer size, read from the wallet worker through the page. */
+  wasmMemoryBytes: number | null;
   /** Main-isolate JS heap only — does not include the wallet web worker. */
   mainJsHeapUsedBytes: number | null;
 };
@@ -100,6 +102,19 @@ async function readMainJsHeapUsedBytes(
   }
 }
 
+async function readWasmMemoryBytes(page: Page): Promise<number | null> {
+  try {
+    return await page.evaluate(async () => {
+      const bytes = await window.amethystRuntime?.getWasmMemoryByteLength?.();
+      return typeof bytes === "number" && Number.isFinite(bytes) && bytes >= 0
+        ? bytes
+        : null;
+    });
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Tracks CPU/RSS for the page's Chromium renderer process only.
  *
@@ -141,6 +156,7 @@ export async function createProcessMetricsTracker(
         atMs: Date.now(),
         cpuWorkSec,
         rendererRssBytes,
+        wasmMemoryBytes: await readWasmMemoryBytes(page),
         mainJsHeapUsedBytes: await readMainJsHeapUsedBytes(pageSession),
       };
     },

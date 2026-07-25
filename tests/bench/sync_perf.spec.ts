@@ -75,6 +75,7 @@ type CellResult = {
   peakRssBytes: number;
   cpuWorkSec: number;
   avgCoresUsed: number;
+  peakWasmMemoryBytes: number | null;
   peakMainJsHeapUsedBytes: number | null;
   blocksReceived: number | null;
   rxBytes: number | null;
@@ -471,6 +472,7 @@ function formatSummaryTable(results: CellResult[]): string {
     "duration",
     "durHuman",
     "rssMiB",
+    "wasmMiB",
     "cpuWork",
     "avgCores",
     "rxMiB",
@@ -489,6 +491,7 @@ function formatSummaryTable(results: CellResult[]): string {
     `${(result.durationMs / 1000).toFixed(1)}s`,
     formatDurationHuman(result.durationMs),
     (result.peakRssBytes / (1024 * 1024)).toFixed(1),
+    formatMiB(result.peakWasmMemoryBytes),
     `${result.cpuWorkSec.toFixed(2)}s`,
     result.avgCoresUsed.toFixed(2),
     formatMiB(result.rxBytes),
@@ -527,6 +530,9 @@ function printCellResult(result: CellResult): void {
       `duration=${(result.durationMs / 1000).toFixed(1)}s (${formatDurationHuman(result.durationMs)}) ` +
       `final=${result.finalWalletHeight ?? "?"}/${result.finalDaemonHeight ?? "?"} ` +
       `peakRss=${formatBytes(result.peakRssBytes)} ` +
+      (result.peakWasmMemoryBytes !== null
+        ? `peakWasmMem=${formatBytes(result.peakWasmMemoryBytes)} `
+        : "") +
       `cpuWork=${result.cpuWorkSec.toFixed(2)}s ` +
       `avgCores=${result.avgCoresUsed.toFixed(2)}` +
       (result.rxBytes !== null ? ` rx=${formatMiB(result.rxBytes)} MiB` : "") +
@@ -685,6 +691,7 @@ async function runWasmCellOnce(params: {
       peakRssBytes: sync.peakRendererRssBytes,
       cpuWorkSec: sync.cpuWorkSec,
       avgCoresUsed: sync.avgCoresUsed,
+      peakWasmMemoryBytes: sync.peakWasmMemoryBytes,
       peakMainJsHeapUsedBytes: sync.peakMainJsHeapUsedBytes,
       blocksReceived: null,
       rxBytes: null,
@@ -768,6 +775,7 @@ async function runNativeCell(params: {
     peakRssBytes: sync.peakRssBytes,
     cpuWorkSec: sync.cpuWorkSec,
     avgCoresUsed: sync.avgCoresUsed,
+    peakWasmMemoryBytes: null,
     peakMainJsHeapUsedBytes: null,
     blocksReceived: sync.blocksReceived,
     rxBytes: sync.rxBytes,

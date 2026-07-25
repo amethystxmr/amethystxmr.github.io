@@ -21,6 +21,7 @@ export type SyncWaitResult = {
   cpuWorkSec: number;
   /** cpuWorkSec / wallSec — how CPU was used (parallelism). */
   avgCoresUsed: number;
+  peakWasmMemoryBytes: number | null;
   peakMainJsHeapUsedBytes: number | null;
   samples: ProcessSample[];
 };
@@ -84,6 +85,7 @@ export async function waitUntilWalletSynced(params: {
   const logEveryMs = params.logEveryMs ?? 10_000;
   let lastLogAt = 0;
   let peakRendererRssBytes = params.baseline.rendererRssBytes;
+  let peakWasmMemoryBytes = params.baseline.wasmMemoryBytes;
   let peakMainJsHeapUsedBytes = params.baseline.mainJsHeapUsedBytes;
   const samples: ProcessSample[] = [params.baseline];
   let lastProgress: SyncProgress = {
@@ -100,6 +102,12 @@ export async function waitUntilWalletSynced(params: {
       peakRendererRssBytes,
       sample.rendererRssBytes,
     );
+    if (sample.wasmMemoryBytes !== null) {
+      peakWasmMemoryBytes =
+        peakWasmMemoryBytes === null
+          ? sample.wasmMemoryBytes
+          : Math.max(peakWasmMemoryBytes, sample.wasmMemoryBytes);
+    }
     if (sample.mainJsHeapUsedBytes !== null) {
       peakMainJsHeapUsedBytes =
         peakMainJsHeapUsedBytes === null
@@ -117,6 +125,9 @@ export async function waitUntilWalletSynced(params: {
           `elapsed=${(elapsedMs / 1000).toFixed(1)}s ` +
           `height=${lastProgress.walletHeight ?? "?"}/${lastProgress.daemonHeight ?? "?"} ` +
           `rss=${formatBytes(sample.rendererRssBytes)} ` +
+          (sample.wasmMemoryBytes !== null
+            ? `wasmMem=${formatBytes(sample.wasmMemoryBytes)} `
+            : "") +
           `cpuWork=${cpuWorkSec.toFixed(2)}s ` +
           `avgCores=${avgCores.toFixed(2)}`,
       );
@@ -130,6 +141,7 @@ export async function waitUntilWalletSynced(params: {
         peakRendererRssBytes,
         cpuWorkSec,
         avgCoresUsed: avgCores,
+        peakWasmMemoryBytes,
         peakMainJsHeapUsedBytes,
         samples,
       };

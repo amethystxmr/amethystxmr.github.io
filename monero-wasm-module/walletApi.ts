@@ -845,6 +845,10 @@ export function getWasmMemory(): WebAssembly.Memory {
   return module.wasmMemory;
 }
 
+export function getWasmMemoryByteLength(): number {
+  return getWasmMemory().buffer.byteLength;
+}
+
 export function setDaemonAddress(daemonAddress: string) {
   currentDaemonAddress = daemonAddress;
   module?.set_http_base_url(daemonAddress);
