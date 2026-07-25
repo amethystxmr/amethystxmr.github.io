@@ -203,8 +203,8 @@ CPU / traffic columns:
 - `avgCores`: `cpuWorkSec / wallSec` (parallelism)
 - `rxMiB` / `txMiB` (native only): from CLI `net_stats` (`bytes received` /
   `bytes sent` over the daemon HTTP client)
-- `workers` (WASM only): `max(0, page.workers().length - 1)` after sync
-  (dedicated workers; excludes the primary wallet worker)
+- `workers` (WASM only): `page.workers().length` after sync
+  (includes the primary wallet worker)
 
 ## Building web
 

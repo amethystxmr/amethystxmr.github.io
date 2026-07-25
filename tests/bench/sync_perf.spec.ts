@@ -79,7 +79,7 @@ type CellResult = {
   blocksReceived: number | null;
   rxBytes: number | null;
   txBytes: number | null;
-  /** Dedicated page workers after sync (WASM only): page.workers().length - 1. */
+  /** Page workers after sync (WASM only): includes the primary wallet worker. */
   workers: number | null;
 };
 
@@ -669,8 +669,7 @@ async function runWasmCellOnce(params: {
       progressLabel: label,
     });
 
-    // page.workers() includes the primary wallet worker; report dedicated extras only.
-    const workers = Math.max(0, page.workers().length - 1);
+    const workers = page.workers().length;
 
     return {
       run: params.run,
