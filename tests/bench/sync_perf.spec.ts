@@ -76,6 +76,11 @@ type CellResult = {
   cpuWorkSec: number;
   avgCoresUsed: number;
   peakWasmMemoryBytes: number | null;
+  peakRssMinusWasmBytes: number | null;
+  peakSmapsPssBytes: number | null;
+  peakSmapsPrivateDirtyBytes: number | null;
+  peakSmapsAnonymousBytes: number | null;
+  peakSmapsSwapBytes: number | null;
   peakMainJsHeapUsedBytes: number | null;
   peakMainJsHeapTotalBytes: number | null;
   peakDocuments: number | null;
@@ -481,6 +486,11 @@ function formatSummaryTable(results: CellResult[]): string {
     "durHuman",
     "rssMiB",
     "wasmMiB",
+    "rssNoWasmMiB",
+    "pssMiB",
+    "privDirtyMiB",
+    "anonMiB",
+    "swapMiB",
     "jsUsedMiB",
     "jsTotalMiB",
     "rtUsedMiB",
@@ -507,6 +517,11 @@ function formatSummaryTable(results: CellResult[]): string {
     formatDurationHuman(result.durationMs),
     (result.peakRssBytes / (1024 * 1024)).toFixed(1),
     formatMiB(result.peakWasmMemoryBytes),
+    formatMiB(result.peakRssMinusWasmBytes),
+    formatMiB(result.peakSmapsPssBytes),
+    formatMiB(result.peakSmapsPrivateDirtyBytes),
+    formatMiB(result.peakSmapsAnonymousBytes),
+    formatMiB(result.peakSmapsSwapBytes),
     formatMiB(result.peakMainJsHeapUsedBytes),
     formatMiB(result.peakMainJsHeapTotalBytes),
     formatMiB(result.peakRuntimeHeapUsedBytes),
@@ -554,6 +569,21 @@ function printCellResult(result: CellResult): void {
       `peakRss=${formatBytes(result.peakRssBytes)} ` +
       (result.peakWasmMemoryBytes !== null
         ? `peakWasmMem=${formatBytes(result.peakWasmMemoryBytes)} `
+        : "") +
+      (result.peakRssMinusWasmBytes !== null
+        ? `peakRssMinusWasm=${formatBytes(result.peakRssMinusWasmBytes)} `
+        : "") +
+      (result.peakSmapsPssBytes !== null
+        ? `peakPss=${formatBytes(result.peakSmapsPssBytes)} `
+        : "") +
+      (result.peakSmapsPrivateDirtyBytes !== null
+        ? `peakPrivateDirty=${formatBytes(result.peakSmapsPrivateDirtyBytes)} `
+        : "") +
+      (result.peakSmapsAnonymousBytes !== null
+        ? `peakSmapsAnon=${formatBytes(result.peakSmapsAnonymousBytes)} `
+        : "") +
+      (result.peakSmapsSwapBytes !== null
+        ? `peakSmapsSwap=${formatBytes(result.peakSmapsSwapBytes)} `
         : "") +
       `cpuWork=${result.cpuWorkSec.toFixed(2)}s ` +
       `avgCores=${result.avgCoresUsed.toFixed(2)}` +
@@ -728,6 +758,11 @@ async function runWasmCellOnce(params: {
       cpuWorkSec: sync.cpuWorkSec,
       avgCoresUsed: sync.avgCoresUsed,
       peakWasmMemoryBytes: sync.peakWasmMemoryBytes,
+      peakRssMinusWasmBytes: sync.peakRssMinusWasmBytes,
+      peakSmapsPssBytes: sync.peakSmapsPssBytes,
+      peakSmapsPrivateDirtyBytes: sync.peakSmapsPrivateDirtyBytes,
+      peakSmapsAnonymousBytes: sync.peakSmapsAnonymousBytes,
+      peakSmapsSwapBytes: sync.peakSmapsSwapBytes,
       peakMainJsHeapUsedBytes: sync.peakMainJsHeapUsedBytes,
       peakMainJsHeapTotalBytes: sync.peakMainJsHeapTotalBytes,
       peakDocuments: sync.peakDocuments,
@@ -822,6 +857,11 @@ async function runNativeCell(params: {
     cpuWorkSec: sync.cpuWorkSec,
     avgCoresUsed: sync.avgCoresUsed,
     peakWasmMemoryBytes: null,
+    peakRssMinusWasmBytes: null,
+    peakSmapsPssBytes: null,
+    peakSmapsPrivateDirtyBytes: null,
+    peakSmapsAnonymousBytes: null,
+    peakSmapsSwapBytes: null,
     peakMainJsHeapUsedBytes: null,
     peakMainJsHeapTotalBytes: null,
     peakDocuments: null,

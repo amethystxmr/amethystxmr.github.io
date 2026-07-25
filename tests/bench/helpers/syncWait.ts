@@ -22,6 +22,11 @@ export type SyncWaitResult = {
   /** cpuWorkSec / wallSec — how CPU was used (parallelism). */
   avgCoresUsed: number;
   peakWasmMemoryBytes: number | null;
+  peakRssMinusWasmBytes: number | null;
+  peakSmapsPssBytes: number | null;
+  peakSmapsPrivateDirtyBytes: number | null;
+  peakSmapsAnonymousBytes: number | null;
+  peakSmapsSwapBytes: number | null;
   peakMainJsHeapUsedBytes: number | null;
   peakMainJsHeapTotalBytes: number | null;
   peakDocuments: number | null;
@@ -95,6 +100,13 @@ function formatMaybeNumber(value: number | null): string {
   return value === null ? "?" : String(value);
 }
 
+function rssMinusWasm(sample: ProcessSample): number | null {
+  if (sample.wasmMemoryBytes === null) {
+    return null;
+  }
+  return Math.max(0, sample.rendererRssBytes - sample.wasmMemoryBytes);
+}
+
 /**
  * Passively wait until the wallet UI reports synced while the main refresh loop runs.
  * Does not click Refresh or reload (that would distort the benchmark).
@@ -112,6 +124,11 @@ export async function waitUntilWalletSynced(params: {
   let lastLogAt = 0;
   let peakRendererRssBytes = params.baseline.rendererRssBytes;
   let peakWasmMemoryBytes = params.baseline.wasmMemoryBytes;
+  let peakRssMinusWasmBytes = rssMinusWasm(params.baseline);
+  let peakSmapsPssBytes = params.baseline.smapsPssBytes;
+  let peakSmapsPrivateDirtyBytes = params.baseline.smapsPrivateDirtyBytes;
+  let peakSmapsAnonymousBytes = params.baseline.smapsAnonymousBytes;
+  let peakSmapsSwapBytes = params.baseline.smapsSwapBytes;
   let peakMainJsHeapUsedBytes = params.baseline.mainJsHeapUsedBytes;
   let peakMainJsHeapTotalBytes = params.baseline.mainJsHeapTotalBytes;
   let peakDocuments = params.baseline.documents;
@@ -138,6 +155,20 @@ export async function waitUntilWalletSynced(params: {
       peakRendererRssBytes,
       sample.rendererRssBytes,
     );
+    peakRssMinusWasmBytes = maxNullable(
+      peakRssMinusWasmBytes,
+      rssMinusWasm(sample),
+    );
+    peakSmapsPssBytes = maxNullable(peakSmapsPssBytes, sample.smapsPssBytes);
+    peakSmapsPrivateDirtyBytes = maxNullable(
+      peakSmapsPrivateDirtyBytes,
+      sample.smapsPrivateDirtyBytes,
+    );
+    peakSmapsAnonymousBytes = maxNullable(
+      peakSmapsAnonymousBytes,
+      sample.smapsAnonymousBytes,
+    );
+    peakSmapsSwapBytes = maxNullable(peakSmapsSwapBytes, sample.smapsSwapBytes);
     if (sample.wasmMemoryBytes !== null) {
       peakWasmMemoryBytes =
         peakWasmMemoryBytes === null
@@ -185,6 +216,7 @@ export async function waitUntilWalletSynced(params: {
           (sample.wasmMemoryBytes !== null
             ? `wasmMem=${formatBytes(sample.wasmMemoryBytes)} `
             : "") +
+          `rssMinusWasm=${formatMaybeBytes(rssMinusWasm(sample))} ` +
           `jsHeap=${formatMaybeBytes(sample.mainJsHeapUsedBytes)}/${formatMaybeBytes(sample.mainJsHeapTotalBytes)} ` +
           `dom=${formatMaybeNumber(sample.nodes)}/${formatMaybeNumber(sample.documents)}/${formatMaybeNumber(sample.layoutObjects)} ` +
           `runtimeHeap=${formatMaybeBytes(sample.runtimeHeapUsedBytes)}/${formatMaybeBytes(sample.runtimeHeapTotalBytes)} ` +
@@ -199,6 +231,10 @@ export async function waitUntilWalletSynced(params: {
           `rssShmem=${formatMaybeBytes(sample.rendererRssShmemBytes)} ` +
           `vmHwm=${formatMaybeBytes(sample.rendererVmHwmBytes)} ` +
           `threads=${formatMaybeNumber(sample.rendererThreads)} ` +
+          `pss=${formatMaybeBytes(sample.smapsPssBytes)} ` +
+          `privateDirty=${formatMaybeBytes(sample.smapsPrivateDirtyBytes)} ` +
+          `smapsAnon=${formatMaybeBytes(sample.smapsAnonymousBytes)} ` +
+          `smapsSwap=${formatMaybeBytes(sample.smapsSwapBytes)} ` +
           `cpuWork=${cpuWorkSec.toFixed(2)}s ` +
           `avgCores=${avgCores.toFixed(2)}`,
       );
@@ -213,6 +249,11 @@ export async function waitUntilWalletSynced(params: {
         cpuWorkSec,
         avgCoresUsed: avgCores,
         peakWasmMemoryBytes,
+        peakRssMinusWasmBytes,
+        peakSmapsPssBytes,
+        peakSmapsPrivateDirtyBytes,
+        peakSmapsAnonymousBytes,
+        peakSmapsSwapBytes,
         peakMainJsHeapUsedBytes,
         peakMainJsHeapTotalBytes,
         peakDocuments,

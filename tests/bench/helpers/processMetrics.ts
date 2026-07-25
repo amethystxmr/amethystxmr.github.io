@@ -11,6 +11,16 @@ export type ProcessSample = {
   rendererRssShmemBytes: number | null;
   rendererVmHwmBytes: number | null;
   rendererThreads: number | null;
+  smapsRssBytes: number | null;
+  smapsPssBytes: number | null;
+  smapsSharedCleanBytes: number | null;
+  smapsSharedDirtyBytes: number | null;
+  smapsPrivateCleanBytes: number | null;
+  smapsPrivateDirtyBytes: number | null;
+  smapsAnonymousBytes: number | null;
+  smapsLazyFreeBytes: number | null;
+  smapsAnonHugePagesBytes: number | null;
+  smapsSwapBytes: number | null;
   /** Current WebAssembly.Memory buffer size, read from the wallet worker through the page. */
   wasmMemoryBytes: number | null;
   /** Main-isolate JS heap only — does not include the wallet web worker. */
@@ -61,6 +71,32 @@ type ProcStatusMetrics = {
   rendererThreads: number | null;
 };
 
+type SmapsRollupMetrics = {
+  smapsRssBytes: number | null;
+  smapsPssBytes: number | null;
+  smapsSharedCleanBytes: number | null;
+  smapsSharedDirtyBytes: number | null;
+  smapsPrivateCleanBytes: number | null;
+  smapsPrivateDirtyBytes: number | null;
+  smapsAnonymousBytes: number | null;
+  smapsLazyFreeBytes: number | null;
+  smapsAnonHugePagesBytes: number | null;
+  smapsSwapBytes: number | null;
+};
+
+const EMPTY_SMAPS_ROLLUP_METRICS: SmapsRollupMetrics = {
+  smapsRssBytes: null,
+  smapsPssBytes: null,
+  smapsSharedCleanBytes: null,
+  smapsSharedDirtyBytes: null,
+  smapsPrivateCleanBytes: null,
+  smapsPrivateDirtyBytes: null,
+  smapsAnonymousBytes: null,
+  smapsLazyFreeBytes: null,
+  smapsAnonHugePagesBytes: null,
+  smapsSwapBytes: null,
+};
+
 function parseStatusBytes(status: string, name: string): number | null {
   const match = new RegExp(`^${name}:\\s+(\\d+)\\s+kB$`, "m").exec(status);
   return match ? Number(match[1]) * 1024 : null;
@@ -91,6 +127,26 @@ function readProcStatusMetrics(pid: number): ProcStatusMetrics {
       rendererVmHwmBytes: null,
       rendererThreads: null,
     };
+  }
+}
+
+function readSmapsRollupMetrics(pid: number): SmapsRollupMetrics {
+  try {
+    const smapsRollup = readFileSync(`/proc/${pid}/smaps_rollup`, "utf8");
+    return {
+      smapsRssBytes: parseStatusBytes(smapsRollup, "Rss"),
+      smapsPssBytes: parseStatusBytes(smapsRollup, "Pss"),
+      smapsSharedCleanBytes: parseStatusBytes(smapsRollup, "Shared_Clean"),
+      smapsSharedDirtyBytes: parseStatusBytes(smapsRollup, "Shared_Dirty"),
+      smapsPrivateCleanBytes: parseStatusBytes(smapsRollup, "Private_Clean"),
+      smapsPrivateDirtyBytes: parseStatusBytes(smapsRollup, "Private_Dirty"),
+      smapsAnonymousBytes: parseStatusBytes(smapsRollup, "Anonymous"),
+      smapsLazyFreeBytes: parseStatusBytes(smapsRollup, "LazyFree"),
+      smapsAnonHugePagesBytes: parseStatusBytes(smapsRollup, "AnonHugePages"),
+      smapsSwapBytes: parseStatusBytes(smapsRollup, "Swap"),
+    };
+  } catch {
+    return EMPTY_SMAPS_ROLLUP_METRICS;
   }
 }
 
@@ -248,6 +304,7 @@ export async function createProcessMetricsTracker(
       const byPid = await listRendererCpuByPid(browserSession);
       let cpuWorkSec = 0;
       const procStatus = readProcStatusMetrics(trackedPid);
+      const smapsRollup = readSmapsRollupMetrics(trackedPid);
       for (const pid of trackedPids) {
         cpuWorkSec += byPid.get(pid) ?? 0;
       }
@@ -257,6 +314,7 @@ export async function createProcessMetricsTracker(
         atMs: Date.now(),
         cpuWorkSec,
         ...procStatus,
+        ...smapsRollup,
         wasmMemoryBytes: await readWasmMemoryBytes(page),
         ...performanceMetrics,
         ...runtimeHeapUsage,
