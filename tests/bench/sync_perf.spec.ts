@@ -162,6 +162,67 @@ function parseDaemons(): DaemonKind[] {
   return out;
 }
 
+const WASM_VARIANTS: WasmBenchVariant[] = [
+  "asyncify",
+  "thread1",
+  "threads",
+  "threads2",
+  "threads4",
+];
+const NATIVE_VARIANTS: NativeBenchVariant[] = [
+  "native0",
+  "native1",
+  "native2",
+  "native4",
+];
+
+/**
+ * Comma-separated variant names, or groups: native, wasm.
+ * Default: no filter (daemon matrix as usual).
+ * Example: BENCH_VARIANTS=native or BENCH_VARIANTS=native0,native4
+ */
+function parseVariantFilter(): BenchVariant[] | null {
+  const raw = process.env.BENCH_VARIANTS;
+  if (!raw || raw.trim().length === 0) {
+    return null;
+  }
+  const parts = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  const out: BenchVariant[] = [];
+  const add = (variant: BenchVariant) => {
+    if (!out.includes(variant)) {
+      out.push(variant);
+    }
+  };
+  for (const part of parts) {
+    if (part === "native") {
+      for (const variant of NATIVE_VARIANTS) {
+        add(variant);
+      }
+      continue;
+    }
+    if (part === "wasm") {
+      for (const variant of WASM_VARIANTS) {
+        add(variant);
+      }
+      continue;
+    }
+    if (
+      !(LOCAL_VARIANTS as string[]).includes(part) &&
+      !(CAKE_VARIANTS as string[]).includes(part)
+    ) {
+      throw new Error(`Invalid BENCH_VARIANTS entry=${part}`);
+    }
+    add(part as BenchVariant);
+  }
+  if (out.length === 0) {
+    throw new Error(`Invalid BENCH_VARIANTS=${raw}`);
+  }
+  return out;
+}
+
 function previewUrl(variant: BenchVariant): string {
   if (variant === "asyncify") {
     return `http://${APP_HOST}:${E2E_ASYNCIFY_PREVIEW_PORT}`;
@@ -179,8 +240,24 @@ function isWasmVariant(variant: BenchVariant): variant is WasmBenchVariant {
   );
 }
 
-function variantsForDaemon(daemon: DaemonKind): BenchVariant[] {
-  return daemon === "cake" ? CAKE_VARIANTS : LOCAL_VARIANTS;
+function isNativeVariant(variant: BenchVariant): variant is NativeBenchVariant {
+  return (
+    variant === "native0" ||
+    variant === "native1" ||
+    variant === "native2" ||
+    variant === "native4"
+  );
+}
+
+function variantsForDaemon(
+  daemon: DaemonKind,
+  filter: BenchVariant[] | null,
+): BenchVariant[] {
+  const base = daemon === "cake" ? CAKE_VARIANTS : LOCAL_VARIANTS;
+  if (filter === null) {
+    return base;
+  }
+  return base.filter((variant) => filter.includes(variant));
 }
 
 function wasmPthreadPoolSizeOverride(variant: BenchVariant): number | null {
@@ -736,14 +813,26 @@ test("mainnet sync performance matrix", async () => {
   const heightDiff = parseHeightDiff();
   const runs = parseRuns();
   const enabledDaemons = parseDaemons();
+  const variantFilter = parseVariantFilter();
   const walletCliPath = resolveWalletCliPath();
+  const localVariants = variantsForDaemon("local", variantFilter);
+  const cakeVariants = variantsForDaemon("cake", variantFilter);
   const cellsPerRun =
-    (enabledDaemons.includes("local") ? LOCAL_VARIANTS.length : 0) +
-    (enabledDaemons.includes("cake") ? CAKE_VARIANTS.length : 0);
+    (enabledDaemons.includes("local") ? localVariants.length : 0) +
+    (enabledDaemons.includes("cake") ? cakeVariants.length : 0);
+  if (cellsPerRun === 0) {
+    throw new Error(
+      "No bench cells selected (check BENCH_DAEMONS / BENCH_VARIANTS)",
+    );
+  }
 
   test.setTimeout(Math.max(timeoutMs * cellsPerRun * runs, 60_000));
 
-  await assertWalletCliExists(walletCliPath);
+  const needsNativeCli =
+    localVariants.some(isNativeVariant) || cakeVariants.some(isNativeVariant);
+  if (needsNativeCli) {
+    await assertWalletCliExists(walletCliPath);
+  }
 
   const localInfo = enabledDaemons.includes("local")
     ? await assertDaemonReadyForBench(localAddress, "local")
@@ -789,16 +878,18 @@ test("mainnet sync performance matrix", async () => {
     console.log(`[bench] runs=${runs}`);
     console.log(`[bench] daemons=${enabledDaemons.join(",")}`);
     console.log(
-      `[bench] local variants=${LOCAL_VARIANTS.join(",")} cake variants=${CAKE_VARIANTS.join(",")}`,
+      `[bench] local variants=${localVariants.join(",") || "(none)"} cake variants=${cakeVariants.join(",") || "(none)"}`,
     );
-    console.log(`[bench] wallet-cli=${walletCliPath}`);
+    if (needsNativeCli) {
+      console.log(`[bench] wallet-cli=${walletCliPath}`);
+    }
     console.log(`[bench] log file=${logPath}`);
 
     const daemons: Array<{ kind: DaemonKind; address: string }> = [
-      ...(enabledDaemons.includes("local")
+      ...(enabledDaemons.includes("local") && localVariants.length > 0
         ? [{ kind: "local" as const, address: localAddress }]
         : []),
-      ...(enabledDaemons.includes("cake")
+      ...(enabledDaemons.includes("cake") && cakeVariants.length > 0
         ? [{ kind: "cake" as const, address: cakeAddress }]
         : []),
     ];
@@ -812,10 +903,11 @@ test("mainnet sync performance matrix", async () => {
       restoreAge,
       runs,
       daemons: enabledDaemons,
-      localVariants: LOCAL_VARIANTS,
-      cakeVariants: CAKE_VARIANTS,
+      variantFilter,
+      localVariants,
+      cakeVariants,
       seedWordCount: seed.trim().split(/\s+/).length,
-      walletCliPath,
+      walletCliPath: needsNativeCli ? walletCliPath : null,
       logPath,
     };
 
@@ -824,7 +916,7 @@ test("mainnet sync performance matrix", async () => {
     for (let run = 1; run <= runs; run++) {
       console.log(`[bench] ===== RUN ${run}/${runs} =====`);
       for (const daemon of daemons) {
-        for (const variant of variantsForDaemon(daemon.kind)) {
+        for (const variant of variantsForDaemon(daemon.kind, variantFilter)) {
           console.log(
             `[bench] START ${daemon.kind}/${variant}/run${run} ` +
               `restoreHeight=${restoreHeight} daemon=${daemon.address}`,

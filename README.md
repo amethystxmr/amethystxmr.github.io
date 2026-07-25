@@ -142,6 +142,8 @@ emulator when `DISPLAY`/`WAYLAND_DISPLAY` is set). There is no GUI for
 `monero-wallet-cli`; headed native means a visible terminal. Force headless
 with `BENCH_HEADLESS=1`. Optional: `BENCH_TERMINAL=gnome-terminal` (or
 `xterm` / `konsole`). Daemon filter: `BENCH_DAEMONS=local` or `local,cake`.
+Variant filter: `BENCH_VARIANTS=native` / `wasm`, or a comma list such as
+`native0,native4`.
 
 Each WASM cell launches a **fresh Chromium** (closed afterward) so a compositor
 crash cannot kill the rest of the matrix. Headed Chromium defaults to
@@ -163,6 +165,12 @@ Local only (skip Cake):
 
 ```bash
 BENCH_DAEMONS=local BENCH_HEIGHT_DIFF=30 BENCH_RUNS=1 npm run bench:sync
+```
+
+Local native only (`native0`/`native1`/`native2`/`native4`):
+
+```bash
+BENCH_DAEMONS=local BENCH_VARIANTS=native BENCH_HEIGHT_DIFF=30 BENCH_RUNS=1 npm run bench:sync
 ```
 
 Headless:
