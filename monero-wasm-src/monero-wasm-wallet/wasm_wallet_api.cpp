@@ -44,12 +44,15 @@ namespace
 {
 #if defined(AMETHYST_WASM_THREADS)
 EM_JS(unsigned int, amethyst_wasm_max_concurrency, (), {
-    if (Module['pthreadPoolSize'] === undefined) {
+    if (
+      !Number.isInteger(Module['maxConcurrency']) ||
+      Module['maxConcurrency'] < 1
+    ) {
       throw new Error(
-        "Module['pthreadPoolSize'] must be set before initializing the threaded wallet module"
+        "Module['maxConcurrency'] must be a positive integer before initializing the threaded wallet module"
       );
     }
-    return Module['pthreadPoolSize'];
+    return Module['maxConcurrency'];
 });
 #else
 unsigned int amethyst_wasm_max_concurrency()

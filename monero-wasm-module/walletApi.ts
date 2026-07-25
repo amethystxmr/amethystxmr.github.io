@@ -10,7 +10,7 @@ export type WasmBuildVariant = "asyncify" | "threads";
 
 export type InitModuleOptions = {
   variant: WasmBuildVariant;
-  pthreadPoolSize: number;
+  maxConcurrency: number;
   httpFetchEventChannelName?: string;
 };
 
@@ -394,7 +394,7 @@ export type ModuleLoadProgressCallback =
   | null;
 
 type ModuleFactoryOptions = {
-  pthreadPoolSize?: number;
+  maxConcurrency?: number;
   locateFile?: (path: string, prefix: string) => string;
   /**
    * URL of the threads module script used to spawn Emscripten pthread workers.
@@ -424,7 +424,7 @@ declare const __WASM_WALLET_SIZES__: Record<WasmBuildVariant, number>;
 
 let module: Module;
 let loadedWasmBuildVariant: WasmBuildVariant | null = null;
-let loadedPthreadPoolSize: number | null = null;
+let loadedMaxConcurrency: number | null = null;
 let currentDaemonAddress: string | null = null;
 let currentHttpFetchEventChannelName: string | null = null;
 
@@ -733,29 +733,27 @@ function instantiateWalletWasmWithProgress(
   })().catch(onError);
 }
 
-function validatePthreadPoolSize(pthreadPoolSize: number): number {
-  if (!Number.isInteger(pthreadPoolSize) || pthreadPoolSize <= 0) {
-    throw new Error(
-      `Invalid WASM pthread pool size: ${String(pthreadPoolSize)}`,
-    );
+function validateMaxConcurrency(maxConcurrency: number): number {
+  if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1) {
+    throw new Error(`Invalid WASM max concurrency: ${String(maxConcurrency)}`);
   }
-  return pthreadPoolSize;
+  return maxConcurrency;
 }
 
 export async function initModule(
   onProgress: ModuleLoadProgressCallback = null,
   options: InitModuleOptions,
 ) {
-  const pthreadPoolSize = validatePthreadPoolSize(options.pthreadPoolSize);
+  const maxConcurrency = validateMaxConcurrency(options.maxConcurrency);
   if (module) {
     if (loadedWasmBuildVariant !== options.variant) {
       throw new Error(
         `Wallet module already initialized as "${loadedWasmBuildVariant}"; switching to "${options.variant}" requires a reload.`,
       );
     }
-    if (loadedPthreadPoolSize !== pthreadPoolSize) {
+    if (loadedMaxConcurrency !== maxConcurrency) {
       throw new Error(
-        `Wallet module already initialized with pthread pool size ${String(loadedPthreadPoolSize)}; switching to ${String(pthreadPoolSize)} requires a reload.`,
+        `Wallet module already initialized with max concurrency ${String(loadedMaxConcurrency)}; switching to ${String(maxConcurrency)} requires a reload.`,
       );
     }
     setHttpFetchEventChannelName(options.httpFetchEventChannelName);
@@ -783,7 +781,7 @@ export async function initModule(
 
   const moduleLoad = MoneroWasmWalletModuleFactory({
     ...(variant === "threads"
-      ? { mainScriptUrlOrBlob: threadsModuleUrl, pthreadPoolSize }
+      ? { mainScriptUrlOrBlob: threadsModuleUrl, maxConcurrency }
       : {}),
     locateFile(path) {
       if (
@@ -823,7 +821,7 @@ export async function initModule(
 
   module = await Promise.race([moduleLoad, moduleLoadFailed]);
   loadedWasmBuildVariant = variant;
-  loadedPthreadPoolSize = pthreadPoolSize;
+  loadedMaxConcurrency = maxConcurrency;
 
   onProgress?.({ phase: "initializingWalletStorage" });
   await initFilesystem();
