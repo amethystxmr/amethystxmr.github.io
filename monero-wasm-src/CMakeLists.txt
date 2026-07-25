@@ -49,9 +49,7 @@ if(EMSCRIPTEN)
         )
         list(APPEND AMETHYST_WASM_LINK_OPTIONS
             -sUSE_PTHREADS=1
-            # One extra pthread is reserved for the dedicated HTTP fetch/progress worker.
-            # Monero's compute pool may still use up to hardwareConcurrency - 1 workers.
-            "-sPTHREAD_POOL_SIZE=((navigator.hardwareConcurrency||2)+1)"
+            "-sPTHREAD_POOL_SIZE=Module['pthreadPoolSize']"
             -sPTHREAD_POOL_SIZE_STRICT=1
         )
     else()
@@ -93,7 +91,7 @@ if(EMSCRIPTEN)
         -lembind
         -lidbfs.js
         -sFORCE_FILESYSTEM=1
-        -sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','getExceptionMessage','decrementExceptionRefcount']
+        -sEXPORTED_RUNTIME_METHODS=['FS','IDBFS','getExceptionMessage','decrementExceptionRefcount','wasmMemory']
     )
 
     include_directories(SYSTEM "${CMAKE_SOURCE_DIR}/unbound-stub")

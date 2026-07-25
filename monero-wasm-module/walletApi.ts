@@ -10,6 +10,7 @@ export type WasmBuildVariant = "asyncify" | "threads";
 
 export type InitModuleOptions = {
   variant: WasmBuildVariant;
+  pthreadPoolSize: number;
   httpFetchEventChannelName?: string;
 };
 
@@ -343,6 +344,7 @@ interface Module {
   decrementExceptionRefcount?(exn: WasmExceptionValue): void;
   /** Monero logging categories (`mlog_set_categories` from wasm). */
   mlog_set_categories(categories: string): void;
+  wasmMemory: WebAssembly.Memory;
   set_http_base_url(baseUrl: string): void;
   set_http_fetch_event_channel(channelName: string): void;
   FS: {
@@ -392,6 +394,7 @@ export type ModuleLoadProgressCallback =
   | null;
 
 type ModuleFactoryOptions = {
+  pthreadPoolSize?: number;
   locateFile?: (path: string, prefix: string) => string;
   /**
    * URL of the threads module script used to spawn Emscripten pthread workers.
@@ -421,6 +424,7 @@ declare const __WASM_WALLET_SIZES__: Record<WasmBuildVariant, number>;
 
 let module: Module;
 let loadedWasmBuildVariant: WasmBuildVariant | null = null;
+let loadedPthreadPoolSize: number | null = null;
 let currentDaemonAddress: string | null = null;
 let currentHttpFetchEventChannelName: string | null = null;
 
@@ -729,14 +733,29 @@ function instantiateWalletWasmWithProgress(
   })().catch(onError);
 }
 
+function validatePthreadPoolSize(pthreadPoolSize: number): number {
+  if (!Number.isInteger(pthreadPoolSize) || pthreadPoolSize <= 0) {
+    throw new Error(
+      `Invalid WASM pthread pool size: ${String(pthreadPoolSize)}`,
+    );
+  }
+  return pthreadPoolSize;
+}
+
 export async function initModule(
   onProgress: ModuleLoadProgressCallback = null,
   options: InitModuleOptions,
 ) {
+  const pthreadPoolSize = validatePthreadPoolSize(options.pthreadPoolSize);
   if (module) {
     if (loadedWasmBuildVariant !== options.variant) {
       throw new Error(
         `Wallet module already initialized as "${loadedWasmBuildVariant}"; switching to "${options.variant}" requires a reload.`,
+      );
+    }
+    if (loadedPthreadPoolSize !== pthreadPoolSize) {
+      throw new Error(
+        `Wallet module already initialized with pthread pool size ${String(loadedPthreadPoolSize)}; switching to ${String(pthreadPoolSize)} requires a reload.`,
       );
     }
     setHttpFetchEventChannelName(options.httpFetchEventChannelName);
@@ -763,7 +782,9 @@ export async function initModule(
   };
 
   const moduleLoad = MoneroWasmWalletModuleFactory({
-    ...(variant === "threads" ? { mainScriptUrlOrBlob: threadsModuleUrl } : {}),
+    ...(variant === "threads"
+      ? { mainScriptUrlOrBlob: threadsModuleUrl, pthreadPoolSize }
+      : {}),
     locateFile(path) {
       if (
         path === "wasm_wallet_asyncify.wasm" ||
@@ -802,6 +823,7 @@ export async function initModule(
 
   module = await Promise.race([moduleLoad, moduleLoadFailed]);
   loadedWasmBuildVariant = variant;
+  loadedPthreadPoolSize = pthreadPoolSize;
 
   onProgress?.({ phase: "initializingWalletStorage" });
   await initFilesystem();
@@ -816,6 +838,13 @@ export function getWasmBuildVariant(): WasmBuildVariant {
     throw new Error("Module not initialized");
   }
   return loadedWasmBuildVariant;
+}
+
+export function getWasmMemory(): WebAssembly.Memory {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.wasmMemory;
 }
 
 export function setDaemonAddress(daemonAddress: string) {

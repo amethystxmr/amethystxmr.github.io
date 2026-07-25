@@ -3,14 +3,17 @@
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include <emscripten/em_js.h>
-#include <emscripten/eventloop.h>
-#include <emscripten/proxying.h>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
-#include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
+
+#include "crypto/crypto.h"
+
+extern "C" const char *resize_std_string(std::string *str, size_t new_size);
 
 namespace {
 
@@ -39,22 +42,22 @@ std::mutex g_http_config_mutex;
 std::string g_http_base_url;
 std::string g_http_fetch_event_channel;
 std::mutex g_http_request_mutex;
+alignas(4) std::atomic<std::int32_t> g_http_fetch_phase_one_lock{0};
+alignas(4) std::atomic<std::int32_t> g_http_fetch_phase_two_lock{0};
 
-// Number of in-flight HTTP requests. The fetch-queue heartbeat only drains the
-// proxying queue while this is non-zero (see js_http_start_proxy_queue_heartbeat).
-std::atomic<int> g_http_active_request_count{0};
-
-struct HttpRequestActiveGuard
+enum class HttpFetchFailureState : std::int32_t
 {
-    HttpRequestActiveGuard()
-    {
-        g_http_active_request_count.fetch_add(1, std::memory_order_release);
-    }
+    None = 0,
+    Error = 1,
+    Timeout = 2,
+    Abort = 3,
+    ProtocolError = 4,
+};
 
-    ~HttpRequestActiveGuard()
-    {
-        g_http_active_request_count.fetch_sub(1, std::memory_order_release);
-    }
+enum class HttpFetchLockState : std::int32_t
+{
+    Done = 2,
+    Error = 3,
 };
 
 std::string get_http_base_url()
@@ -69,232 +72,133 @@ std::string get_http_fetch_event_channel()
     return g_http_fetch_event_channel;
 }
 
-// The wallet worker thread blocks synchronously inside invoke() while an RPC is
-// in flight (proxy_http_request -> emscripten_proxy_sync_with_ctx), so it cannot
-// run the fetch itself. Instead we proxy the XHR to a dedicated, always-alive
-// fetch thread (HttpFetchWorker) whose event loop services the XHR callbacks.
-//
-// Emscripten normally delivers proxied work on its own: em_task_queue_send()
-// enqueues the task and pings the target thread's mailbox, waking it (via an
-// Atomics.waitAsync notify, or a postMessage relayed through the main thread) so
-// it runs checkMailbox() -> receive_notification() -> em_task_queue_execute(),
-// which executes our proxied function. References:
-//   - https://emscripten.org/docs/api_reference/proxying.h.html
-//   - https://github.com/emscripten-core/emscripten/blob/main/system/lib/pthread/proxying.c
-//     (do_proxy / emscripten_proxy_execute_queue)
-//   - https://github.com/emscripten-core/emscripten/blob/main/system/lib/pthread/em_task_queue.c
-//     (em_task_queue_send / receive_notification)
-//   - https://github.com/emscripten-core/emscripten/blob/main/system/lib/pthread/thread_mailbox.c
-//     (emscripten_thread_mailbox_send)
-//   - https://github.com/emscripten-core/emscripten/blob/main/src/lib/libpthread.js
-//     (_emscripten_notify_mailbox_postmessage / checkMailbox)
-//
-// That wake can be missed or delayed in edge cases the Emscripten source itself
-// calls out: a thread that has not yet armed Atomics.waitAsync falls back to a
-// cross-worker postMessage that must be relayed by the main thread. If a wake is
-// ever lost, the proxied task sits in the queue forever, the wallet thread stays
-// parked in pthread_cond_wait, and because requests are serialized under
-// g_http_request_mutex all wallet networking stalls.
-//
-// This heartbeat is the safety net: it periodically drains the fetch thread's
-// proxying queue itself, turning a lost wake into at most one interval of delay
-// instead of a permanent hang. emscripten_proxy_execute_queue() is idempotent
-// (it guards against re-entrancy and concurrent draining), so racing with the
-// normal mailbox delivery is safe.
-//
-// Self-throttling: the drain only runs while a request is in flight (gated by
-// g_http_active_request_count inside amethyst_http_proxy_execute_queue), so an
-// idle wallet does no queue work. The timer stays scheduled between requests on
-// purpose - (re)starting it would have to run on the fetch thread, which needs
-// the very cross-thread wake this code exists to back up - and a widened 250ms
-// tick keeps the idle cost down to a cheap atomic load.
-EM_JS(void, js_http_start_proxy_queue_heartbeat, (intptr_t queue_ptr), {
-    const intervalId = setInterval(() => {
-      if (typeof ABORT !== 'undefined' && ABORT) {
-        clearInterval(intervalId);
-        return;
-      }
-      Module['_amethyst_http_proxy_execute_queue'](queue_ptr);
-    }, 250);
-});
-
-EM_JS(void, js_http_finish_proxy_ctx, (intptr_t ctx_ptr), {
-    Module['_amethyst_http_proxy_finish'](ctx_ptr);
-});
-
-EM_JS(int, js_http_xhr_invoke, (
+EM_JS(int, js_http_fetch_request, (
     const char *uri_ptr, int uri_len,
     const char *method_ptr, int method_len,
     const char *body_ptr, int body_len,
     const char *base_url_ptr, int base_url_len,
     const char *channel_name_ptr, int channel_name_len,
     int timeout_ms,
+    int request_id_hi,
+    int request_id_lo,
+    int phase_one_lock_ptr,
     int response_code_i32_ptr,
-    intptr_t mime_std_string_ptr,
-    intptr_t body_std_string_ptr,
-    intptr_t proxy_ctx_ptr),
+    int failure_state_i32_ptr,
+    int body_size_i32_ptr,
+    int mime_size_i32_ptr),
 {
     const uri = UTF8ToString(uri_ptr, uri_len);
     const method = UTF8ToString(method_ptr, method_len);
     const baseUrl = UTF8ToString(base_url_ptr, base_url_len);
     const channelName =
       channel_name_len > 0 ? UTF8ToString(channel_name_ptr, channel_name_len) : "";
-    const resizeStdString = Module['_resize_std_string'];
-    const heapU8 = () => {
-      if (typeof growMemViews === 'function')
-        growMemViews();
-      return HEAPU8;
-    };
-    const heap32 = () => {
-      if (typeof growMemViews === 'function')
-        growMemViews();
-      return HEAP32;
+    const waitForLock = (lockPtr, timeoutMs) => {
+      const lockIndex = lockPtr >> 2;
+      const locks = new Int32Array(wasmMemory.buffer);
+      const value = Atomics.load(locks, lockIndex);
+      if (value === 2 || value === 3)
+        return value;
+      Atomics.wait(
+        locks,
+        lockIndex,
+        0,
+        timeoutMs > 0 ? timeoutMs + 10000 : undefined);
+      const finalValue = Atomics.load(new Int32Array(wasmMemory.buffer), lockIndex);
+      return finalValue === 2 || finalValue === 3 ? finalValue : 0;
     };
 
-    const reqId = Math.random().toString(16).slice(2);
-    const finalUrl = baseUrl + uri;
-    const finish = () => js_http_finish_proxy_ctx(proxy_ctx_ptr);
-    const postFetch = (state, loaded, total) => {
+    try {
       if (!channelName || typeof BroadcastChannel !== 'function')
-        return;
-      try {
-        if (!globalThis.__amethystHttpFetchChannels)
-          globalThis.__amethystHttpFetchChannels = new Map();
-        let channel = globalThis.__amethystHttpFetchChannels.get(channelName);
-        if (!channel) {
-          channel = new BroadcastChannel(channelName);
-          globalThis.__amethystHttpFetchChannels.set(channelName, channel);
-        }
-        channel.postMessage({ url: uri, reqId, state, progressLoaded: loaded, progressTotal: total });
+        return 0;
+
+      if (!globalThis.__amethystHttpFetchChannels)
+        globalThis.__amethystHttpFetchChannels = new Map();
+      let channel = globalThis.__amethystHttpFetchChannels.get(channelName);
+      if (!channel) {
+        channel = new BroadcastChannel(channelName);
+        globalThis.__amethystHttpFetchChannels.set(channelName, channel);
       }
-      catch (e) {
-        // HTTP must continue even if progress delivery is unavailable.
-      }
-    };
-    const clearResponse = (state) => {
-      heap32()[response_code_i32_ptr >> 2] = 0;
-      resizeStdString(mime_std_string_ptr, 0);
-      resizeStdString(body_std_string_ptr, 0);
-      postFetch(state, 0, 0);
-    };
 
-    try
-    {
-      const body =
-        method !== 'GET' && body_len > 0
-          ? new Uint8Array(heapU8().buffer, body_ptr, body_len)
-          : undefined;
-      const bodyCopyNonShared = body ? new Uint8Array(body) : undefined;
-
-      postFetch('start', 0, 0);
-
-      const xhr = new XMLHttpRequest();
-      xhr.open(method, finalUrl, true);
-      xhr.responseType = 'arraybuffer';
-      if (timeout_ms > 0)
-        xhr.timeout = timeout_ms;
-
-      xhr.onprogress = (e) => {
-        if (e.lengthComputable)
-          postFetch('progress', e.loaded, e.total);
+      const message = {
+        type: 'amethyst-http-fetch-request',
+        url: uri,
+        requestUrl: baseUrl + uri,
+        method,
+        bodyPtr: method !== 'GET' && body_len > 0 ? body_ptr : 0,
+        bodyLen: method !== 'GET' && body_len > 0 ? body_len : 0,
+        timeoutMs: timeout_ms,
+        requestIdHi: request_id_hi >>> 0,
+        requestIdLo: request_id_lo >>> 0,
+        phaseOneLockPtr: phase_one_lock_ptr,
+        responseCodePtr: response_code_i32_ptr,
+        failureStatePtr: failure_state_i32_ptr,
+        bodySizePtr: body_size_i32_ptr,
+        mimeSizePtr: mime_size_i32_ptr,
       };
+      channel.postMessage(message);
 
-      xhr.onload = () => {
-        try
-        {
-          if (xhr.status === 0)
-          {
-            clearResponse('error');
-            return;
-          }
-
-          heap32()[response_code_i32_ptr >> 2] = xhr.status;
-
-          const mimeType = xhr.getResponseHeader('Content-Type') || "";
-          const mimeTypeBytes = new TextEncoder().encode(mimeType);
-          const mimePtr = resizeStdString(mime_std_string_ptr, mimeTypeBytes.length);
-          heapU8().set(mimeTypeBytes, mimePtr);
-
-          const bodyBytes = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0);
-          const responseBodyPtr = resizeStdString(body_std_string_ptr, bodyBytes.length);
-          heapU8().set(bodyBytes, responseBodyPtr);
-
-          postFetch('end', bodyBytes.length, bodyBytes.length);
-        }
-        catch (e)
-        {
-          clearResponse('error');
-        }
-        finally
-        {
-          finish();
-        }
-      };
-
-      xhr.onerror = () => {
-        clearResponse('error');
-        finish();
-      };
-      xhr.ontimeout = () => {
-        clearResponse('timeout');
-        finish();
-      };
-      xhr.onabort = () => {
-        clearResponse('abort');
-        finish();
-      };
-
-      xhr.send(bodyCopyNonShared);
-      return 1;
+      return waitForLock(phase_one_lock_ptr, timeout_ms);
     }
     catch (e)
     {
-      clearResponse('error');
-      finish();
       return 0;
     }
 });
 
-class HttpFetchWorker
+EM_JS(int, js_http_fetch_copy_response, (
+    const char *channel_name_ptr, int channel_name_len,
+    int request_id_hi,
+    int request_id_lo,
+    int phase_two_lock_ptr,
+    int body_size_i32_ptr,
+    int mime_size_i32_ptr,
+    int body_data_ptr_i32_ptr,
+    int mime_data_ptr_i32_ptr),
 {
-public:
-    HttpFetchWorker()
-    {
-        std::thread thread([this]() {
-            {
-                std::lock_guard<std::mutex> lock(m_mutex);
-                m_started = true;
-            }
-            m_cond.notify_all();
+    const channelName =
+      channel_name_len > 0 ? UTF8ToString(channel_name_ptr, channel_name_len) : "";
+    const waitForLock = (lockPtr) => {
+      const lockIndex = lockPtr >> 2;
+      const locks = new Int32Array(wasmMemory.buffer);
+      const value = Atomics.load(locks, lockIndex);
+      if (value === 2 || value === 3)
+        return value;
+      Atomics.wait(locks, lockIndex, 0, 60000);
+      const finalValue = Atomics.load(new Int32Array(wasmMemory.buffer), lockIndex);
+      return finalValue === 2 || finalValue === 3 ? finalValue : 0;
+    };
 
-            js_http_start_proxy_queue_heartbeat(reinterpret_cast<intptr_t>(m_queue.queue));
-            emscripten_runtime_keepalive_push();
-        });
-        m_thread_handle = thread.native_handle();
-        thread.detach();
+    try {
+      if (!channelName || typeof BroadcastChannel !== 'function')
+        return 0;
 
-        std::unique_lock<std::mutex> lock(m_mutex);
-        m_cond.wait(lock, [this]() { return m_started; });
+      if (!globalThis.__amethystHttpFetchChannels)
+        globalThis.__amethystHttpFetchChannels = new Map();
+      let channel = globalThis.__amethystHttpFetchChannels.get(channelName);
+      if (!channel) {
+        channel = new BroadcastChannel(channelName);
+        globalThis.__amethystHttpFetchChannels.set(channelName, channel);
+      }
+
+      const message = {
+        type: 'amethyst-http-fetch-copy-response',
+        requestIdHi: request_id_hi >>> 0,
+        requestIdLo: request_id_lo >>> 0,
+        phaseTwoLockPtr: phase_two_lock_ptr,
+        bodySizePtr: body_size_i32_ptr,
+        mimeSizePtr: mime_size_i32_ptr,
+        bodyDataPtrPtr: body_data_ptr_i32_ptr,
+        mimeDataPtrPtr: mime_data_ptr_i32_ptr,
+      };
+      channel.postMessage(message);
+
+      return waitForLock(phase_two_lock_ptr);
     }
-
-    bool proxy_http_request(const std::function<void(emscripten::ProxyingQueue::ProxyingCtx)> &func)
+    catch (e)
     {
-        return m_queue.proxySyncWithCtx(m_thread_handle, func);
+      return 0;
     }
-
-private:
-    emscripten::ProxyingQueue m_queue;
-    pthread_t m_thread_handle = 0;
-    bool m_started = false;
-    std::mutex m_mutex;
-    std::condition_variable m_cond;
-};
-
-HttpFetchWorker &get_http_fetch_worker()
-{
-    static HttpFetchWorker worker;
-    return worker;
-}
+});
 
 } // namespace
 
@@ -394,30 +298,80 @@ public:
 
         const std::string base_url = get_http_base_url();
         const std::string channel_name = get_http_fetch_event_channel();
-        int xhr_started = 0;
 
-        // Serialize daemon HTTP requests because the UI exposes a single fetch
-        // progress indicator. Parallel requests would produce ambiguous progress
-        // events and overwrite the visible request state.
+        const auto request_id = crypto::rand<std::uint64_t>();
+        const auto request_id_hi = static_cast<std::uint32_t>(request_id >> 32);
+        const auto request_id_lo = static_cast<std::uint32_t>(request_id);
+        std::atomic<std::int32_t> response_code{0};
+        std::atomic<std::int32_t> failure_state{static_cast<std::int32_t>(HttpFetchFailureState::ProtocolError)};
+        std::atomic<std::int32_t> body_size{0};
+        std::atomic<std::int32_t> mime_size{0};
+        std::atomic<std::int32_t> body_data_ptr{0};
+        std::atomic<std::int32_t> mime_data_ptr{0};
+
+        // The UI thread owns browser fetch for pthread builds. This worker sends
+        // request metadata, sleeps on phase one while the UI downloads, allocates
+        // response strings after it knows the byte counts, then sleeps on phase
+        // two while the UI copies bytes into the fresh WASM memory buffer.
         std::lock_guard<std::mutex> request_lock(g_http_request_mutex);
-        // Enable the heartbeat drain only for the duration of this request.
-        HttpRequestActiveGuard active_guard;
-        const bool proxied = get_http_fetch_worker().proxy_http_request([&](emscripten::ProxyingQueue::ProxyingCtx ctx) {
-            xhr_started =
-                js_http_xhr_invoke(
-                    uri.data(), static_cast<int>(uri.size()),
-                    method.data(), static_cast<int>(method.size()),
-                    body.data(), static_cast<int>(body.size()),
-                    base_url.data(), static_cast<int>(base_url.size()),
-                    channel_name.data(), static_cast<int>(channel_name.size()),
-                    timeout_ms_for_js,
-                    reinterpret_cast<int>(std::addressof(m_response_info.m_response_code)),
-                    reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_mime_tipe)),
-                    reinterpret_cast<intptr_t>(std::addressof(m_response_info.m_body)),
-                    reinterpret_cast<intptr_t>(ctx.ctx));
-        });
+        g_http_fetch_phase_one_lock.store(0, std::memory_order_release);
+        g_http_fetch_phase_two_lock.store(0, std::memory_order_release);
 
-        return proxied && xhr_started != 0 && m_response_info.m_response_code != 0;
+        const int phase_one_ok =
+            js_http_fetch_request(
+                uri.data(), static_cast<int>(uri.size()),
+                method.data(), static_cast<int>(method.size()),
+                body.data(), static_cast<int>(body.size()),
+                base_url.data(), static_cast<int>(base_url.size()),
+                channel_name.data(), static_cast<int>(channel_name.size()),
+                timeout_ms_for_js,
+                static_cast<int>(request_id_hi),
+                static_cast<int>(request_id_lo),
+                reinterpret_cast<int>(std::addressof(g_http_fetch_phase_one_lock)),
+                reinterpret_cast<int>(std::addressof(response_code)),
+                reinterpret_cast<int>(std::addressof(failure_state)),
+                reinterpret_cast<int>(std::addressof(body_size)),
+                reinterpret_cast<int>(std::addressof(mime_size)));
+
+        m_response_info.m_response_code = response_code.load(std::memory_order_acquire);
+        const auto failure = static_cast<HttpFetchFailureState>(failure_state.load(std::memory_order_acquire));
+        const auto body_size_value = body_size.load(std::memory_order_acquire);
+        const auto mime_size_value = mime_size.load(std::memory_order_acquire);
+
+        if (phase_one_ok != static_cast<std::int32_t>(HttpFetchLockState::Done) || failure != HttpFetchFailureState::None || body_size_value < 0 || mime_size_value < 0)
+        {
+            m_response_info.m_mime_tipe.resize(0);
+            m_response_info.m_body.resize(0);
+            return false;
+        }
+
+        auto *mime_ptr = resize_std_string(std::addressof(m_response_info.m_mime_tipe), static_cast<std::size_t>(mime_size_value));
+        auto *body_ptr = resize_std_string(std::addressof(m_response_info.m_body), static_cast<std::size_t>(body_size_value));
+        mime_data_ptr.store(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(mime_ptr)), std::memory_order_release);
+        body_data_ptr.store(static_cast<std::int32_t>(reinterpret_cast<std::uintptr_t>(body_ptr)), std::memory_order_release);
+
+        if (body_size_value > 0 || mime_size_value > 0)
+        {
+            const int phase_two_ok =
+                js_http_fetch_copy_response(
+                    channel_name.data(), static_cast<int>(channel_name.size()),
+                    static_cast<int>(request_id_hi),
+                    static_cast<int>(request_id_lo),
+                    reinterpret_cast<int>(std::addressof(g_http_fetch_phase_two_lock)),
+                    reinterpret_cast<int>(std::addressof(body_size)),
+                    reinterpret_cast<int>(std::addressof(mime_size)),
+                    reinterpret_cast<int>(std::addressof(body_data_ptr)),
+                    reinterpret_cast<int>(std::addressof(mime_data_ptr)));
+            if (phase_two_ok != static_cast<std::int32_t>(HttpFetchLockState::Done))
+            {
+                m_response_info.m_mime_tipe.resize(0);
+                m_response_info.m_body.resize(0);
+                m_response_info.m_response_code = 0;
+                return false;
+            }
+        }
+
+        return m_response_info.m_response_code != 0;
     }
     bool invoke_get(
         const boost::string_ref uri,
@@ -469,22 +423,6 @@ public:
 
 extern "C"
 {
-    void EMSCRIPTEN_KEEPALIVE amethyst_http_proxy_execute_queue(intptr_t queue_ptr)
-    {
-        // Self-throttle: skip the drain when no request is in flight so an idle
-        // wallet does no queue work (see js_http_start_proxy_queue_heartbeat).
-        if (g_http_active_request_count.load(std::memory_order_acquire) == 0)
-        {
-            return;
-        }
-        emscripten_proxy_execute_queue(reinterpret_cast<em_proxying_queue *>(queue_ptr));
-    }
-
-    void EMSCRIPTEN_KEEPALIVE amethyst_http_proxy_finish(intptr_t ctx_ptr)
-    {
-        emscripten_proxy_finish(reinterpret_cast<em_proxying_ctx *>(ctx_ptr));
-    }
-
     const char *EMSCRIPTEN_KEEPALIVE resize_std_string(std::string *str, size_t new_size)
     {
         str->resize(new_size);
