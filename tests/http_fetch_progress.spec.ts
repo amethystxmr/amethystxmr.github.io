@@ -13,7 +13,7 @@ import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
  * Large enough that /getblocks.bin responses produce intermediate
  * XHR `progress` events (0 < loaded < total), so the download ProgressBar can move.
  */
-const INITIAL_MINED_BLOCKS = 3000;
+const INITIAL_MINED_BLOCKS = 2000;
 
 type HttpFetchEvent = {
   text: string;
