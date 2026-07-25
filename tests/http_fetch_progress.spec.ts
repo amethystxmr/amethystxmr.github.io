@@ -10,11 +10,10 @@ import { initializeAppTestSettings } from "./helpers/testSettings";
 import { InitialWalletListPage } from "./pages/initial-wallet-list.page";
 
 /**
- * Large enough that /getblocks.bin responses (~180KB batches) produce intermediate
+ * Large enough that /getblocks.bin responses produce intermediate
  * XHR `progress` events (0 < loaded < total), so the download ProgressBar can move.
- * ~400 empty-ish regtest blocks only yielded final 100% progress ticks.
  */
-const INITIAL_MINED_BLOCKS = 1500;
+const INITIAL_MINED_BLOCKS = 3000;
 
 type HttpFetchEvent = {
   text: string;
