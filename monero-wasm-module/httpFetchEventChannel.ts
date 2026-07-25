@@ -550,53 +550,62 @@ async function handleHttpFetchRequest(request: HttpFetchRequestMessage) {
     outcome = failureOutcome(HTTP_FETCH_FAILURE_PROTOCOL_ERROR);
   }
 
-  writeFetchOutcome(request, outcome);
-  if (
-    outcome.failureState === HTTP_FETCH_FAILURE_NONE &&
-    (outcome.bodyBytes.length > 0 || outcome.mimeBytes.length > 0)
-  ) {
-    pendingHttpFetchResponses.set(key, {
-      bodyBytes: outcome.bodyBytes,
-      mimeBytes: outcome.mimeBytes,
-    });
-  } else {
+  try {
+    writeFetchOutcome(request, outcome);
+    const hasResponseBytes =
+      outcome.bodyBytes.length > 0 || outcome.mimeBytes.length > 0;
+    if (outcome.failureState === HTTP_FETCH_FAILURE_NONE && hasResponseBytes) {
+      pendingHttpFetchResponses.set(key, {
+        bodyBytes: outcome.bodyBytes,
+        mimeBytes: outcome.mimeBytes,
+      });
+    } else {
+      pendingHttpFetchResponses.delete(key);
+    }
+    notifyLock(request.phaseOneLockPtr, LOCK_DONE);
+  } catch {
     pendingHttpFetchResponses.delete(key);
+    notifyLock(request.phaseOneLockPtr, LOCK_ERROR);
   }
-  notifyLock(request.phaseOneLockPtr, LOCK_DONE);
 }
 
 function handleHttpFetchCopyResponse(message: HttpFetchCopyResponseMessage) {
   const key = requestKey(message.requestIdHi, message.requestIdLo);
   const pending = pendingHttpFetchResponses.get(key);
   pendingHttpFetchResponses.delete(key);
+
   if (!pending) {
     notifyLock(message.phaseTwoLockPtr, LOCK_ERROR);
     return;
   }
 
-  const bodySize = loadI32(message.bodySizePtr);
-  const mimeSize = loadI32(message.mimeSizePtr);
-  const bodyDataPtr = loadI32(message.bodyDataPtrPtr) >>> 0;
-  const mimeDataPtr = loadI32(message.mimeDataPtrPtr) >>> 0;
+  try {
+    const bodySize = loadI32(message.bodySizePtr);
+    const mimeSize = loadI32(message.mimeSizePtr);
+    const bodyDataPtr = loadI32(message.bodyDataPtrPtr) >>> 0;
+    const mimeDataPtr = loadI32(message.mimeDataPtrPtr) >>> 0;
 
-  if (
-    bodySize !== pending.bodyBytes.length ||
-    mimeSize !== pending.mimeBytes.length ||
-    (bodyDataPtr === 0 && bodySize > 0) ||
-    (mimeDataPtr === 0 && mimeSize > 0)
-  ) {
+    if (
+      bodySize !== pending.bodyBytes.length ||
+      mimeSize !== pending.mimeBytes.length ||
+      (bodyDataPtr === 0 && bodySize > 0) ||
+      (mimeDataPtr === 0 && mimeSize > 0)
+    ) {
+      notifyLock(message.phaseTwoLockPtr, LOCK_ERROR);
+      return;
+    }
+
+    const out = heapU8();
+    if (mimeSize > 0) {
+      out.set(pending.mimeBytes, mimeDataPtr);
+    }
+    if (bodySize > 0) {
+      out.set(pending.bodyBytes, bodyDataPtr);
+    }
+    notifyLock(message.phaseTwoLockPtr, LOCK_DONE);
+  } catch {
     notifyLock(message.phaseTwoLockPtr, LOCK_ERROR);
-    return;
   }
-
-  const out = heapU8();
-  if (mimeSize > 0) {
-    out.set(pending.mimeBytes, mimeDataPtr);
-  }
-  if (bodySize > 0) {
-    out.set(pending.bodyBytes, bodyDataPtr);
-  }
-  notifyLock(message.phaseTwoLockPtr, LOCK_DONE);
 }
 
 function handleHttpFetchChannelMessage(value: unknown) {

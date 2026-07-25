@@ -42,8 +42,6 @@ std::mutex g_http_config_mutex;
 std::string g_http_base_url;
 std::string g_http_fetch_event_channel;
 std::mutex g_http_request_mutex;
-alignas(4) std::atomic<std::int32_t> g_http_fetch_phase_one_lock{0};
-alignas(4) std::atomic<std::int32_t> g_http_fetch_phase_two_lock{0};
 
 enum class HttpFetchFailureState : std::int32_t
 {
@@ -56,9 +54,15 @@ enum class HttpFetchFailureState : std::int32_t
 
 enum class HttpFetchLockState : std::int32_t
 {
+    Pending = 0,
     Done = 2,
     Error = 3,
 };
+
+alignas(4) std::atomic<std::int32_t> g_http_fetch_phase_one_lock{
+    static_cast<std::int32_t>(HttpFetchLockState::Pending)};
+alignas(4) std::atomic<std::int32_t> g_http_fetch_phase_two_lock{
+    static_cast<std::int32_t>(HttpFetchLockState::Pending)};
 
 std::string get_http_base_url()
 {
@@ -92,24 +96,17 @@ EM_JS(int, js_http_fetch_request, (
     const baseUrl = UTF8ToString(base_url_ptr, base_url_len);
     const channelName =
       channel_name_len > 0 ? UTF8ToString(channel_name_ptr, channel_name_len) : "";
-    const waitForLock = (lockPtr, timeoutMs) => {
-      const lockIndex = lockPtr >> 2;
-      const locks = new Int32Array(wasmMemory.buffer);
-      const value = Atomics.load(locks, lockIndex);
-      if (value === 2 || value === 3)
-        return value;
-      Atomics.wait(
-        locks,
-        lockIndex,
-        0,
-        timeoutMs > 0 ? timeoutMs + 10000 : undefined);
-      const finalValue = Atomics.load(new Int32Array(wasmMemory.buffer), lockIndex);
-      return finalValue === 2 || finalValue === 3 ? finalValue : 0;
-    };
+    // Keep in sync with HttpFetchLockState and the duplicate constants in js_http_fetch_copy_response.
+    const LOCK_PENDING = 0;
+    const LOCK_DONE = 2;
+    const LOCK_ERROR = 3;
 
     try {
       if (!channelName || typeof BroadcastChannel !== 'function')
         return 0;
+
+      const lockIndex = phase_one_lock_ptr >> 2;
+      Atomics.store(new Int32Array(wasmMemory.buffer), lockIndex, LOCK_PENDING);
 
       if (!globalThis.__amethystHttpFetchChannels)
         globalThis.__amethystHttpFetchChannels = new Map();
@@ -137,7 +134,13 @@ EM_JS(int, js_http_fetch_request, (
       };
       channel.postMessage(message);
 
-      return waitForLock(phase_one_lock_ptr, timeout_ms);
+      for (;;) {
+        const locks = new Int32Array(wasmMemory.buffer);
+        const value = Atomics.load(locks, lockIndex);
+        if (value === LOCK_DONE || value === LOCK_ERROR)
+          return value;
+        Atomics.wait(locks, lockIndex, value);
+      }
     }
     catch (e)
     {
@@ -157,20 +160,17 @@ EM_JS(int, js_http_fetch_copy_response, (
 {
     const channelName =
       channel_name_len > 0 ? UTF8ToString(channel_name_ptr, channel_name_len) : "";
-    const waitForLock = (lockPtr) => {
-      const lockIndex = lockPtr >> 2;
-      const locks = new Int32Array(wasmMemory.buffer);
-      const value = Atomics.load(locks, lockIndex);
-      if (value === 2 || value === 3)
-        return value;
-      Atomics.wait(locks, lockIndex, 0, 60000);
-      const finalValue = Atomics.load(new Int32Array(wasmMemory.buffer), lockIndex);
-      return finalValue === 2 || finalValue === 3 ? finalValue : 0;
-    };
+    // Keep in sync with HttpFetchLockState and the duplicate constants in js_http_fetch_request.
+    const LOCK_PENDING = 0;
+    const LOCK_DONE = 2;
+    const LOCK_ERROR = 3;
 
     try {
       if (!channelName || typeof BroadcastChannel !== 'function')
         return 0;
+
+      const lockIndex = phase_two_lock_ptr >> 2;
+      Atomics.store(new Int32Array(wasmMemory.buffer), lockIndex, LOCK_PENDING);
 
       if (!globalThis.__amethystHttpFetchChannels)
         globalThis.__amethystHttpFetchChannels = new Map();
@@ -192,7 +192,13 @@ EM_JS(int, js_http_fetch_copy_response, (
       };
       channel.postMessage(message);
 
-      return waitForLock(phase_two_lock_ptr);
+      for (;;) {
+        const locks = new Int32Array(wasmMemory.buffer);
+        const value = Atomics.load(locks, lockIndex);
+        if (value === LOCK_DONE || value === LOCK_ERROR)
+          return value;
+        Atomics.wait(locks, lockIndex, value);
+      }
     }
     catch (e)
     {
@@ -217,21 +223,11 @@ void set_http_fetch_event_channel(const std::string &channel_name)
 class js_http_client : public epee::net_utils::http::abstract_http_client
 {
 public:
-    js_http_client()
-    {
-        // printf("Note: js_http_client(%i)::constructor called\n", m_my_id);
-    }
-    ~js_http_client()
-    {
-        // printf("Note: js_http_client(%i)::destructor called\n", m_my_id);
-    }
-
     bool set_server(
         const std::string &address,
         boost::optional<tools::login> user,
         epee::net_utils::ssl_options_t ssl_options = epee::net_utils::ssl_support_t::e_ssl_support_autodetect)
     {
-        // printf("js_http_client(%i)::set_server called with address=%s\n", m_my_id, address.c_str());
         return true;
     }
     void set_server(
@@ -240,34 +236,28 @@ public:
         boost::optional<epee::net_utils::http::login> user,
         epee::net_utils::ssl_options_t ssl_options = epee::net_utils::ssl_support_t::e_ssl_support_autodetect)
     {
-        // printf("js_http_client(%i)::set_server called with host=%s, port=%s\n", m_my_id, host.c_str(), port.c_str());
     }
 
     bool set_proxy(const std::string &address)
     {
-        // printf("js_http_client(%i)::set_proxy called with address=%s\n", m_my_id, address.c_str());
         return true;
     }
 
     void set_auto_connect(bool auto_connect)
     {
-        // printf("js_http_client(%i)::set_auto_connect called with auto_connect=%d\n", m_my_id, auto_connect);
     }
     bool connect(std::chrono::milliseconds timeout)
     {
-        // printf("js_http_client(%i)::connect called with timeout=%lld ms\n", m_my_id, timeout.count());
         m_is_connected = true;
         return true;
     }
     bool disconnect()
     {
-        // printf("js_http_client(%i)::disconnect called\n", m_my_id);
         m_is_connected = false;
         return true;
     }
     bool is_connected(bool *ssl = nullptr)
     {
-        // printf("js_http_client(%i)::is_connected called\n", m_my_id);
         return m_is_connected;
     }
     bool invoke(
@@ -279,10 +269,6 @@ public:
         const epee::net_utils::http::fields_list &additional_params = epee::net_utils::http::fields_list())
     {
         BusyFlagGuard busy_guard(m_is_busy);
-
-        // std::string uri_str(uri.data(), uri.size());
-        // printf("js_http_client(%i)::invoke called with uri=%s\n", m_my_id,
-        //        uri_str.c_str());
 
         if (ppresponse_info)
         {
@@ -314,8 +300,6 @@ public:
         // response strings after it knows the byte counts, then sleeps on phase
         // two while the UI copies bytes into the fresh WASM memory buffer.
         std::lock_guard<std::mutex> request_lock(g_http_request_mutex);
-        g_http_fetch_phase_one_lock.store(0, std::memory_order_release);
-        g_http_fetch_phase_two_lock.store(0, std::memory_order_release);
 
         const int phase_one_ok =
             js_http_fetch_request(
@@ -393,12 +377,10 @@ public:
     }
     uint64_t get_bytes_sent() const
     {
-        // printf("my-demo: js_http_client(%i)::get_bytes_sent called\n", m_my_id);
         return 0;
     }
     uint64_t get_bytes_received() const
     {
-        // printf("my-demo: js_http_client(%i)::get_bytes_received called\n", m_my_id);
         return 0;
     }
 
@@ -406,9 +388,6 @@ private:
     bool m_is_connected = false;
     epee::net_utils::http::http_response_info m_response_info;
     bool m_is_busy = false;
-
-    inline static int m_next_id = 1;
-    int m_my_id = m_next_id++;
 };
 
 class js_client_factory : public epee::net_utils::http::http_client_factory
