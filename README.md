@@ -97,16 +97,17 @@ Mainnet restore/sync benchmark. One restore height = current tip −
 **Local** runs the full matrix; **Cake** only runs `asyncify`, `threads4`,
 and `native0` (all cores).
 
-| Variant     | What it runs                                              |
-| ----------- | --------------------------------------------------------- |
-| `asyncify`  | WASM Asyncify build                                       |
-| `threads`   | WASM Threads (full `navigator.hardwareConcurrency`)       |
-| `threads2`  | WASM Threads with `hardwareConcurrency` forced to 2       |
-| `threads4`  | WASM Threads with `hardwareConcurrency` forced to 4       |
-| `native0`   | `./bin/monero-wallet-cli --max-concurrency 0` (all cores) |
-| `native1`   | `./bin/monero-wallet-cli --max-concurrency 1`             |
-| `native2`   | `./bin/monero-wallet-cli --max-concurrency 2`             |
-| `native4`   | `./bin/monero-wallet-cli --max-concurrency 4`             |
+| Variant    | What it runs                                              |
+| ---------- | --------------------------------------------------------- |
+| `asyncify` | WASM Asyncify build                                       |
+| `thread1`  | WASM Threads with pthread pool size forced to 1           |
+| `threads`  | WASM Threads (full `navigator.hardwareConcurrency`)       |
+| `threads2` | WASM Threads with pthread pool size forced to 2           |
+| `threads4` | WASM Threads with pthread pool size forced to 4           |
+| `native0`  | `./bin/monero-wallet-cli --max-concurrency 0` (all cores) |
+| `native1`  | `./bin/monero-wallet-cli --max-concurrency 1`             |
+| `native2`  | `./bin/monero-wallet-cli --max-concurrency 2`             |
+| `native4`  | `./bin/monero-wallet-cli --max-concurrency 4`             |
 
 `--max-concurrency` is the correct Monero CLI option. Value `0` means all
 cores (`tools::set_max_concurrency` treats `n < 1` as

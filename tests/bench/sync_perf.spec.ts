@@ -5,7 +5,7 @@
  * Execution order: run → daemon → variant (full matrix per run, local first).
  * Summary table order: daemon → variant → run.
  *
- * Local: asyncify, threads, threads2, threads4, native0/1/2/4.
+ * Local: asyncify, thread1, threads, threads2, threads4, native0/1/2/4.
  * Cake: asyncify, threads4, native0 only.
  *
  * BENCH_RUNS (default 10). Console output is appended to a timestamped .txt log.
@@ -21,6 +21,7 @@ import {
   E2E_THREADS_PREVIEW_PORT,
 } from "../constants";
 import { NetworkTypes } from "../../monero-wasm-module/walletApi";
+import { wasmPthreadPoolSizeOverrideStorageKey } from "../../web-src/startup/wasmConcurrencyOverride";
 import { InitialWalletListPage } from "../pages/initial-wallet-list.page";
 import { WalletMainPage } from "../pages/wallet-main.page";
 import {
@@ -44,7 +45,12 @@ import {
 import { waitUntilWalletSynced } from "./helpers/syncWait";
 
 type DaemonKind = "local" | "cake";
-type WasmBenchVariant = "asyncify" | "threads" | "threads2" | "threads4";
+type WasmBenchVariant =
+  | "asyncify"
+  | "thread1"
+  | "threads"
+  | "threads2"
+  | "threads4";
 type NativeBenchVariant = "native0" | "native1" | "native2" | "native4";
 type BenchVariant = WasmBenchVariant | NativeBenchVariant;
 
@@ -83,6 +89,7 @@ const DEFAULT_CAKE = "https://xmr-node.cakewallet.com:18081";
 const DAEMON_REPORT_ORDER: DaemonKind[] = ["local", "cake"];
 const LOCAL_VARIANTS: BenchVariant[] = [
   "asyncify",
+  "thread1",
   "threads",
   "threads2",
   "threads4",
@@ -158,6 +165,7 @@ function previewUrl(variant: BenchVariant): string {
 function isWasmVariant(variant: BenchVariant): variant is WasmBenchVariant {
   return (
     variant === "asyncify" ||
+    variant === "thread1" ||
     variant === "threads" ||
     variant === "threads2" ||
     variant === "threads4"
@@ -168,7 +176,10 @@ function variantsForDaemon(daemon: DaemonKind): BenchVariant[] {
   return daemon === "cake" ? CAKE_VARIANTS : LOCAL_VARIANTS;
 }
 
-function wasmConcurrencyOverride(variant: BenchVariant): number | null {
+function wasmPthreadPoolSizeOverride(variant: BenchVariant): number | null {
+  if (variant === "thread1") {
+    return 1;
+  }
   if (variant === "threads2") {
     return 2;
   }
@@ -249,10 +260,15 @@ function installConsoleLogTee(logPath: string): () => void {
 async function applyBenchSettings(
   page: Page,
   daemonAddress: string,
-  hardwareConcurrencyOverride: number | null,
+  pthreadPoolSizeOverride: number | null,
 ): Promise<void> {
   await page.addInitScript(
-    ({ daemonAddress, networkType, hardwareConcurrencyOverride }) => {
+    ({
+      daemonAddress,
+      networkType,
+      pthreadPoolSizeOverride,
+      pthreadPoolSizeOverrideStorageKey,
+    }) => {
       localStorage.setItem(
         "options",
         JSON.stringify({
@@ -262,18 +278,20 @@ async function applyBenchSettings(
           allowMismatchedDaemonVersion: true,
         }),
       );
-      if (hardwareConcurrencyOverride !== null) {
-        Object.defineProperty(navigator, "hardwareConcurrency", {
-          configurable: true,
-          enumerable: true,
-          get: () => hardwareConcurrencyOverride,
-        });
+      if (pthreadPoolSizeOverride !== null) {
+        sessionStorage.setItem(
+          pthreadPoolSizeOverrideStorageKey,
+          String(pthreadPoolSizeOverride),
+        );
+      } else {
+        sessionStorage.removeItem(pthreadPoolSizeOverrideStorageKey);
       }
     },
     {
       daemonAddress,
       networkType: NetworkTypes.MAINNET,
-      hardwareConcurrencyOverride,
+      pthreadPoolSizeOverride,
+      pthreadPoolSizeOverrideStorageKey: wasmPthreadPoolSizeOverrideStorageKey,
     },
   );
 }
@@ -492,7 +510,7 @@ async function runWasmCell(params: {
   run: number;
 }): Promise<CellResult> {
   const label = `${params.daemon}/${params.variant}/run${params.run}`;
-  const concurrencyOverride = wasmConcurrencyOverride(params.variant);
+  const pthreadPoolSizeOverride = wasmPthreadPoolSizeOverride(params.variant);
   const preSnapshot = await snapshotRendererCpuByPid(params.browser);
   const context = await params.browser.newContext({
     baseURL: previewUrl(params.variant),
@@ -500,12 +518,16 @@ async function runWasmCell(params: {
     viewport: { width: 1460, height: 920 },
   });
   const page = await context.newPage();
-  patchWorkerHardwareConcurrency(page, concurrencyOverride);
+  patchWorkerHardwareConcurrency(page, pthreadPoolSizeOverride);
   let metrics: Awaited<ReturnType<typeof createProcessMetricsTracker>> | null =
     null;
 
   try {
-    await applyBenchSettings(page, params.daemonAddress, concurrencyOverride);
+    await applyBenchSettings(
+      page,
+      params.daemonAddress,
+      pthreadPoolSizeOverride,
+    );
     await page.goto("/");
     const initial = new InitialWalletListPage(page);
     await initial.waitUntilLoaded();
