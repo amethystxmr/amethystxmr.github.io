@@ -143,6 +143,12 @@ emulator when `DISPLAY`/`WAYLAND_DISPLAY` is set). There is no GUI for
 with `BENCH_HEADLESS=1`. Optional: `BENCH_TERMINAL=gnome-terminal` (or
 `xterm` / `konsole`). Daemon filter: `BENCH_DAEMONS=local` or `local,cake`.
 
+Each WASM cell launches a **fresh Chromium** (closed afterward) so a compositor
+crash cannot kill the rest of the matrix. Headed Chromium defaults to
+`--ozone-platform=x11` because long Wayland sessions often die with
+`Fatal Wayland communication error: Connection reset by peer`. Override with
+`BENCH_CHROMIUM_OZONE=wayland` or `auto`.
+
 ```bash
 npm run bench:sync
 ```

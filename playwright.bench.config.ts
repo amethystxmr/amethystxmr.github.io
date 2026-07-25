@@ -27,8 +27,26 @@ const BENCH_TIMEOUT_MS = Number(
   process.env.BENCH_TIMEOUT_MS ?? 4 * 60 * 60 * 1000,
 );
 const BENCH_RUNS = Number(process.env.BENCH_RUNS ?? 10);
-/** local: 8 variants + cake: 3 variants. */
-const CELLS_PER_RUN = 11;
+/** local: 9 variants + cake: 3 variants. */
+const CELLS_PER_RUN = 12;
+const BENCH_HEADLESS =
+  process.env.BENCH_HEADLESS === "1" || Boolean(process.env.CI);
+
+function chromiumOzoneLaunchArgs(): string[] {
+  if (BENCH_HEADLESS) {
+    return [];
+  }
+  const ozone = (process.env.BENCH_CHROMIUM_OZONE ?? "x11")
+    .trim()
+    .toLowerCase();
+  if (ozone === "auto" || ozone.length === 0) {
+    return [];
+  }
+  if (ozone === "wayland" || ozone === "x11") {
+    return [`--ozone-platform=${ozone}`];
+  }
+  return ["--ozone-platform=x11"];
+}
 
 export default defineConfig({
   testDir: "./tests/bench",
@@ -46,7 +64,12 @@ export default defineConfig({
   use: {
     ...devices["Desktop Chrome"],
     // Headed by default (easier to diagnose stalls). BENCH_HEADLESS=1 or CI → headless.
-    headless: process.env.BENCH_HEADLESS === "1" || Boolean(process.env.CI),
+    // WASM cells launch their own Chromium (fresh per cell); these options apply to
+    // any fixture browser and match launchBenchBrowser defaults.
+    headless: BENCH_HEADLESS,
+    launchOptions: {
+      args: ["--disable-dev-shm-usage", ...chromiumOzoneLaunchArgs()],
+    },
     serviceWorkers: "block",
     viewport: { width: 1460, height: 920 },
     trace: "off",

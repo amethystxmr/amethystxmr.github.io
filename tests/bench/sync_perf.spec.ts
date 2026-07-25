@@ -14,7 +14,13 @@ import { appendFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { inspect } from "node:util";
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import {
+  chromium,
+  expect,
+  test,
+  type Browser,
+  type Page,
+} from "@playwright/test";
 import {
   APP_HOST,
   E2E_ASYNCIFY_PREVIEW_PORT,
@@ -31,6 +37,7 @@ import {
 } from "./helpers/daemonInfo";
 import {
   assertWalletCliExists,
+  isBenchHeaded,
   resolveWalletCliPath,
   runNativeWalletCliSync,
   type NativeMaxConcurrency,
@@ -497,8 +504,48 @@ async function writeResultsJson(
   );
 }
 
-async function runWasmCell(params: {
-  browser: Browser;
+function isBrowserClosedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /has been closed/i.test(message) ||
+    /browser has been closed/i.test(message) ||
+    /Target closed/i.test(message) ||
+    /Target page, context or browser has been closed/i.test(message)
+  );
+}
+
+/**
+ * Prefer X11 for long headed runs. Wayland often kills Chromium after hours with:
+ * "Fatal Wayland communication error: Connection reset by peer".
+ * Override: BENCH_CHROMIUM_OZONE=wayland|auto|x11
+ */
+function chromiumOzoneArgs(headed: boolean): string[] {
+  if (!headed) {
+    return [];
+  }
+  const ozone = (process.env.BENCH_CHROMIUM_OZONE ?? "x11")
+    .trim()
+    .toLowerCase();
+  if (ozone === "auto" || ozone.length === 0) {
+    return [];
+  }
+  if (ozone === "wayland" || ozone === "x11") {
+    return [`--ozone-platform=${ozone}`];
+  }
+  throw new Error(
+    `Invalid BENCH_CHROMIUM_OZONE=${process.env.BENCH_CHROMIUM_OZONE}`,
+  );
+}
+
+async function launchBenchBrowser(): Promise<Browser> {
+  const headed = isBenchHeaded();
+  return chromium.launch({
+    headless: !headed,
+    args: ["--disable-dev-shm-usage", ...chromiumOzoneArgs(headed)],
+  });
+}
+
+async function runWasmCellOnce(params: {
   variant: WasmBenchVariant;
   daemon: DaemonKind;
   daemonAddress: string;
@@ -511,18 +558,24 @@ async function runWasmCell(params: {
 }): Promise<CellResult> {
   const label = `${params.daemon}/${params.variant}/run${params.run}`;
   const pthreadPoolSizeOverride = wasmPthreadPoolSizeOverride(params.variant);
-  const preSnapshot = await snapshotRendererCpuByPid(params.browser);
-  const context = await params.browser.newContext({
-    baseURL: previewUrl(params.variant),
-    serviceWorkers: "block",
-    viewport: { width: 1460, height: 920 },
-  });
-  const page = await context.newPage();
-  patchWorkerHardwareConcurrency(page, pthreadPoolSizeOverride);
+  // Fresh browser per cell: a shared headed Chromium often dies mid-matrix on Wayland.
+  const browser = await launchBenchBrowser();
+  let preSnapshot: Awaited<ReturnType<typeof snapshotRendererCpuByPid>> | null =
+    null;
+  let context: Awaited<ReturnType<Browser["newContext"]>> | null = null;
   let metrics: Awaited<ReturnType<typeof createProcessMetricsTracker>> | null =
     null;
 
   try {
+    preSnapshot = await snapshotRendererCpuByPid(browser);
+    context = await browser.newContext({
+      baseURL: previewUrl(params.variant),
+      serviceWorkers: "block",
+      viewport: { width: 1460, height: 920 },
+    });
+    const page = await context.newPage();
+    patchWorkerHardwareConcurrency(page, pthreadPoolSizeOverride);
+
     await applyBenchSettings(
       page,
       params.daemonAddress,
@@ -539,6 +592,7 @@ async function runWasmCell(params: {
     const afterLoadCpu = await readRendererCpuByPid(preSnapshot.session);
     const trackedPid = pickPageRendererPid(preSnapshot.cpuByPid, afterLoadCpu);
     await preSnapshot.session.detach().catch(() => undefined);
+    preSnapshot = null;
 
     const walletName = `bench-${params.variant}-${params.daemon}-r${params.run}-${Date.now()}`;
     await fillRestoreForm(page, {
@@ -547,11 +601,7 @@ async function runWasmCell(params: {
       startingHeight: String(params.restoreHeight),
     });
 
-    metrics = await createProcessMetricsTracker(
-      params.browser,
-      page,
-      trackedPid,
-    );
+    metrics = await createProcessMetricsTracker(browser, page, trackedPid);
     const baseline = await metrics.sample();
     const startedAtMs = Date.now();
     await page.getByRole("button", { name: /restore wallet/i }).click();
@@ -592,11 +642,41 @@ async function runWasmCell(params: {
       workers,
     };
   } finally {
-    await preSnapshot.session.detach().catch(() => undefined);
+    if (preSnapshot) {
+      await preSnapshot.session.detach().catch(() => undefined);
+    }
     if (metrics) {
       await metrics.dispose();
     }
-    await context.close();
+    if (context) {
+      await context.close().catch(() => undefined);
+    }
+    await browser.close().catch(() => undefined);
+  }
+}
+
+async function runWasmCell(params: {
+  variant: WasmBenchVariant;
+  daemon: DaemonKind;
+  daemonAddress: string;
+  heightDiff: number;
+  restoreHeight: number;
+  tipHeight: number;
+  seed: string;
+  timeoutMs: number;
+  run: number;
+}): Promise<CellResult> {
+  const label = `${params.daemon}/${params.variant}/run${params.run}`;
+  try {
+    return await runWasmCellOnce(params);
+  } catch (error) {
+    if (!isBrowserClosedError(error)) {
+      throw error;
+    }
+    console.log(
+      `[bench] ${label} browser closed unexpectedly; retrying cell once`,
+    );
+    return await runWasmCellOnce(params);
   }
 }
 
@@ -648,7 +728,7 @@ async function runNativeCell(params: {
 
 test.describe.configure({ mode: "serial" });
 
-test("mainnet sync performance matrix", async ({ browser }) => {
+test("mainnet sync performance matrix", async () => {
   const seed = envOr("BENCH_SEED", DEFAULT_SEED);
   const localAddress = envOr("BENCH_DAEMON_LOCAL", DEFAULT_LOCAL);
   const cakeAddress = envOr("BENCH_DAEMON_REMOTE", DEFAULT_CAKE);
@@ -751,7 +831,6 @@ test("mainnet sync performance matrix", async ({ browser }) => {
           );
           const result = isWasmVariant(variant)
             ? await runWasmCell({
-                browser,
                 variant,
                 daemon: daemon.kind,
                 daemonAddress: daemon.address,
