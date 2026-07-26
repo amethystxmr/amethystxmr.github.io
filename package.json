@@ -55,35 +55,43 @@
     }
   },
   "dependencies": {
-    "@fontsource-variable/inter": "^5.2.8",
-    "@fontsource/inter": "^5.2.8",
-    "@tailwindcss/vite": "^4.1.18",
-    "@types/react": "^19.2.13",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/inter": "^5.3.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@zxing/browser": "^0.1.5",
     "clsx": "^2.1.1",
     "comlink": "^4.4.2",
-    "install": "^0.13.0",
     "jszip": "^3.10.1",
     "nosleep.js": "^0.12.0",
     "qrcode.react": "^4.2.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-swipeable": "^7.0.2",
-    "tailwindcss": "^4.1.18",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.6"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.3",
-    "@playwright/test": "^1.60.0",
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.62.0",
     "@vitejs/plugin-react": "^5.1.4",
-    "electron": "^37.10.3",
-    "electron-builder": "^26.8.1",
-    "eslint": "^9.39.3",
+    "electron": "^39.8.10",
+    "electron-builder": "^26.15.7",
+    "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.26",
-    "prettier": "^3.8.3",
-    "typescript-eslint": "^8.56.0"
+    "prettier": "^3.9.6",
+    "typescript-eslint": "^8.65.0"
+  },
+  "overrides": {
+    "brace-expansion@1": "1.1.16",
+    "brace-expansion@2": "2.1.2",
+    "brace-expansion@5": "5.0.8",
+    "minimatch@3": "3.1.5",
+    "minimatch@5": "5.1.9",
+    "minimatch@9": "9.0.9",
+    "minimatch@10": "10.2.5"
   }
 }

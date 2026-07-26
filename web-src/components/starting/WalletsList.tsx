@@ -1546,10 +1546,7 @@ function OpenWalletView({
   onDone: (openedWallet: OpenedWallet | null) => void;
 }) {
   type OpenPhase =
-    | "acquiring-lock"
-    | "opening-initial"
-    | "idle"
-    | "opening-user";
+    "acquiring-lock" | "opening-initial" | "idle" | "opening-user";
 
   const alert = useAlert();
   const [password, setPassword] = React.useState("");
