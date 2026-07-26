@@ -11,6 +11,7 @@ const APP_PROTOCOL_HOST = "app";
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_PROTOCOL_HOST}`;
 
 const DIST_DIR = path.resolve(__dirname, "..", "built-web");
+const APP_ICON = path.join(DIST_DIR, "icons", "icon-512x512.png");
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -201,6 +202,7 @@ function createWindow(baseUrl) {
     fullscreenable: false,
     autoHideMenuBar: true,
     backgroundColor: "#281549",
+    icon: APP_ICON,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

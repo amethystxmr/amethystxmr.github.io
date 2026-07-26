@@ -37,21 +37,28 @@
       "electron/**/*",
       "package.json"
     ],
+    "icon": "build/icon.png",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "win": {
       "target": [
         "portable"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "linux": {
       "target": [
         "AppImage"
-      ]
+      ],
+      "icon": "build/icon.png",
+      "category": "Finance",
+      "desktopName": "AmethystXMR.desktop",
+      "syncDesktopName": true
     },
     "mac": {
       "target": [
         "dmg"
-      ]
+      ],
+      "icon": "build/icon.png"
     }
   },
   "dependencies": {
