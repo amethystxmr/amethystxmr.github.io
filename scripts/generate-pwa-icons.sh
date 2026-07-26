@@ -46,9 +46,20 @@ generate_icons() {
         "$OUTPUT_DIR/icon-16x16.png" \
         "$OUTPUT_DIR/icon-32x32.png" \
         "$OUTPUT_DIR/icon-48x48.png" \
+        "$OUTPUT_DIR/icon-72x72.png" \
         "$OUTPUT_DIR/icon-128x128.png" \
         "$OUTPUT_DIR/icon-256x256.png" \
         "$NATIVE_ICON_DIR/icon.ico"
+      if command -v png2icns >/dev/null 2>&1; then
+        png2icns "$NATIVE_ICON_DIR/icon.icns" \
+          "$OUTPUT_DIR/icon-16x16.png" \
+          "$OUTPUT_DIR/icon-32x32.png" \
+          "$OUTPUT_DIR/icon-128x128.png" \
+          "$OUTPUT_DIR/icon-256x256.png" \
+          "$OUTPUT_DIR/icon-512x512.png"
+      else
+        echo "png2icns not found; leaving existing $NATIVE_ICON_DIR/icon.icns unchanged (if present)"
+      fi
       echo "Generated full icon set + favicon + electron/images icons"
       ;;
     *)

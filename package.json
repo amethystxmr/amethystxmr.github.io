@@ -64,7 +64,7 @@
       "target": [
         "dmg"
       ],
-      "icon": "electron/images/icon.png"
+      "icon": "electron/images/icon.icns"
     }
   },
   "dependencies": {
