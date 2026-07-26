@@ -1,4 +1,10 @@
-const { app, BrowserWindow, shell, protocol, nativeImage } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  shell,
+  protocol,
+  nativeImage,
+} = require("electron");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
@@ -42,10 +48,14 @@ function resolveAppIconPath() {
 }
 
 function quoteDesktopExec(filePath) {
-  if (!/[\s"$\\]/.test(filePath)) {
-    return filePath;
+  if (/[\r\n]/.test(filePath)) {
+    return null;
   }
-  return `"${filePath.replace(/(["\\$`])/g, "\\$1")}"`;
+  const escaped = filePath.replace(/%/g, "%%").replace(/(["\\$`])/g, "\\$1");
+  if (/^[A-Za-z0-9._/-]+$/.test(filePath)) {
+    return escaped;
+  }
+  return `"${escaped}"`;
 }
 
 function ensureLinuxDesktopIntegration(iconPath) {
@@ -70,39 +80,47 @@ function ensureLinuxDesktopIntegration(iconPath) {
   const desktopPath = path.join(applicationsDir, LINUX_DESKTOP_FILE_NAME);
   const installedIconPath = path.join(iconDir, `${LINUX_ICON_NAME}.png`);
   const execPath = process.env.APPIMAGE || process.execPath;
-
-  fsSync.mkdirSync(applicationsDir, { recursive: true });
-  fsSync.mkdirSync(iconDir, { recursive: true });
-  fsSync.copyFileSync(iconPath, installedIconPath);
-
-  const desktopEntry = [
-    "[Desktop Entry]",
-    "Type=Application",
-    "Name=AmethystXMR",
-    "Comment=Amethyst XMR is a web-based Monero wallet",
-    `Exec=${quoteDesktopExec(execPath)} %U`,
-    `Icon=${LINUX_ICON_NAME}`,
-    "Terminal=false",
-    "Categories=Finance;",
-    "StartupWMClass=amethystxmr",
-    "",
-  ].join("\n");
-
-  let previous = "";
-  try {
-    previous = fsSync.readFileSync(desktopPath, "utf8");
-  } catch {
-    // first install
-  }
-  if (previous !== desktopEntry) {
-    fsSync.writeFileSync(desktopPath, desktopEntry);
+  const quotedExecPath = quoteDesktopExec(execPath);
+  if (!quotedExecPath) {
+    return;
   }
 
-  // Remove earlier mistaken desktop id from this PR's first iterations.
   try {
-    fsSync.unlinkSync(path.join(applicationsDir, "AmethystXMR.desktop"));
-  } catch {
-    // absent
+    fsSync.mkdirSync(applicationsDir, { recursive: true });
+    fsSync.mkdirSync(iconDir, { recursive: true });
+    fsSync.copyFileSync(iconPath, installedIconPath);
+
+    const desktopEntry = [
+      "[Desktop Entry]",
+      "Type=Application",
+      "Name=AmethystXMR",
+      "Comment=Amethyst XMR is a web-based Monero wallet",
+      `Exec=${quotedExecPath} %U`,
+      `Icon=${LINUX_ICON_NAME}`,
+      "Terminal=false",
+      "Categories=Finance;",
+      "StartupWMClass=amethystxmr",
+      "",
+    ].join("\n");
+
+    let previous = "";
+    try {
+      previous = fsSync.readFileSync(desktopPath, "utf8");
+    } catch {
+      // first install
+    }
+    if (previous !== desktopEntry) {
+      fsSync.writeFileSync(desktopPath, desktopEntry);
+    }
+
+    // Remove earlier mistaken desktop id from this PR's first iterations.
+    try {
+      fsSync.unlinkSync(path.join(applicationsDir, "AmethystXMR.desktop"));
+    } catch {
+      // absent
+    }
+  } catch (error) {
+    console.warn("Could not install Linux desktop integration:", error);
   }
 }
 
@@ -186,7 +204,10 @@ function resolveRequestPath(requestPathname) {
   }
 
   const normalized = path.normalize(rawPath).replace(/^(\.\.[/\\])+/, "");
-  const candidate = path.resolve(DIST_DIR, `.${normalized.startsWith("/") ? normalized : `/${normalized}`}`);
+  const candidate = path.resolve(
+    DIST_DIR,
+    `.${normalized.startsWith("/") ? normalized : `/${normalized}`}`,
+  );
 
   if (!candidate.startsWith(DIST_DIR)) {
     return null;
