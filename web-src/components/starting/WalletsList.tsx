@@ -56,7 +56,6 @@ type OpenedWallet = {
 
 const DAEMON_CUSTOM_OPTION = "__custom__";
 const DAEMON_REMOTE_NODES_STATUS_OPTION = "__monero_fail_status__";
-const DAEMON_CHECK_CONCURRENCY = 5;
 const PROJECT_GITHUB_URL =
   "https://github.com/amethystxmr/amethystxmr.github.io";
 const PROJECT_GITHUB_ISSUES_URL = `${PROJECT_GITHUB_URL}/issues`;
@@ -1807,10 +1806,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   );
   const [daemonTestStatus, setDaemonTestStatus] =
     React.useState<DaemonTestStatus>("idle");
-  const daemonCheckQueueRef = React.useRef<string[]>([]);
-  const daemonCheckTrackedRef = React.useRef(new Set<string>());
-  const daemonChecksActiveRef = React.useRef(0);
-  const daemonCheckAbortRef = React.useRef<AbortController | null>(null);
+  const daemonTestAbortRef = React.useRef<AbortController | null>(null);
   const buildInfoText = React.useMemo(() => {
     const ts = import.meta.env.DEV
       ? new Date().toISOString()
@@ -1844,71 +1840,12 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
-  const networkTypeRef = React.useRef(networkType);
-  networkTypeRef.current = networkType;
-
-  const pumpDaemonCheckQueue = React.useCallback(() => {
-    const expectedNettype = networkTypeToDaemonNettype(networkTypeRef.current);
-    const signal = daemonCheckAbortRef.current?.signal;
-    while (
-      daemonChecksActiveRef.current < DAEMON_CHECK_CONCURRENCY &&
-      daemonCheckQueueRef.current.length > 0
-    ) {
-      const address = daemonCheckQueueRef.current.shift();
-      if (!address) {
-        break;
-      }
-      daemonChecksActiveRef.current += 1;
-      void checkDaemonAddress(address, expectedNettype, signal)
-        .then((result) => {
-          if (signal?.aborted) {
-            return;
-          }
-          setDaemonCheckStatuses((prev) => ({ ...prev, [address]: result }));
-        })
-        .finally(() => {
-          daemonChecksActiveRef.current -= 1;
-          if (!signal?.aborted) {
-            pumpDaemonCheckQueue();
-          }
-        });
-    }
-  }, []);
-
-  const enqueueDaemonChecks = React.useCallback(
-    (addresses: readonly string[]) => {
-      let added = false;
-      for (const address of addresses) {
-        const trimmed = address.trim();
-        if (!trimmed || daemonCheckTrackedRef.current.has(trimmed)) {
-          continue;
-        }
-        daemonCheckTrackedRef.current.add(trimmed);
-        daemonCheckQueueRef.current.push(trimmed);
-        added = true;
-        setDaemonCheckStatuses((prev) => ({
-          ...prev,
-          [trimmed]: { status: "checking" },
-        }));
-      }
-      if (added) {
-        pumpDaemonCheckQueue();
-      }
-    },
-    [pumpDaemonCheckQueue],
-  );
-  const enqueueDaemonChecksRef = React.useRef(enqueueDaemonChecks);
-  enqueueDaemonChecksRef.current = enqueueDaemonChecks;
-
   const resetDaemonListState = React.useCallback(() => {
     setDaemonListRequested(false);
     setRemoteDaemonFetch(createIdleRemoteDaemonNodesProgress());
     setDaemonCheckStatuses({});
-    daemonCheckQueueRef.current = [];
-    daemonCheckTrackedRef.current = new Set();
-    daemonChecksActiveRef.current = 0;
-    daemonCheckAbortRef.current?.abort();
-    daemonCheckAbortRef.current = null;
+    daemonTestAbortRef.current?.abort();
+    daemonTestAbortRef.current = null;
   }, []);
 
   React.useEffect(() => {
@@ -1916,19 +1853,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       return;
     }
     const fetchController = new AbortController();
-    const checkController = new AbortController();
-    daemonCheckAbortRef.current?.abort();
-    daemonCheckAbortRef.current = checkController;
-    daemonCheckQueueRef.current = [];
-    daemonCheckTrackedRef.current = new Set();
-    daemonChecksActiveRef.current = 0;
-    setDaemonCheckStatuses({});
     setRemoteDaemonFetch(createInitialRemoteDaemonNodesProgress(networkType));
-    const currentDaemonAddress = options.getValue("daemonAddress").trim();
-    enqueueDaemonChecksRef.current([
-      ...daemonPresets,
-      ...(currentDaemonAddress ? [currentDaemonAddress] : []),
-    ]);
     void loadRemoteDaemonNodes(
       networkType,
       setRemoteDaemonFetch,
@@ -1936,16 +1861,15 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     );
     return () => {
       fetchController.abort();
-      checkController.abort();
     };
-  }, [daemonListRequested, networkType, daemonPresets]);
+  }, [daemonListRequested, networkType]);
 
-  React.useEffect(() => {
-    if (!daemonListRequested) {
-      return;
-    }
-    enqueueDaemonChecksRef.current(remoteDaemonFetch.nodes);
-  }, [daemonListRequested, remoteDaemonFetch.nodes]);
+  React.useEffect(
+    () => () => {
+      daemonTestAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
@@ -1988,19 +1912,48 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       : remoteDaemonFetch.failedSources.length > 0
         ? `Failed to fetch from ${remoteDaemonFetch.failedSources.join(", ")}`
         : null;
-  const testDaemonAddress = async () => {
-    const target = options.getValue("daemonAddress").trim();
+  const checkDaemonSelection = React.useCallback(
+    async (targetAddress: string) => {
+      const target = targetAddress.trim();
+      daemonTestAbortRef.current?.abort();
+      daemonTestAbortRef.current = null;
+
+      if (!target) {
+        setDaemonTestStatus("failed");
+        return;
+      }
+
+      const controller = new AbortController();
+      daemonTestAbortRef.current = controller;
+      setDaemonCheckStatuses((prev) => ({
+        ...prev,
+        [target]: { status: "checking" },
+      }));
+      setDaemonTestStatus("testing");
+
+      const result = await checkDaemonAddress(
+        target,
+        networkTypeToDaemonNettype(networkType),
+        controller.signal,
+      );
+
+      if (
+        controller.signal.aborted ||
+        daemonTestAbortRef.current !== controller
+      ) {
+        return;
+      }
+
+      daemonTestAbortRef.current = null;
+      setDaemonTestStatus(daemonTestStatusFromCheckResult(result));
+      setDaemonCheckStatuses((prev) => ({ ...prev, [target]: result }));
+    },
+    [networkType],
+  );
+  const testDaemonAddress = () => {
+    const target = options.getValue("daemonAddress");
     setDaemonTestStatus("testing");
-    if (!target) {
-      setDaemonTestStatus("failed");
-      return;
-    }
-    const result = await checkDaemonAddress(
-      target,
-      networkTypeToDaemonNettype(networkType),
-    );
-    setDaemonTestStatus(daemonTestStatusFromCheckResult(result));
-    setDaemonCheckStatuses((prev) => ({ ...prev, [target]: result }));
+    void checkDaemonSelection(target);
   };
   const daemonTestButton = (
     <Button
@@ -2138,6 +2091,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                   }
                   setDaemonSelectValue(next);
                   options.setValue("daemonAddress", next);
+                  void checkDaemonSelection(next);
                   refresh((x) => x + 1);
                 }}
               >
