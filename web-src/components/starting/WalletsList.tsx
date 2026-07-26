@@ -60,6 +60,10 @@ const NETWORK_TYPE_OPTIONS = [
 
 type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
 
+function isNativeApp() {
+  return window.amethystRuntime?.isNativeApp === true;
+}
+
 function ProjectSupportDialog({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = React.useState<"idle" | "ok" | "fail">("idle");
 
@@ -301,7 +305,7 @@ export function WalletsList() {
     let cancelled = false;
     (async () => {
       const daemonAddress = options.getValue("daemonAddress");
-      await walletApi.setDaemonAddress(daemonAddress);
+      await walletApi.setDaemonAddress(daemonAddress, isNativeApp());
       const walletNames = await withFsLock(async () =>
         walletApi.listWalletNames(),
       );
@@ -646,7 +650,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
     .toString(36)
     .slice(2, 8)}`;
   const previousDaemonAddress = options.getValue("daemonAddress");
-  await walletApi.setDaemonAddress(daemonAddress);
+  await walletApi.setDaemonAddress(daemonAddress, isNativeApp());
 
   try {
     await withFsLock(async () => {
@@ -662,7 +666,7 @@ async function testDaemonConnection(daemonAddress: string): Promise<void> {
       }
     });
   } finally {
-    await walletApi.setDaemonAddress(previousDaemonAddress);
+    await walletApi.setDaemonAddress(previousDaemonAddress, isNativeApp());
   }
 }
 

@@ -600,21 +600,17 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
   return runtimeGlobal.globalHttpConfig;
 }
 
-function getNativeDaemonProxyUrl(targetUrl: string): string | null {
-  if (typeof globalThis.location === "undefined") {
-    return null;
-  }
-
-  if (
-    globalThis.location.protocol !== NATIVE_APP_PROTOCOL ||
-    globalThis.location.host !== NATIVE_APP_HOST
-  ) {
+function getNativeDaemonProxyUrl(
+  targetUrl: string,
+  useNativeDaemonProxy: boolean,
+): string | null {
+  if (!useNativeDaemonProxy) {
     return null;
   }
 
   // The hosted web app must keep using direct daemon URLs so browser security
-  // remains honest. In Electron, however, this app protocol URL is same-origin
-  // to the worker and lets main.cjs perform the daemon request without CORS.
+  // remains honest. In Electron, the renderer explicitly asks for this app
+  // protocol URL so main.cjs can perform the daemon request without CORS.
   const proxyUrl = new URL(
     NATIVE_DAEMON_PROXY_PATH,
     `${NATIVE_APP_PROTOCOL}//${NATIVE_APP_HOST}`,
@@ -761,12 +757,17 @@ export async function initModule(
   onProgress?.({ phase: "moduleReady" });
 }
 
-export function setDaemonAddress(daemonAddress: string) {
+export function setDaemonAddress(
+  daemonAddress: string,
+  useNativeDaemonProxy = false,
+) {
   ensureGlobalHttpConfig().mapUrl = (url) => {
     const targetUrl = daemonAddress + url;
     // C++ only knows daemon-relative RPC paths. Keep that API unchanged and
     // decide here whether the runtime needs the native CORS-bypass proxy.
-    return getNativeDaemonProxyUrl(targetUrl) ?? targetUrl;
+    return (
+      getNativeDaemonProxyUrl(targetUrl, useNativeDaemonProxy) ?? targetUrl
+    );
   };
 }
 
