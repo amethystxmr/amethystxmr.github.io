@@ -578,10 +578,6 @@ type WalletRuntimeGlobal = typeof globalThis & {
   globalHttpConfig?: GlobalHttpConfig;
 };
 
-const NATIVE_APP_PROTOCOL = "amethyst:";
-const NATIVE_APP_HOST = "app";
-const NATIVE_DAEMON_PROXY_PATH = "/__daemon_rpc";
-
 function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
   const runtimeGlobal = globalThis as WalletRuntimeGlobal;
   return runtimeGlobal;
@@ -598,25 +594,6 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
     },
   };
   return runtimeGlobal.globalHttpConfig;
-}
-
-function getNativeDaemonProxyUrl(
-  targetUrl: string,
-  useNativeDaemonProxy: boolean,
-): string | null {
-  if (!useNativeDaemonProxy) {
-    return null;
-  }
-
-  // The hosted web app must keep using direct daemon URLs so browser security
-  // remains honest. In Electron, the renderer explicitly asks for this app
-  // protocol URL so main.cjs can perform the daemon request without CORS.
-  const proxyUrl = new URL(
-    NATIVE_DAEMON_PROXY_PATH,
-    `${NATIVE_APP_PROTOCOL}//${NATIVE_APP_HOST}`,
-  );
-  proxyUrl.searchParams.set("target", targetUrl);
-  return proxyUrl.href;
 }
 
 function getWalletWasmUrl() {
@@ -757,17 +734,9 @@ export async function initModule(
   onProgress?.({ phase: "moduleReady" });
 }
 
-export function setDaemonAddress(
-  daemonAddress: string,
-  useNativeDaemonProxy = false,
-) {
+export function setDaemonAddress(daemonAddress: string) {
   ensureGlobalHttpConfig().mapUrl = (url) => {
-    const targetUrl = daemonAddress + url;
-    // C++ only knows daemon-relative RPC paths. Keep that API unchanged and
-    // decide here whether the runtime needs the native CORS-bypass proxy.
-    return (
-      getNativeDaemonProxyUrl(targetUrl, useNativeDaemonProxy) ?? targetUrl
-    );
+    return daemonAddress + url;
   };
 }
 

@@ -4,7 +4,7 @@ const {
   shell,
   protocol,
   nativeImage,
-  net,
+  session,
 } = require("electron");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
@@ -17,7 +17,6 @@ const APP_HEIGHT = 736;
 const APP_PROTOCOL = "amethyst";
 const APP_PROTOCOL_HOST = "app";
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_PROTOCOL_HOST}`;
-const DAEMON_PROXY_PATH = "/__daemon_rpc";
 // Must match package.json desktopName / Linux executable basename so GNOME
 // Wayland can associate the running window with the desktop entry + icon.
 const LINUX_DESKTOP_FILE_NAME = "amethystxmr.desktop";
@@ -258,67 +257,48 @@ function makeTextResponse(status, text) {
   });
 }
 
-function isSupportedDaemonUrl(url) {
-  return url.protocol === "http:" || url.protocol === "https:";
+function shouldAddExternalCorsHeaders(urlString) {
+  try {
+    const parsed = new URL(urlString);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
-// Native builds need to talk to public/local Monero daemons that often do not
-// send browser CORS headers. Keep renderer web security intact by making the
-// worker request this same-origin app protocol URL, then do the real daemon
-// request from Electron's main process where browser CORS checks do not apply.
-async function handleDaemonProxy(requestUrl, request) {
-  const target = requestUrl.searchParams.get("target");
-  if (!target) {
-    return makeTextResponse(400, "Missing daemon target");
-  }
+function setResponseHeader(responseHeaders, name, value) {
+  const existingName = Object.keys(responseHeaders).find(
+    (headerName) => headerName.toLowerCase() === name.toLowerCase(),
+  );
+  responseHeaders[existingName ?? name] = [value];
+}
 
-  let targetUrl;
-  try {
-    targetUrl = new URL(target);
-  } catch {
-    return makeTextResponse(400, "Invalid daemon target");
-  }
-
-  if (!isSupportedDaemonUrl(targetUrl)) {
-    return makeTextResponse(400, "Unsupported daemon target");
-  }
-
-  if (request.method !== "GET" && request.method !== "POST") {
-    return makeTextResponse(405, "Unsupported daemon method");
-  }
-
-  try {
-    const requestInit = {
-      method: request.method,
-      redirect: "follow",
-    };
-    if (request.method !== "GET") {
-      requestInit.body = Buffer.from(await request.arrayBuffer());
+function installExternalCorsHeaders() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (!shouldAddExternalCorsHeaders(details.url)) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
     }
 
-    // Deliberately forward only the method/body the wallet generated. Adding
-    // browser-style CORS or origin headers here would recreate the failure mode
-    // this proxy exists to avoid.
-    const upstream = await net.fetch(targetUrl.href, requestInit);
-    const headers = new Headers({
-      ...securityHeaders(),
-      "Content-Type":
-        upstream.headers.get("Content-Type") || "application/octet-stream",
-    });
-    const contentLength = upstream.headers.get("Content-Length");
-    if (contentLength) {
-      headers.set("Content-Length", contentLength);
-    }
+    const responseHeaders = { ...(details.responseHeaders ?? {}) };
 
-    return new Response(upstream.body, {
-      status: upstream.status,
-      statusText: upstream.statusText,
-      headers,
-    });
-  } catch (error) {
-    console.warn("Daemon proxy request failed:", error);
-    return makeTextResponse(502, "Daemon request failed");
-  }
+    // Native users can point the wallet at public or local Monero daemons that
+    // do not send browser CORS headers. Add the headers at the Electron session
+    // boundary instead of teaching React/wallet code whether it is native.
+    setResponseHeader(
+      responseHeaders,
+      "Access-Control-Allow-Origin",
+      APP_ORIGIN,
+    );
+    setResponseHeader(
+      responseHeaders,
+      "Access-Control-Allow-Methods",
+      "GET, POST, OPTIONS",
+    );
+    setResponseHeader(responseHeaders, "Access-Control-Allow-Headers", "*");
+
+    callback({ responseHeaders });
+  });
 }
 
 async function handleAppProtocol(request) {
@@ -334,10 +314,6 @@ async function handleAppProtocol(request) {
     requestUrl.host !== APP_PROTOCOL_HOST
   ) {
     return makeTextResponse(404, "Not found");
-  }
-
-  if (requestUrl.pathname === DAEMON_PROXY_PATH) {
-    return handleDaemonProxy(requestUrl, request);
   }
 
   const served = await readServedFile(requestUrl.pathname);
@@ -442,6 +418,7 @@ async function start() {
   await fs.access(path.join(DIST_DIR, "index.html"));
   ensureLinuxDesktopIntegration(resolveAppIconPath());
   await registerAppProtocol();
+  installExternalCorsHeaders();
   createWindow(`${APP_ORIGIN}/`);
 }
 

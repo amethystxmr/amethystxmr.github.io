@@ -4,8 +4,11 @@ function getServiceWorkerUrl() {
   return `${window.location.origin}${dirPath}service-worker.js`;
 }
 
-function isNativeAppRuntime() {
-  return window.amethystRuntime?.isNativeApp === true;
+function canRegisterServiceWorker() {
+  return (
+    window.location.protocol === "https:" ||
+    window.location.hostname === "localhost"
+  );
 }
 
 /** Registers a minimal service worker so installability checks can pass. */
@@ -14,7 +17,7 @@ export function registerPwaServiceWorker(): void {
     return;
   }
 
-  if (isNativeAppRuntime()) {
+  if (!canRegisterServiceWorker()) {
     return;
   }
 
