@@ -6,6 +6,7 @@
   "author": "",
   "type": "module",
   "main": "electron/main.cjs",
+  "desktopName": "amethystxmr.desktop",
   "scripts": {
     "test": "npm run test:e2e",
     "test:e2e": "playwright test",
@@ -37,21 +38,33 @@
       "electron/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "electron/images/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "icon": "electron/images/icon.png",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "win": {
       "target": [
         "portable"
-      ]
+      ],
+      "icon": "electron/images/icon.ico"
     },
     "linux": {
       "target": [
         "AppImage"
-      ]
+      ],
+      "icon": "electron/images/icon.png",
+      "category": "Finance",
+      "syncDesktopName": true
     },
     "mac": {
       "target": [
         "dmg"
-      ]
+      ],
+      "icon": "electron/images/icon.icns"
     }
   },
   "dependencies": {

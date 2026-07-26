@@ -9,6 +9,7 @@ set -euo pipefail
 SOURCE_SVG="web-src/public/icons/source/amethyst-logo.svg"
 OUTPUT_DIR="web-src/public/icons"
 FAVICON="web-src/public/favicon.ico"
+NATIVE_ICON_DIR="electron/images"
 SIZES=(16 32 48 72 96 128 144 152 167 180 192 256 384 512)
 
 render_png() {
@@ -39,7 +40,27 @@ generate_icons() {
         render_png "$s"
       done
       convert "$OUTPUT_DIR/icon-16x16.png" "$OUTPUT_DIR/icon-32x32.png" "$OUTPUT_DIR/icon-48x48.png" "$FAVICON"
-      echo "Generated full icon set + favicon"
+      mkdir -p "$NATIVE_ICON_DIR"
+      cp "$OUTPUT_DIR/icon-512x512.png" "$NATIVE_ICON_DIR/icon.png"
+      convert \
+        "$OUTPUT_DIR/icon-16x16.png" \
+        "$OUTPUT_DIR/icon-32x32.png" \
+        "$OUTPUT_DIR/icon-48x48.png" \
+        "$OUTPUT_DIR/icon-72x72.png" \
+        "$OUTPUT_DIR/icon-128x128.png" \
+        "$OUTPUT_DIR/icon-256x256.png" \
+        "$NATIVE_ICON_DIR/icon.ico"
+      if command -v png2icns >/dev/null 2>&1; then
+        png2icns "$NATIVE_ICON_DIR/icon.icns" \
+          "$OUTPUT_DIR/icon-16x16.png" \
+          "$OUTPUT_DIR/icon-32x32.png" \
+          "$OUTPUT_DIR/icon-128x128.png" \
+          "$OUTPUT_DIR/icon-256x256.png" \
+          "$OUTPUT_DIR/icon-512x512.png"
+      else
+        echo "png2icns not found; leaving existing $NATIVE_ICON_DIR/icon.icns unchanged (if present)"
+      fi
+      echo "Generated full icon set + favicon + electron/images icons"
       ;;
     *)
       if [[ "$mode" =~ ^[0-9]+$ ]] && (( mode > 0 )); then

@@ -735,7 +735,9 @@ export async function initModule(
 }
 
 export function setDaemonAddress(daemonAddress: string) {
-  ensureGlobalHttpConfig().mapUrl = (url) => daemonAddress + url;
+  ensureGlobalHttpConfig().mapUrl = (url) => {
+    return daemonAddress + url;
+  };
 }
 
 export function setHttpFetchCallback(callback: HttpFetchCallback | null) {

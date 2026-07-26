@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, protocol } = require("electron");
+const { app, BrowserWindow, shell, protocol, session } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
@@ -11,6 +11,12 @@ const APP_PROTOCOL_HOST = "app";
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_PROTOCOL_HOST}`;
 
 const DIST_DIR = path.resolve(__dirname, "..", "built-web");
+
+function resolveAppIconPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "icon.png")
+    : path.join(__dirname, "images", "icon.png");
+}
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -92,7 +98,10 @@ function resolveRequestPath(requestPathname) {
   }
 
   const normalized = path.normalize(rawPath).replace(/^(\.\.[/\\])+/, "");
-  const candidate = path.resolve(DIST_DIR, `.${normalized.startsWith("/") ? normalized : `/${normalized}`}`);
+  const candidate = path.resolve(
+    DIST_DIR,
+    `.${normalized.startsWith("/") ? normalized : `/${normalized}`}`,
+  );
 
   if (!candidate.startsWith(DIST_DIR)) {
     return null;
@@ -138,6 +147,50 @@ function makeTextResponse(status, text) {
       ...securityHeaders(),
       "Content-Type": "text/plain; charset=utf-8",
     },
+  });
+}
+
+function shouldAddExternalCorsHeaders(urlString) {
+  try {
+    const parsed = new URL(urlString);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function setResponseHeader(responseHeaders, name, value) {
+  const existingName = Object.keys(responseHeaders).find(
+    (headerName) => headerName.toLowerCase() === name.toLowerCase(),
+  );
+  responseHeaders[existingName ?? name] = [value];
+}
+
+function installExternalCorsHeaders() {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (!shouldAddExternalCorsHeaders(details.url)) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+
+    const responseHeaders = { ...(details.responseHeaders ?? {}) };
+
+    // Native users can point the wallet at public or local Monero daemons that
+    // do not send browser CORS headers. Add the headers at the Electron session
+    // boundary instead of teaching React/wallet code whether it is native.
+    setResponseHeader(
+      responseHeaders,
+      "Access-Control-Allow-Origin",
+      APP_ORIGIN,
+    );
+    setResponseHeader(
+      responseHeaders,
+      "Access-Control-Allow-Methods",
+      "GET, POST, OPTIONS",
+    );
+    setResponseHeader(responseHeaders, "Access-Control-Allow-Headers", "*");
+
+    callback({ responseHeaders });
   });
 }
 
@@ -188,24 +241,28 @@ function isSafeExternalUrl(urlString) {
 }
 
 function createWindow(baseUrl) {
+  // Do not set min/max width/height here: those constrain the outer frame, so
+  // pairing them with useContentSize shrinks the viewport below APP_* and
+  // creates an unwanted page scrollbar. resizable:false keeps the size fixed.
   const win = new BrowserWindow({
     useContentSize: true,
     width: APP_WIDTH,
     height: APP_HEIGHT,
-    minWidth: APP_WIDTH,
-    minHeight: APP_HEIGHT,
-    maxWidth: APP_WIDTH,
-    maxHeight: APP_HEIGHT,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
     autoHideMenuBar: true,
     backgroundColor: "#281549",
+    icon: resolveAppIconPath(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
     },
+  });
+
+  win.once("ready-to-show", () => {
+    win.setContentSize(APP_WIDTH, APP_HEIGHT);
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -247,6 +304,7 @@ function createWindow(baseUrl) {
 async function start() {
   await fs.access(path.join(DIST_DIR, "index.html"));
   await registerAppProtocol();
+  installExternalCorsHeaders();
   createWindow(`${APP_ORIGIN}/`);
 }
 
