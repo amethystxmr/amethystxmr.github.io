@@ -578,6 +578,10 @@ type WalletRuntimeGlobal = typeof globalThis & {
   globalHttpConfig?: GlobalHttpConfig;
 };
 
+const NATIVE_APP_PROTOCOL = "amethyst:";
+const NATIVE_APP_HOST = "app";
+const NATIVE_DAEMON_PROXY_PATH = "/__daemon_rpc";
+
 function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
   const runtimeGlobal = globalThis as WalletRuntimeGlobal;
   return runtimeGlobal;
@@ -594,6 +598,26 @@ function ensureGlobalHttpConfig(): GlobalHttpConfig {
     },
   };
   return runtimeGlobal.globalHttpConfig;
+}
+
+function getNativeDaemonProxyUrl(targetUrl: string): string | null {
+  if (typeof globalThis.location === "undefined") {
+    return null;
+  }
+
+  if (
+    globalThis.location.protocol !== NATIVE_APP_PROTOCOL ||
+    globalThis.location.host !== NATIVE_APP_HOST
+  ) {
+    return null;
+  }
+
+  const proxyUrl = new URL(
+    NATIVE_DAEMON_PROXY_PATH,
+    `${NATIVE_APP_PROTOCOL}//${NATIVE_APP_HOST}`,
+  );
+  proxyUrl.searchParams.set("target", targetUrl);
+  return proxyUrl.href;
 }
 
 function getWalletWasmUrl() {
@@ -735,7 +759,10 @@ export async function initModule(
 }
 
 export function setDaemonAddress(daemonAddress: string) {
-  ensureGlobalHttpConfig().mapUrl = (url) => daemonAddress + url;
+  ensureGlobalHttpConfig().mapUrl = (url) => {
+    const targetUrl = daemonAddress + url;
+    return getNativeDaemonProxyUrl(targetUrl) ?? targetUrl;
+  };
 }
 
 export function setHttpFetchCallback(callback: HttpFetchCallback | null) {

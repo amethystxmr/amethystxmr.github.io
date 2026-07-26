@@ -4,6 +4,7 @@ const {
   shell,
   protocol,
   nativeImage,
+  net,
 } = require("electron");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
@@ -16,6 +17,7 @@ const APP_HEIGHT = 736;
 const APP_PROTOCOL = "amethyst";
 const APP_PROTOCOL_HOST = "app";
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_PROTOCOL_HOST}`;
+const DAEMON_PROXY_PATH = "/__daemon_rpc";
 // Must match package.json desktopName / Linux executable basename so GNOME
 // Wayland can associate the running window with the desktop entry + icon.
 const LINUX_DESKTOP_FILE_NAME = "amethystxmr.desktop";
@@ -256,6 +258,62 @@ function makeTextResponse(status, text) {
   });
 }
 
+function isSupportedDaemonUrl(url) {
+  return url.protocol === "http:" || url.protocol === "https:";
+}
+
+async function handleDaemonProxy(requestUrl, request) {
+  const target = requestUrl.searchParams.get("target");
+  if (!target) {
+    return makeTextResponse(400, "Missing daemon target");
+  }
+
+  let targetUrl;
+  try {
+    targetUrl = new URL(target);
+  } catch {
+    return makeTextResponse(400, "Invalid daemon target");
+  }
+
+  if (!isSupportedDaemonUrl(targetUrl)) {
+    return makeTextResponse(400, "Unsupported daemon target");
+  }
+
+  if (request.method !== "GET" && request.method !== "POST") {
+    return makeTextResponse(405, "Unsupported daemon method");
+  }
+
+  try {
+    const requestInit = {
+      method: request.method,
+      redirect: "follow",
+    };
+    if (request.method !== "GET") {
+      requestInit.body = Buffer.from(await request.arrayBuffer());
+    }
+
+    const upstream = await net.fetch(targetUrl.href, requestInit);
+    const headers = new Headers({
+      ...securityHeaders(),
+      "Content-Type":
+        upstream.headers.get("Content-Type") || "application/octet-stream",
+    });
+    const contentLength = upstream.headers.get("Content-Length");
+    if (contentLength) {
+      headers.set("Content-Length", contentLength);
+    }
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers,
+    });
+  } catch (error) {
+    console.warn("Daemon proxy request failed:", error);
+    return makeTextResponse(502, "Daemon request failed");
+  }
+}
+
 async function handleAppProtocol(request) {
   let requestUrl;
   try {
@@ -269,6 +327,10 @@ async function handleAppProtocol(request) {
     requestUrl.host !== APP_PROTOCOL_HOST
   ) {
     return makeTextResponse(404, "Not found");
+  }
+
+  if (requestUrl.pathname === DAEMON_PROXY_PATH) {
+    return handleDaemonProxy(requestUrl, request);
   }
 
   const served = await readServedFile(requestUrl.pathname);
