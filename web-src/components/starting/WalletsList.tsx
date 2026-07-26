@@ -2091,6 +2091,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                       ),
                     ),
                   );
+                  void checkDaemonSelection(trimmed);
                 }}
               />
             ) : (
