@@ -612,6 +612,9 @@ function getNativeDaemonProxyUrl(targetUrl: string): string | null {
     return null;
   }
 
+  // The hosted web app must keep using direct daemon URLs so browser security
+  // remains honest. In Electron, however, this app protocol URL is same-origin
+  // to the worker and lets main.cjs perform the daemon request without CORS.
   const proxyUrl = new URL(
     NATIVE_DAEMON_PROXY_PATH,
     `${NATIVE_APP_PROTOCOL}//${NATIVE_APP_HOST}`,
@@ -761,6 +764,8 @@ export async function initModule(
 export function setDaemonAddress(daemonAddress: string) {
   ensureGlobalHttpConfig().mapUrl = (url) => {
     const targetUrl = daemonAddress + url;
+    // C++ only knows daemon-relative RPC paths. Keep that API unchanged and
+    // decide here whether the runtime needs the native CORS-bypass proxy.
     return getNativeDaemonProxyUrl(targetUrl) ?? targetUrl;
   };
 }

@@ -262,6 +262,10 @@ function isSupportedDaemonUrl(url) {
   return url.protocol === "http:" || url.protocol === "https:";
 }
 
+// Native builds need to talk to public/local Monero daemons that often do not
+// send browser CORS headers. Keep renderer web security intact by making the
+// worker request this same-origin app protocol URL, then do the real daemon
+// request from Electron's main process where browser CORS checks do not apply.
 async function handleDaemonProxy(requestUrl, request) {
   const target = requestUrl.searchParams.get("target");
   if (!target) {
@@ -292,6 +296,9 @@ async function handleDaemonProxy(requestUrl, request) {
       requestInit.body = Buffer.from(await request.arrayBuffer());
     }
 
+    // Deliberately forward only the method/body the wallet generated. Adding
+    // browser-style CORS or origin headers here would recreate the failure mode
+    // this proxy exists to avoid.
     const upstream = await net.fetch(targetUrl.href, requestInit);
     const headers = new Headers({
       ...securityHeaders(),
