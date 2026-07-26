@@ -8,6 +8,7 @@ import {
   ConfirmDialog,
   Toggle,
   Header,
+  Hint,
   Input,
   Label,
   ListRowButton,
@@ -1874,8 +1875,16 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
           <FormRow>
             <div className="mb-1 flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold text-gray-300">
-                Daemon address
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-gray-300">
+                  Daemon address
+                </div>
+                <Hint>
+                  <p>
+                    For the daemon to work in the browser, it must use HTTPS and
+                    include CORS headers.
+                  </p>
+                </Hint>
               </div>
               {daemonTestButton}
             </div>
