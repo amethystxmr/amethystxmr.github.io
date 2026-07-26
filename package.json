@@ -40,23 +40,23 @@
     ],
     "extraResources": [
       {
-        "from": "build/icon.png",
+        "from": "electron/images/icon.png",
         "to": "icon.png"
       }
     ],
-    "icon": "build/icon.png",
+    "icon": "electron/images/icon.png",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "win": {
       "target": [
         "portable"
       ],
-      "icon": "build/icon.ico"
+      "icon": "electron/images/icon.ico"
     },
     "linux": {
       "target": [
         "AppImage"
       ],
-      "icon": "build/icon.png",
+      "icon": "electron/images/icon.png",
       "category": "Finance",
       "syncDesktopName": true
     },
@@ -64,7 +64,7 @@
       "target": [
         "dmg"
       ],
-      "icon": "build/icon.png"
+      "icon": "electron/images/icon.png"
     }
   },
   "dependencies": {

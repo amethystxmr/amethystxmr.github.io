@@ -24,11 +24,11 @@ if (process.platform === "linux") {
 
 function resolveAppIconPath() {
   // Linux cannot reliably use BrowserWindow icons from inside app.asar, so the
-  // packaged build copies build/icon.png to resources/ via extraResources.
+  // packaged build copies electron/images/icon.png to resources/ via extraResources.
   const candidates = [
     path.join(process.resourcesPath, "icon.png"),
     path.join(DIST_DIR, "icons", "icon-512x512.png"),
-    path.join(__dirname, "..", "build", "icon.png"),
+    path.join(__dirname, "images", "icon.png"),
   ];
   for (const candidate of candidates) {
     try {
