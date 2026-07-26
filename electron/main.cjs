@@ -248,7 +248,6 @@ function createWindow(baseUrl) {
     useContentSize: true,
     width: APP_WIDTH,
     height: APP_HEIGHT,
-    show: false,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -264,7 +263,6 @@ function createWindow(baseUrl) {
 
   win.once("ready-to-show", () => {
     win.setContentSize(APP_WIDTH, APP_HEIGHT);
-    win.show();
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
