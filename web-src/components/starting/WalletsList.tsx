@@ -8,6 +8,7 @@ import {
   ConfirmDialog,
   Toggle,
   Header,
+  Hint,
   Input,
   Label,
   ListRowButton,
@@ -28,7 +29,16 @@ import {
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
-import { DAEMON_PRESET_OPTIONS, options } from "../options";
+import {
+  checkDaemonAddress,
+  createIdleRemoteDaemonNodesProgress,
+  createInitialRemoteDaemonNodesProgress,
+  type DaemonAddressCheckResult,
+  getDaemonPresetOptions,
+  loadRemoteDaemonNodes,
+  networkTypeToDaemonNettype,
+} from "../daemonNodes";
+import { options } from "../options";
 import { NiceTabs } from "../main/tabs";
 import {
   acquireWalletOpenLock,
@@ -45,7 +55,7 @@ type OpenedWallet = {
 };
 
 const DAEMON_CUSTOM_OPTION = "__custom__";
-const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
+const DAEMON_REMOTE_NODES_STATUS_OPTION = "__monero_fail_status__";
 const PROJECT_GITHUB_URL =
   "https://github.com/amethystxmr/amethystxmr.github.io";
 const PROJECT_GITHUB_ISSUES_URL = `${PROJECT_GITHUB_URL}/issues`;
@@ -58,7 +68,9 @@ const NETWORK_TYPE_OPTIONS = [
   { value: NetworkTypes.FAKECHAIN, label: "Fakenet" },
 ] as const;
 
-type DaemonTestStatus = "idle" | "testing" | "ok" | "failed";
+type DaemonTestStatus = "idle" | "testing" | "ok" | "failed" | "wrong_network";
+type DaemonAddressCheckState =
+  { status: "checking" } | DaemonAddressCheckResult;
 
 function ProjectSupportDialog({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = React.useState<"idle" | "ok" | "fail">("idle");
@@ -206,10 +218,31 @@ function parseSecretKeyHex(value: string, label: string): Uint8Array {
   return bytes;
 }
 
-function getDaemonSelectValue(daemonAddress: string): string {
-  return DAEMON_PRESET_OPTIONS.includes(
-    daemonAddress as (typeof DAEMON_PRESET_OPTIONS)[number],
-  )
+function getDaemonCatalogAddresses(
+  presets: readonly string[],
+  remoteAddresses: readonly string[],
+): string[] {
+  return [...presets, ...remoteAddresses];
+}
+
+function getDaemonSelectAddresses(
+  daemonAddress: string,
+  presets: readonly string[],
+  remoteAddresses: readonly string[],
+): string[] {
+  const catalog = getDaemonCatalogAddresses(presets, remoteAddresses);
+  const trimmed = daemonAddress.trim();
+  if (trimmed && !catalog.includes(trimmed)) {
+    return [trimmed, ...catalog];
+  }
+  return catalog;
+}
+
+function getDaemonSelectValue(
+  daemonAddress: string,
+  knownAddresses: readonly string[],
+): string {
+  return knownAddresses.includes(daemonAddress)
     ? daemonAddress
     : DAEMON_CUSTOM_OPTION;
 }
@@ -221,10 +254,44 @@ function getDaemonTestLabel(status: DaemonTestStatus): string {
   if (status === "ok") {
     return "All ok";
   }
+  if (status === "wrong_network") {
+    return "Wrong network type";
+  }
   if (status === "failed") {
     return "Failed";
   }
   return "Check connection";
+}
+
+function formatDaemonOptionLabel(
+  address: string,
+  checkState: DaemonAddressCheckState | undefined,
+): string {
+  if (!checkState) {
+    return address;
+  }
+  if (checkState.status === "checking") {
+    return `${address} (checking...)`;
+  }
+  if (checkState.status === "ok") {
+    return `${address} (ok)`;
+  }
+  if (checkState.status === "wrong_network") {
+    return `${address} (wrong nettype)`;
+  }
+  return `${address} (failed: ${checkState.reason})`;
+}
+
+function daemonTestStatusFromCheckResult(
+  result: DaemonAddressCheckResult,
+): DaemonTestStatus {
+  if (result.status === "ok") {
+    return "ok";
+  }
+  if (result.status === "wrong_network") {
+    return "wrong_network";
+  }
+  return "failed";
 }
 
 function getNetworkTypeSelectValue(networkType: NetworkTypeValue): string {
@@ -638,31 +705,6 @@ async function createWalletUsingCurrentOptions(): Promise<MoneroWasmWallet> {
   } catch (e) {
     wallet.delete();
     throw e;
-  }
-}
-
-async function testDaemonConnection(daemonAddress: string): Promise<void> {
-  const tempWalletName = `${TEMP_DAEMON_TEST_WALLET_PREFIX}-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`;
-  const previousDaemonAddress = options.getValue("daemonAddress");
-  await walletApi.setDaemonAddress(daemonAddress);
-
-  try {
-    await withFsLock(async () => {
-      const tempWallet = await createWalletUsingCurrentOptions();
-      try {
-        await tempWallet.init();
-        const secret32 = crypto.getRandomValues(new Uint8Array(32));
-        await tempWallet.generate(tempWalletName, "", secret32, false, false);
-        await tempWallet.get_daemon_blockchain_height();
-      } finally {
-        await closeWallet(tempWallet);
-        await walletApi.deleteWalletFiles(tempWalletName);
-      }
-    });
-  } finally {
-    await walletApi.setDaemonAddress(previousDaemonAddress);
   }
 }
 
@@ -1746,11 +1788,26 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     () => getNetworkTypeSelectValue(networkType),
   );
   const daemonAddress = options.getValue("daemonAddress");
+  const daemonPresets = getDaemonPresetOptions(networkType);
+  const [daemonListRequested, setDaemonListRequested] = React.useState(false);
+  const [remoteDaemonFetch, setRemoteDaemonFetch] = React.useState(
+    createIdleRemoteDaemonNodesProgress,
+  );
+  const [daemonCheckStatuses, setDaemonCheckStatuses] = React.useState<
+    Record<string, DaemonAddressCheckState>
+  >({});
+  const [isEditingCustomDaemon, setIsEditingCustomDaemon] =
+    React.useState(false);
   const [daemonSelectValue, setDaemonSelectValue] = React.useState(() =>
-    getDaemonSelectValue(daemonAddress),
+    getDaemonSelectValue(
+      daemonAddress,
+      getDaemonSelectAddresses(daemonAddress, daemonPresets, []),
+    ),
   );
   const [daemonTestStatus, setDaemonTestStatus] =
     React.useState<DaemonTestStatus>("idle");
+  const daemonTestAbortRef = React.useRef<AbortController | null>(null);
+  const daemonTestTargetRef = React.useRef<string | null>(null);
   const buildInfoText = React.useMemo(() => {
     const ts = import.meta.env.DEV
       ? new Date().toISOString()
@@ -1784,32 +1841,135 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
+  const resetDaemonListState = React.useCallback(() => {
+    setDaemonListRequested(false);
+    setRemoteDaemonFetch(createIdleRemoteDaemonNodesProgress());
+    setDaemonCheckStatuses({});
+    daemonTestAbortRef.current?.abort();
+    daemonTestAbortRef.current = null;
+    daemonTestTargetRef.current = null;
+  }, []);
+
+  React.useEffect(() => {
+    if (!daemonListRequested) {
+      return;
+    }
+    const fetchController = new AbortController();
+    setRemoteDaemonFetch(createInitialRemoteDaemonNodesProgress(networkType));
+    void loadRemoteDaemonNodes(
+      networkType,
+      setRemoteDaemonFetch,
+      fetchController.signal,
+    );
+    return () => {
+      fetchController.abort();
+    };
+  }, [daemonListRequested, networkType]);
+
+  React.useEffect(
+    () => () => {
+      daemonTestAbortRef.current?.abort();
+      daemonTestTargetRef.current = null;
+    },
+    [],
+  );
+
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
-    setDaemonSelectValue(getDaemonSelectValue(daemonAddress));
-  }, [daemonAddress]);
+    if (isEditingCustomDaemon) {
+      return;
+    }
+    setDaemonSelectValue(
+      getDaemonSelectValue(
+        daemonAddress,
+        getDaemonSelectAddresses(
+          daemonAddress,
+          daemonPresets,
+          remoteDaemonFetch.nodes,
+        ),
+      ),
+    );
+  }, [
+    daemonAddress,
+    daemonPresets,
+    remoteDaemonFetch.nodes,
+    isEditingCustomDaemon,
+  ]);
   React.useEffect(() => {
     setNetworkTypeSelectValue(getNetworkTypeSelectValue(networkType));
   }, [networkType]);
   React.useEffect(() => {
-    setDaemonTestStatus("idle");
-  }, [daemonAddress]);
-
-  const isCustomDaemonAddress = daemonSelectValue === DAEMON_CUSTOM_OPTION;
-  const testDaemonAddress = async () => {
-    const target = options.getValue("daemonAddress").trim();
-    setDaemonTestStatus("testing");
-    if (!target) {
-      setDaemonTestStatus("failed");
+    if (
+      daemonTestAbortRef.current &&
+      daemonTestTargetRef.current === daemonAddress.trim()
+    ) {
       return;
     }
-    try {
-      await testDaemonConnection(target);
-      setDaemonTestStatus("ok");
-    } catch (e) {
-      console.error("Daemon test failed:", e);
-      setDaemonTestStatus("failed");
-    }
+    daemonTestTargetRef.current = null;
+    setDaemonTestStatus("idle");
+  }, [daemonAddress, networkType]);
+
+  const loadedRemoteDaemonOptions = remoteDaemonFetch.nodes;
+  const daemonSelectAddresses = getDaemonSelectAddresses(
+    daemonAddress,
+    daemonPresets,
+    loadedRemoteDaemonOptions,
+  );
+  const remoteDaemonStatusLabel = !daemonListRequested
+    ? null
+    : remoteDaemonFetch.pendingCount > 0
+      ? `Fetching nodes list (${remoteDaemonFetch.pendingCount})`
+      : remoteDaemonFetch.failedSources.length > 0
+        ? `Failed to fetch from ${remoteDaemonFetch.failedSources.join(", ")}`
+        : null;
+  const checkDaemonSelection = React.useCallback(
+    async (
+      targetAddress: string,
+      targetNetworkType: NetworkTypeValue = networkType,
+    ) => {
+      const target = targetAddress.trim();
+      daemonTestAbortRef.current?.abort();
+      daemonTestAbortRef.current = null;
+      daemonTestTargetRef.current = target;
+
+      if (!target) {
+        daemonTestTargetRef.current = null;
+        setDaemonTestStatus("failed");
+        return;
+      }
+
+      const controller = new AbortController();
+      daemonTestAbortRef.current = controller;
+      setDaemonCheckStatuses((prev) => ({
+        ...prev,
+        [target]: { status: "checking" },
+      }));
+      setDaemonTestStatus("testing");
+
+      const result = await checkDaemonAddress(
+        target,
+        networkTypeToDaemonNettype(targetNetworkType),
+        controller.signal,
+      );
+
+      if (
+        controller.signal.aborted ||
+        daemonTestAbortRef.current !== controller
+      ) {
+        return;
+      }
+
+      daemonTestAbortRef.current = null;
+      daemonTestTargetRef.current = null;
+      setDaemonTestStatus(daemonTestStatusFromCheckResult(result));
+      setDaemonCheckStatuses((prev) => ({ ...prev, [target]: result }));
+    },
+    [networkType],
+  );
+  const testDaemonAddress = () => {
+    const target = options.getValue("daemonAddress");
+    setDaemonTestStatus("testing");
+    void checkDaemonSelection(target);
   };
   const daemonTestButton = (
     <Button
@@ -1817,7 +1977,8 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       className={`flex-none! rounded-md px-4 py-1 text-[11px] ${
         daemonTestStatus === "ok"
           ? "text-green-300 hover:text-green-200"
-          : daemonTestStatus === "failed"
+          : daemonTestStatus === "failed" ||
+              daemonTestStatus === "wrong_network"
             ? "text-red-300 hover:text-red-200"
             : ""
       }`}
@@ -1852,6 +2013,11 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                 const parsed = parseNetworkTypeSelectValue(next);
                 setNetworkTypeSelectValue(getNetworkTypeSelectValue(parsed));
                 options.setValue("networkType", parsed);
+                resetDaemonListState();
+                void checkDaemonSelection(
+                  options.getValue("daemonAddress"),
+                  parsed,
+                );
                 refresh((x) => x + 1);
               }}
             >
@@ -1874,42 +2040,32 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
           <FormRow>
             <div className="mb-1 flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold text-gray-300">
-                Daemon address
+              <div className="flex items-center gap-2">
+                <div className="text-sm font-semibold text-gray-300">
+                  Daemon address
+                </div>
+                <Hint>
+                  <div className="space-y-2">
+                    <p>
+                      In a regular browser the daemon must use HTTPS and send
+                      CORS headers.
+                    </p>
+                    <p>
+                      In Tor Browser you can also use{" "}
+                      <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11px] text-white">
+                        http://*.onion
+                      </code>{" "}
+                      daemon addresses.
+                    </p>
+                  </div>
+                </Hint>
               </div>
               {daemonTestButton}
             </div>
-            <Select.Root
-              value={daemonSelectValue}
-              onValueChange={(next) => {
-                setDaemonSelectValue(next);
-                if (next !== DAEMON_CUSTOM_OPTION) {
-                  options.setValue("daemonAddress", next);
-                  refresh((x) => x + 1);
-                }
-              }}
-            >
-              <Select.Trigger>
-                <Select.Value>
-                  {daemonSelectValue === DAEMON_CUSTOM_OPTION
-                    ? "Enter custom URL"
-                    : daemonSelectValue}
-                </Select.Value>
-              </Select.Trigger>
-              <Select.Content>
-                {DAEMON_PRESET_OPTIONS.map((address) => (
-                  <Select.Option key={address} value={address}>
-                    {address}
-                  </Select.Option>
-                ))}
-                <Select.Option value={DAEMON_CUSTOM_OPTION}>
-                  Enter custom URL
-                </Select.Option>
-              </Select.Content>
-            </Select.Root>
-            {isCustomDaemonAddress && (
+            {isEditingCustomDaemon ? (
               <Input
-                className="mt-2 font-mono text-sm"
+                className="font-mono text-sm"
+                autoFocus
                 autoComplete="off"
                 spellCheck={false}
                 placeholder="https://your-node.example.com:18081"
@@ -1918,7 +2074,86 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                   options.setValue("daemonAddress", e.target.value);
                   refresh((x) => x + 1);
                 }}
+                onBlur={() => {
+                  const trimmed = options.getValue("daemonAddress").trim();
+                  if (trimmed !== options.getValue("daemonAddress")) {
+                    options.setValue("daemonAddress", trimmed);
+                    refresh((x) => x + 1);
+                  }
+                  setIsEditingCustomDaemon(false);
+                  setDaemonSelectValue(
+                    getDaemonSelectValue(
+                      trimmed,
+                      getDaemonSelectAddresses(
+                        trimmed,
+                        daemonPresets,
+                        loadedRemoteDaemonOptions,
+                      ),
+                    ),
+                  );
+                  void checkDaemonSelection(trimmed);
+                }}
               />
+            ) : (
+              <Select.Root
+                value={daemonSelectValue}
+                onOpenChange={(open) => {
+                  if (open) {
+                    setDaemonListRequested(true);
+                  }
+                }}
+                onValueChange={(next) => {
+                  if (next === DAEMON_REMOTE_NODES_STATUS_OPTION) {
+                    return;
+                  }
+                  if (next === DAEMON_CUSTOM_OPTION) {
+                    setIsEditingCustomDaemon(true);
+                    return;
+                  }
+                  setDaemonSelectValue(next);
+                  options.setValue("daemonAddress", next);
+                  void checkDaemonSelection(next);
+                  refresh((x) => x + 1);
+                }}
+              >
+                <Select.Trigger>
+                  <Select.Value>
+                    {daemonSelectValue === DAEMON_CUSTOM_OPTION
+                      ? "Enter custom URL"
+                      : daemonSelectValue}
+                  </Select.Value>
+                </Select.Trigger>
+                <Select.Content>
+                  {daemonSelectAddresses.map((address) => {
+                    const checkState = daemonCheckStatuses[address];
+                    const isFailedCheck =
+                      checkState?.status === "fail" ||
+                      checkState?.status === "wrong_network";
+                    return (
+                      <Select.Option key={address} value={address}>
+                        <span
+                          className={
+                            isFailedCheck ? "text-white/50" : undefined
+                          }
+                        >
+                          {formatDaemonOptionLabel(address, checkState)}
+                        </span>
+                      </Select.Option>
+                    );
+                  })}
+                  <Select.Option value={DAEMON_CUSTOM_OPTION}>
+                    Enter custom URL
+                  </Select.Option>
+                  {remoteDaemonStatusLabel && (
+                    <Select.Option
+                      value={DAEMON_REMOTE_NODES_STATUS_OPTION}
+                      disabled
+                    >
+                      {remoteDaemonStatusLabel}
+                    </Select.Option>
+                  )}
+                </Select.Content>
+              </Select.Root>
             )}
           </FormRow>
         </div>
