@@ -6,6 +6,7 @@
   "author": "",
   "type": "module",
   "main": "electron/main.cjs",
+  "desktopName": "AmethystXMR.desktop",
   "scripts": {
     "test": "npm run test:e2e",
     "test:e2e": "playwright test",
@@ -51,7 +52,6 @@
       ],
       "icon": "build/icon.png",
       "category": "Finance",
-      "desktopName": "AmethystXMR.desktop",
       "syncDesktopName": true
     },
     "mac": {

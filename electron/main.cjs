@@ -189,14 +189,14 @@ function isSafeExternalUrl(urlString) {
 }
 
 function createWindow(baseUrl) {
+  // Do not set min/max width/height here: those constrain the outer frame, so
+  // pairing them with useContentSize shrinks the viewport below APP_* and
+  // creates an unwanted page scrollbar. resizable:false keeps the size fixed.
   const win = new BrowserWindow({
     useContentSize: true,
     width: APP_WIDTH,
     height: APP_HEIGHT,
-    minWidth: APP_WIDTH,
-    minHeight: APP_HEIGHT,
-    maxWidth: APP_WIDTH,
-    maxHeight: APP_HEIGHT,
+    show: false,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -208,6 +208,11 @@ function createWindow(baseUrl) {
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.cjs"),
     },
+  });
+
+  win.once("ready-to-show", () => {
+    win.setContentSize(APP_WIDTH, APP_HEIGHT);
+    win.show();
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
