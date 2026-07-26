@@ -30,8 +30,9 @@ import {
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
 import {
+  createInitialRemoteDaemonNodesProgress,
   DAEMON_PRESET_OPTIONS,
-  fetchMoneroFailWebCompatibleNodes,
+  loadRemoteDaemonNodes,
 } from "../daemonNodes";
 import { options } from "../options";
 import { NiceTabs } from "../main/tabs";
@@ -1771,9 +1772,9 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     () => getNetworkTypeSelectValue(networkType),
   );
   const daemonAddress = options.getValue("daemonAddress");
-  const [remoteDaemonOptions, setRemoteDaemonOptions] = React.useState<
-    string[] | null | Error
-  >(null);
+  const [remoteDaemonFetch, setRemoteDaemonFetch] = React.useState(
+    createInitialRemoteDaemonNodesProgress,
+  );
   const [isEditingCustomDaemon, setIsEditingCustomDaemon] =
     React.useState(false);
   const [daemonSelectValue, setDaemonSelectValue] = React.useState(() =>
@@ -1819,22 +1820,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
   React.useEffect(() => {
     const controller = new AbortController();
-    (async () => {
-      try {
-        const nodes = await fetchMoneroFailWebCompatibleNodes(
-          controller.signal,
-        );
-        setRemoteDaemonOptions(nodes);
-      } catch (e) {
-        if (controller.signal.aborted) {
-          return;
-        }
-        console.error("Failed to load nodes from monero.fail:", e);
-        setRemoteDaemonOptions(
-          e instanceof Error ? e : new Error("Failed to load nodes"),
-        );
-      }
-    })();
+    void loadRemoteDaemonNodes(setRemoteDaemonFetch, controller.signal);
     return () => {
       controller.abort();
     };
@@ -1845,16 +1831,13 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     if (isEditingCustomDaemon) {
       return;
     }
-    const remoteAddresses = Array.isArray(remoteDaemonOptions)
-      ? remoteDaemonOptions
-      : [];
     setDaemonSelectValue(
       getDaemonSelectValue(
         daemonAddress,
-        getDaemonSelectAddresses(daemonAddress, remoteAddresses),
+        getDaemonSelectAddresses(daemonAddress, remoteDaemonFetch.nodes),
       ),
     );
-  }, [daemonAddress, remoteDaemonOptions, isEditingCustomDaemon]);
+  }, [daemonAddress, remoteDaemonFetch.nodes, isEditingCustomDaemon]);
   React.useEffect(() => {
     setNetworkTypeSelectValue(getNetworkTypeSelectValue(networkType));
   }, [networkType]);
@@ -1862,18 +1845,16 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     setDaemonTestStatus("idle");
   }, [daemonAddress]);
 
-  const loadedRemoteDaemonOptions = Array.isArray(remoteDaemonOptions)
-    ? remoteDaemonOptions
-    : [];
+  const loadedRemoteDaemonOptions = remoteDaemonFetch.nodes;
   const daemonSelectAddresses = getDaemonSelectAddresses(
     daemonAddress,
     loadedRemoteDaemonOptions,
   );
   const remoteDaemonStatusLabel =
-    remoteDaemonOptions === null
-      ? "Loading nodes from monero.fail"
-      : remoteDaemonOptions instanceof Error
-        ? "Failed to load nodes from monero.fail"
+    remoteDaemonFetch.pendingCount > 0
+      ? `Fetching nodes list (${remoteDaemonFetch.pendingCount})`
+      : remoteDaemonFetch.failedSources.length > 0
+        ? `Failed to fetch from ${remoteDaemonFetch.failedSources.join(", ")}`
         : null;
   const testDaemonAddress = async () => {
     const target = options.getValue("daemonAddress").trim();
