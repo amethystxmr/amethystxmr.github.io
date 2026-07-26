@@ -1,5 +1,6 @@
 const { app, BrowserWindow, shell, protocol } = require("electron");
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const path = require("node:path");
 
 // Wallet list view is centered around a 640px content column height.
@@ -11,7 +12,25 @@ const APP_PROTOCOL_HOST = "app";
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_PROTOCOL_HOST}`;
 
 const DIST_DIR = path.resolve(__dirname, "..", "built-web");
-const APP_ICON = path.join(DIST_DIR, "icons", "icon-512x512.png");
+
+function resolveAppIconPath() {
+  // Linux cannot reliably use BrowserWindow icons from inside app.asar, so the
+  // packaged build copies build/icon.png to resources/ via extraResources.
+  const candidates = [
+    path.join(process.resourcesPath, "icon.png"),
+    path.join(DIST_DIR, "icons", "icon-512x512.png"),
+    path.join(__dirname, "..", "build", "icon.png"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      fsSync.accessSync(candidate);
+      return candidate;
+    } catch {
+      // try next
+    }
+  }
+  return undefined;
+}
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -192,6 +211,7 @@ function createWindow(baseUrl) {
   // Do not set min/max width/height here: those constrain the outer frame, so
   // pairing them with useContentSize shrinks the viewport below APP_* and
   // creates an unwanted page scrollbar. resizable:false keeps the size fixed.
+  const appIconPath = resolveAppIconPath();
   const win = new BrowserWindow({
     useContentSize: true,
     width: APP_WIDTH,
@@ -202,7 +222,7 @@ function createWindow(baseUrl) {
     fullscreenable: false,
     autoHideMenuBar: true,
     backgroundColor: "#281549",
-    icon: APP_ICON,
+    ...(appIconPath ? { icon: appIconPath } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
