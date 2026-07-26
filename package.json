@@ -6,7 +6,7 @@
   "author": "",
   "type": "module",
   "main": "electron/main.cjs",
-  "desktopName": "AmethystXMR.desktop",
+  "desktopName": "amethystxmr.desktop",
   "scripts": {
     "test": "npm run test:e2e",
     "test:e2e": "playwright test",

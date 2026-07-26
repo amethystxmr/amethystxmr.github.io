@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, protocol } = require("electron");
+const { app, BrowserWindow, shell, protocol, nativeImage } = require("electron");
 const fs = require("node:fs/promises");
 const fsSync = require("node:fs");
 const path = require("node:path");
@@ -10,8 +10,17 @@ const APP_HEIGHT = 736;
 const APP_PROTOCOL = "amethyst";
 const APP_PROTOCOL_HOST = "app";
 const APP_ORIGIN = `${APP_PROTOCOL}://${APP_PROTOCOL_HOST}`;
+// Must match package.json desktopName / Linux executable basename so GNOME
+// Wayland can associate the running window with the desktop entry + icon.
+const LINUX_DESKTOP_FILE_NAME = "amethystxmr.desktop";
+const LINUX_ICON_NAME = "org.amethystxmr.wallet";
 
 const DIST_DIR = path.resolve(__dirname, "..", "built-web");
+
+if (process.platform === "linux") {
+  // Override inherited values (e.g. CHROME_DESKTOP=cursor.desktop from an IDE).
+  process.env.CHROME_DESKTOP = LINUX_DESKTOP_FILE_NAME;
+}
 
 function resolveAppIconPath() {
   // Linux cannot reliably use BrowserWindow icons from inside app.asar, so the
@@ -30,6 +39,71 @@ function resolveAppIconPath() {
     }
   }
   return undefined;
+}
+
+function quoteDesktopExec(filePath) {
+  if (!/[\s"$\\]/.test(filePath)) {
+    return filePath;
+  }
+  return `"${filePath.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+function ensureLinuxDesktopIntegration(iconPath) {
+  // Ubuntu 24 / GNOME ignores BrowserWindow.setIcon for the dock. The dock icon
+  // comes from a user .desktop entry whose basename matches Wayland app_id /
+  // CHROME_DESKTOP, with an icon installed into the hicolor theme.
+  if (process.platform !== "linux" || !app.isPackaged || !iconPath) {
+    return;
+  }
+
+  const home = app.getPath("home");
+  const applicationsDir = path.join(home, ".local", "share", "applications");
+  const iconDir = path.join(
+    home,
+    ".local",
+    "share",
+    "icons",
+    "hicolor",
+    "512x512",
+    "apps",
+  );
+  const desktopPath = path.join(applicationsDir, LINUX_DESKTOP_FILE_NAME);
+  const installedIconPath = path.join(iconDir, `${LINUX_ICON_NAME}.png`);
+  const execPath = process.env.APPIMAGE || process.execPath;
+
+  fsSync.mkdirSync(applicationsDir, { recursive: true });
+  fsSync.mkdirSync(iconDir, { recursive: true });
+  fsSync.copyFileSync(iconPath, installedIconPath);
+
+  const desktopEntry = [
+    "[Desktop Entry]",
+    "Type=Application",
+    "Name=AmethystXMR",
+    "Comment=Amethyst XMR is a web-based Monero wallet",
+    `Exec=${quoteDesktopExec(execPath)} %U`,
+    `Icon=${LINUX_ICON_NAME}`,
+    "Terminal=false",
+    "Categories=Finance;",
+    "StartupWMClass=amethystxmr",
+    "",
+  ].join("\n");
+
+  let previous = "";
+  try {
+    previous = fsSync.readFileSync(desktopPath, "utf8");
+  } catch {
+    // first install
+  }
+  if (previous !== desktopEntry) {
+    fsSync.writeFileSync(desktopPath, desktopEntry);
+  }
+
+  // Remove earlier mistaken desktop id from this PR's first iterations.
+  try {
+    fsSync.unlinkSync(path.join(applicationsDir, "AmethystXMR.desktop"));
+  } catch {
+    // absent
+  }
 }
 
 const MIME_TYPES = {
@@ -212,6 +286,9 @@ function createWindow(baseUrl) {
   // pairing them with useContentSize shrinks the viewport below APP_* and
   // creates an unwanted page scrollbar. resizable:false keeps the size fixed.
   const appIconPath = resolveAppIconPath();
+  const appIcon = appIconPath
+    ? nativeImage.createFromPath(appIconPath)
+    : undefined;
   const win = new BrowserWindow({
     useContentSize: true,
     width: APP_WIDTH,
@@ -222,7 +299,7 @@ function createWindow(baseUrl) {
     fullscreenable: false,
     autoHideMenuBar: true,
     backgroundColor: "#281549",
-    ...(appIconPath ? { icon: appIconPath } : {}),
+    ...(appIcon && !appIcon.isEmpty() ? { icon: appIcon } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -273,6 +350,7 @@ function createWindow(baseUrl) {
 
 async function start() {
   await fs.access(path.join(DIST_DIR, "index.html"));
+  ensureLinuxDesktopIntegration(resolveAppIconPath());
   await registerAppProtocol();
   createWindow(`${APP_ORIGIN}/`);
 }
