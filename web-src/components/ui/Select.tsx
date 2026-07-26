@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import React from "react";
+import { createPortal } from "react-dom";
 import { baseClasses } from "./fieldStyles";
 import type { DivProps } from "./types";
 
@@ -11,6 +12,7 @@ type SelectContextValue = {
   disabled: boolean;
   contentId: string;
   rootRef: React.RefObject<HTMLDivElement | null>;
+  contentRef: React.RefObject<HTMLDivElement | null>;
 };
 
 const SelectContext = React.createContext<SelectContextValue | null>(null);
@@ -38,13 +40,18 @@ function Root({
   const [open, setOpen] = React.useState(false);
   const contentId = React.useId();
   const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     if (!open) {
       return;
     }
     const onPointerDown = (e: PointerEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        !rootRef.current?.contains(target) &&
+        !contentRef.current?.contains(target)
+      ) {
         setOpen(false);
       }
     };
@@ -64,6 +71,7 @@ function Root({
         disabled,
         contentId,
         rootRef,
+        contentRef,
       }}
     >
       <div ref={rootRef} className={clsx("relative", className)}>
@@ -119,23 +127,105 @@ function Value({
   return <span className={clsx("text-white/90", className)}>{children}</span>;
 }
 
+const DESKTOP_SCROLL_OPTION_THRESHOLD = 7;
+/** Fits 7 Option rows (py-2 + text-sm) plus Content p-1 padding. */
+const DESKTOP_SEVEN_ITEMS_MAX_HEIGHT_PX = Math.round(7 * 36 + 8);
+const DESKTOP_MEDIA_QUERY = "(min-width: 1024px)";
+
 function Content({ className, children, ...props }: DivProps) {
   const ctx = useSelectContext();
+  const optionCount = React.Children.count(children);
+  const [contentStyle, setContentStyle] = React.useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number | null;
+    placeAbove: boolean;
+  } | null>(null);
+
+  const updatePosition = React.useCallback(() => {
+    const root = ctx.rootRef.current;
+    if (!root) {
+      return;
+    }
+
+    const rect = root.getBoundingClientRect();
+    const viewportPadding = 8;
+    const gap = 8;
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const placeAbove = availableBelow < 180 && availableAbove > availableBelow;
+    const availableSpace = placeAbove ? availableAbove : availableBelow;
+    const isDesktop = window.matchMedia(DESKTOP_MEDIA_QUERY).matches;
+    const scrollOnDesktop =
+      isDesktop && optionCount > DESKTOP_SCROLL_OPTION_THRESHOLD;
+    const maxHeight = isDesktop
+      ? scrollOnDesktop
+        ? Math.max(
+            120,
+            Math.min(DESKTOP_SEVEN_ITEMS_MAX_HEIGHT_PX, availableSpace - gap),
+          )
+        : null
+      : Math.max(120, Math.min(224, availableSpace - gap));
+
+    setContentStyle({
+      top: placeAbove ? rect.top - gap : rect.bottom + gap,
+      left: rect.left,
+      width: rect.width,
+      maxHeight,
+      placeAbove,
+    });
+  }, [ctx.rootRef, optionCount]);
+
+  React.useLayoutEffect(() => {
+    if (!ctx.open) {
+      return;
+    }
+
+    updatePosition();
+    const onViewportChange = () => updatePosition();
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("scroll", onViewportChange, {
+      capture: true,
+      passive: true,
+    });
+    return () => {
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("scroll", onViewportChange, {
+        capture: true,
+      });
+    };
+  }, [ctx.open, updatePosition]);
+
   if (!ctx.open) {
     return null;
   }
-  return (
+  if (!contentStyle) {
+    return null;
+  }
+  const shouldScroll = contentStyle.maxHeight !== null;
+  return createPortal(
     <div
+      ref={ctx.contentRef}
       id={ctx.contentId}
       role="listbox"
       className={clsx(
-        "absolute z-30 mt-2 w-full rounded-xl bg-[#22133f] p-1 ring-1 ring-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.45)] max-h-56 overflow-auto",
+        "fixed z-[200] rounded-xl bg-[#22133f] p-1 ring-1 ring-white/15 shadow-[0_10px_30px_rgba(0,0,0,0.45)]",
+        shouldScroll ? "overflow-auto lg:scrollbar-glass" : "overflow-visible",
         className,
       )}
+      style={{
+        top: contentStyle.top,
+        left: contentStyle.left,
+        width: contentStyle.width,
+        maxHeight: contentStyle.maxHeight ?? undefined,
+        transform: contentStyle.placeAbove ? "translateY(-100%)" : undefined,
+      }}
       {...props}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -144,6 +234,7 @@ function Option({
   className,
   children,
   onClick,
+  disabled,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { value: string }) {
   const ctx = useSelectContext();
@@ -153,11 +244,14 @@ function Option({
       type="button"
       role="option"
       aria-selected={selected}
+      disabled={disabled}
       className={clsx(
         "w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm transition",
-        selected
-          ? "bg-[#3a256a] text-white ring-1 ring-white/15"
-          : "text-white/80 hover:bg-white/8 hover:text-white",
+        disabled
+          ? "cursor-not-allowed text-white/35"
+          : selected
+            ? "bg-[#3a256a] text-white ring-1 ring-white/15"
+            : "text-white/80 hover:bg-white/8 hover:text-white",
         className,
       )}
       onClick={(e) => {
