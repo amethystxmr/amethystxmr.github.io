@@ -1807,6 +1807,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   const [daemonTestStatus, setDaemonTestStatus] =
     React.useState<DaemonTestStatus>("idle");
   const daemonTestAbortRef = React.useRef<AbortController | null>(null);
+  const daemonTestTargetRef = React.useRef<string | null>(null);
   const buildInfoText = React.useMemo(() => {
     const ts = import.meta.env.DEV
       ? new Date().toISOString()
@@ -1846,6 +1847,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     setDaemonCheckStatuses({});
     daemonTestAbortRef.current?.abort();
     daemonTestAbortRef.current = null;
+    daemonTestTargetRef.current = null;
   }, []);
 
   React.useEffect(() => {
@@ -1867,6 +1869,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   React.useEffect(
     () => () => {
       daemonTestAbortRef.current?.abort();
+      daemonTestTargetRef.current = null;
     },
     [],
   );
@@ -1896,6 +1899,13 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     setNetworkTypeSelectValue(getNetworkTypeSelectValue(networkType));
   }, [networkType]);
   React.useEffect(() => {
+    if (
+      daemonTestAbortRef.current &&
+      daemonTestTargetRef.current === daemonAddress.trim()
+    ) {
+      return;
+    }
+    daemonTestTargetRef.current = null;
     setDaemonTestStatus("idle");
   }, [daemonAddress, networkType]);
 
@@ -1917,8 +1927,10 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       const target = targetAddress.trim();
       daemonTestAbortRef.current?.abort();
       daemonTestAbortRef.current = null;
+      daemonTestTargetRef.current = target;
 
       if (!target) {
+        daemonTestTargetRef.current = null;
         setDaemonTestStatus("failed");
         return;
       }
@@ -1945,6 +1957,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
       }
 
       daemonTestAbortRef.current = null;
+      daemonTestTargetRef.current = null;
       setDaemonTestStatus(daemonTestStatusFromCheckResult(result));
       setDaemonCheckStatuses((prev) => ({ ...prev, [target]: result }));
     },
