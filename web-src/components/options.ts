@@ -2,6 +2,7 @@ import {
   NetworkTypes,
   type NetworkType as NetworkTypeValue,
 } from "../../monero-wasm-module/walletApi.workerClient";
+import { getDefaultDaemonAddress } from "./daemonNodes";
 
 type OptionSchema = {
   loadLastWallet: boolean;
@@ -10,20 +11,6 @@ type OptionSchema = {
   networkType: NetworkTypeValue;
   allowMismatchedDaemonVersion: boolean;
 };
-
-const DAEMON_LOCAL_ADDRESS = "http://localhost:18081";
-const DAEMON_REMOTE_ADDRESS_DEFAULT = "https://xmr-node.cakewallet.com:18081";
-export const DAEMON_PRESET_OPTIONS = [
-  DAEMON_LOCAL_ADDRESS,
-  DAEMON_REMOTE_ADDRESS_DEFAULT,
-  "https://node.sethforprivacy.com",
-] as const;
-
-function getDefaultDaemonAddress(): string {
-  return location.hostname === "localhost"
-    ? DAEMON_LOCAL_ADDRESS
-    : DAEMON_REMOTE_ADDRESS_DEFAULT;
-}
 
 function getDefaultOptions(): OptionSchema {
   return {

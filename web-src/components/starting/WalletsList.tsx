@@ -29,7 +29,11 @@ import {
 } from "../../../monero-wasm-module/walletApi.workerClient";
 import { WalletMain } from "../main";
 import { ProgressBar } from "../ui";
-import { DAEMON_PRESET_OPTIONS, options } from "../options";
+import {
+  DAEMON_PRESET_OPTIONS,
+  fetchMoneroFailWebCompatibleNodes,
+} from "../daemonNodes";
+import { options } from "../options";
 import { NiceTabs } from "../main/tabs";
 import {
   acquireWalletOpenLock,
@@ -46,6 +50,7 @@ type OpenedWallet = {
 };
 
 const DAEMON_CUSTOM_OPTION = "__custom__";
+const DAEMON_REMOTE_NODES_STATUS_OPTION = "__monero_fail_status__";
 const TEMP_DAEMON_TEST_WALLET_PREFIX = "__daemon_test__";
 const PROJECT_GITHUB_URL =
   "https://github.com/amethystxmr/amethystxmr.github.io";
@@ -207,10 +212,29 @@ function parseSecretKeyHex(value: string, label: string): Uint8Array {
   return bytes;
 }
 
-function getDaemonSelectValue(daemonAddress: string): string {
-  return DAEMON_PRESET_OPTIONS.includes(
-    daemonAddress as (typeof DAEMON_PRESET_OPTIONS)[number],
-  )
+function getDaemonCatalogAddresses(
+  remoteAddresses: readonly string[],
+): string[] {
+  return [...DAEMON_PRESET_OPTIONS, ...remoteAddresses];
+}
+
+function getDaemonSelectAddresses(
+  daemonAddress: string,
+  remoteAddresses: readonly string[],
+): string[] {
+  const catalog = getDaemonCatalogAddresses(remoteAddresses);
+  const trimmed = daemonAddress.trim();
+  if (trimmed && !catalog.includes(trimmed)) {
+    return [trimmed, ...catalog];
+  }
+  return catalog;
+}
+
+function getDaemonSelectValue(
+  daemonAddress: string,
+  knownAddresses: readonly string[],
+): string {
+  return knownAddresses.includes(daemonAddress)
     ? daemonAddress
     : DAEMON_CUSTOM_OPTION;
 }
@@ -1747,8 +1771,16 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     () => getNetworkTypeSelectValue(networkType),
   );
   const daemonAddress = options.getValue("daemonAddress");
+  const [remoteDaemonOptions, setRemoteDaemonOptions] = React.useState<
+    string[] | null | Error
+  >(null);
+  const [isEditingCustomDaemon, setIsEditingCustomDaemon] =
+    React.useState(false);
   const [daemonSelectValue, setDaemonSelectValue] = React.useState(() =>
-    getDaemonSelectValue(daemonAddress),
+    getDaemonSelectValue(
+      daemonAddress,
+      getDaemonSelectAddresses(daemonAddress, []),
+    ),
   );
   const [daemonTestStatus, setDaemonTestStatus] =
     React.useState<DaemonTestStatus>("idle");
@@ -1785,10 +1817,44 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
+  React.useEffect(() => {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const nodes = await fetchMoneroFailWebCompatibleNodes(
+          controller.signal,
+        );
+        setRemoteDaemonOptions(nodes);
+      } catch (e) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to load nodes from monero.fail:", e);
+        setRemoteDaemonOptions(
+          e instanceof Error ? e : new Error("Failed to load nodes"),
+        );
+      }
+    })();
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
   const refresh = React.useState(0)[1];
   React.useEffect(() => {
-    setDaemonSelectValue(getDaemonSelectValue(daemonAddress));
-  }, [daemonAddress]);
+    if (isEditingCustomDaemon) {
+      return;
+    }
+    const remoteAddresses = Array.isArray(remoteDaemonOptions)
+      ? remoteDaemonOptions
+      : [];
+    setDaemonSelectValue(
+      getDaemonSelectValue(
+        daemonAddress,
+        getDaemonSelectAddresses(daemonAddress, remoteAddresses),
+      ),
+    );
+  }, [daemonAddress, remoteDaemonOptions, isEditingCustomDaemon]);
   React.useEffect(() => {
     setNetworkTypeSelectValue(getNetworkTypeSelectValue(networkType));
   }, [networkType]);
@@ -1796,7 +1862,19 @@ function OptionsView({ onBack }: { onBack: () => void }) {
     setDaemonTestStatus("idle");
   }, [daemonAddress]);
 
-  const isCustomDaemonAddress = daemonSelectValue === DAEMON_CUSTOM_OPTION;
+  const loadedRemoteDaemonOptions = Array.isArray(remoteDaemonOptions)
+    ? remoteDaemonOptions
+    : [];
+  const daemonSelectAddresses = getDaemonSelectAddresses(
+    daemonAddress,
+    loadedRemoteDaemonOptions,
+  );
+  const remoteDaemonStatusLabel =
+    remoteDaemonOptions === null
+      ? "Loading nodes from monero.fail"
+      : remoteDaemonOptions instanceof Error
+        ? "Failed to load nodes from monero.fail"
+        : null;
   const testDaemonAddress = async () => {
     const target = options.getValue("daemonAddress").trim();
     setDaemonTestStatus("testing");
@@ -1888,37 +1966,10 @@ function OptionsView({ onBack }: { onBack: () => void }) {
               </div>
               {daemonTestButton}
             </div>
-            <Select.Root
-              value={daemonSelectValue}
-              onValueChange={(next) => {
-                setDaemonSelectValue(next);
-                if (next !== DAEMON_CUSTOM_OPTION) {
-                  options.setValue("daemonAddress", next);
-                  refresh((x) => x + 1);
-                }
-              }}
-            >
-              <Select.Trigger>
-                <Select.Value>
-                  {daemonSelectValue === DAEMON_CUSTOM_OPTION
-                    ? "Enter custom URL"
-                    : daemonSelectValue}
-                </Select.Value>
-              </Select.Trigger>
-              <Select.Content>
-                {DAEMON_PRESET_OPTIONS.map((address) => (
-                  <Select.Option key={address} value={address}>
-                    {address}
-                  </Select.Option>
-                ))}
-                <Select.Option value={DAEMON_CUSTOM_OPTION}>
-                  Enter custom URL
-                </Select.Option>
-              </Select.Content>
-            </Select.Root>
-            {isCustomDaemonAddress && (
+            {isEditingCustomDaemon ? (
               <Input
-                className="mt-2 font-mono text-sm"
+                className="font-mono text-sm"
+                autoFocus
                 autoComplete="off"
                 spellCheck={false}
                 placeholder="https://your-node.example.com:18081"
@@ -1927,7 +1978,66 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                   options.setValue("daemonAddress", e.target.value);
                   refresh((x) => x + 1);
                 }}
+                onBlur={() => {
+                  const trimmed = options.getValue("daemonAddress").trim();
+                  if (trimmed !== options.getValue("daemonAddress")) {
+                    options.setValue("daemonAddress", trimmed);
+                    refresh((x) => x + 1);
+                  }
+                  setIsEditingCustomDaemon(false);
+                  setDaemonSelectValue(
+                    getDaemonSelectValue(
+                      trimmed,
+                      getDaemonSelectAddresses(
+                        trimmed,
+                        loadedRemoteDaemonOptions,
+                      ),
+                    ),
+                  );
+                }}
               />
+            ) : (
+              <Select.Root
+                value={daemonSelectValue}
+                onValueChange={(next) => {
+                  if (next === DAEMON_REMOTE_NODES_STATUS_OPTION) {
+                    return;
+                  }
+                  if (next === DAEMON_CUSTOM_OPTION) {
+                    setIsEditingCustomDaemon(true);
+                    return;
+                  }
+                  setDaemonSelectValue(next);
+                  options.setValue("daemonAddress", next);
+                  refresh((x) => x + 1);
+                }}
+              >
+                <Select.Trigger>
+                  <Select.Value>
+                    {daemonSelectValue === DAEMON_CUSTOM_OPTION
+                      ? "Enter custom URL"
+                      : daemonSelectValue}
+                  </Select.Value>
+                </Select.Trigger>
+                <Select.Content>
+                  {daemonSelectAddresses.map((address) => (
+                    <Select.Option key={address} value={address}>
+                      {address}
+                    </Select.Option>
+                  ))}
+                  <Select.Option value={DAEMON_CUSTOM_OPTION}>
+                    Enter custom URL
+                  </Select.Option>
+                  {remoteDaemonStatusLabel && (
+                    <Select.Option
+                      value={DAEMON_REMOTE_NODES_STATUS_OPTION}
+                      disabled
+                    >
+                      {remoteDaemonStatusLabel}
+                    </Select.Option>
+                  )}
+                </Select.Content>
+              </Select.Root>
             )}
           </FormRow>
         </div>
