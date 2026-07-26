@@ -1923,7 +1923,10 @@ function OptionsView({ onBack }: { onBack: () => void }) {
         ? `Failed to fetch from ${remoteDaemonFetch.failedSources.join(", ")}`
         : null;
   const checkDaemonSelection = React.useCallback(
-    async (targetAddress: string) => {
+    async (
+      targetAddress: string,
+      targetNetworkType: NetworkTypeValue = networkType,
+    ) => {
       const target = targetAddress.trim();
       daemonTestAbortRef.current?.abort();
       daemonTestAbortRef.current = null;
@@ -1945,7 +1948,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
 
       const result = await checkDaemonAddress(
         target,
-        networkTypeToDaemonNettype(networkType),
+        networkTypeToDaemonNettype(targetNetworkType),
         controller.signal,
       );
 
@@ -2011,6 +2014,10 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                 setNetworkTypeSelectValue(getNetworkTypeSelectValue(parsed));
                 options.setValue("networkType", parsed);
                 resetDaemonListState();
+                void checkDaemonSelection(
+                  options.getValue("daemonAddress"),
+                  parsed,
+                );
                 refresh((x) => x + 1);
               }}
             >
