@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page } from "./fixtures/e2eTest";
 import {
   FROM_KEYS_TEST_ADDRESS,
   MONERO_MINING_ADDRESS,

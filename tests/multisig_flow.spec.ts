@@ -1,4 +1,9 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+} from "./fixtures/e2eTest";
 import {
   INTEGRATED_RECIPIENT_ADDRESS,
   INTEGRATED_RECIPIENT_INTEGRATED_ADDRESS,

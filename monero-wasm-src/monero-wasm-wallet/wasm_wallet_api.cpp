@@ -14,6 +14,7 @@
 
 #include <emscripten.h>
 #include <emscripten/bind.h>
+#include <emscripten/em_js.h>
 #include <emscripten/val.h>
 
 #include "common/util.h"
@@ -41,14 +42,37 @@ static_assert(std::is_same_v<WalletPriorityBacking, unsigned int>,
 
 namespace
 {
-// Wasm is built without `-sUSE_PTHREADS`; cap Boost concurrency before embind.
-// Also call `set_max_concurrency(1)` from `main()` so it runs after all static
-// initializers (see `common/util.cpp` max_concurrency init order across TUs).
+#if defined(AMETHYST_WASM_THREADS)
+EM_JS(unsigned int, amethyst_wasm_max_concurrency, (), {
+    if (
+      !Number.isInteger(Module['maxConcurrency']) ||
+      Module['maxConcurrency'] < 1
+    ) {
+      throw new Error(
+        "Module['maxConcurrency'] must be a positive integer before initializing the threaded wallet module"
+      );
+    }
+    return Module['maxConcurrency'];
+});
+#else
+unsigned int amethyst_wasm_max_concurrency()
+{
+    return 1;
+}
+#endif
+
+void set_wasm_wallet_max_concurrency()
+{
+    tools::set_max_concurrency(amethyst_wasm_max_concurrency());
+}
+
+// Cap Boost concurrency before embind. Also call this from `main()` so it runs
+// after all static initializers (see `common/util.cpp` max_concurrency init order across TUs).
 struct WasmWalletConcurrencyInit
 {
     WasmWalletConcurrencyInit()
     {
-        tools::set_max_concurrency(1);
+        set_wasm_wallet_max_concurrency();
     }
 } wasm_wallet_concurrency_init;
 } // namespace
@@ -103,7 +127,9 @@ public:
         return m_wallet.init("127.1.2.3");
     }
 
-    auto get_daemon_blockchain_height()
+    /** `double`: Embind/asyncify rewind mishandles mixed i64/bigint returns on some WASM runs;
+     *  block heights fit safely in IEEE double integer range. */
+    double get_daemon_blockchain_height()
     {
         auto err = std::string{};
         auto blockchain_height = m_wallet.get_daemon_blockchain_height(err);
@@ -111,7 +137,7 @@ public:
         {
             throw std::runtime_error(err);
         }
-        return blockchain_height;
+        return static_cast<double>(blockchain_height);
     }
 
     emscripten::val generate(
@@ -1195,9 +1221,10 @@ public:
         return r;
     }
 
-    auto get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
+    /** `double`: same Asyncify/Embind rationale as `get_daemon_blockchain_height`. */
+    double get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day)
     {
-        return m_wallet.get_blockchain_height_by_date(year, month, day);
+        return static_cast<double>(m_wallet.get_blockchain_height_by_date(year, month, day));
     }
 
     auto get_multisig_status()
@@ -1672,13 +1699,15 @@ EMSCRIPTEN_BINDINGS(monero_wasm_wallet)
         "get_monero_version_full",
         emscripten::optional_override([]() -> std::string
                                       { return MONERO_VERSION_FULL; }));
+    emscripten::function("set_http_base_url", &set_http_base_url);
+    emscripten::function("set_http_fetch_event_channel", &set_http_fetch_event_channel);
 };
 
 int main()
 {
     std::cout << "Initialing module..." << std::endl;
 
-    tools::set_max_concurrency(1);
+    set_wasm_wallet_max_concurrency();
 
     // mlog_set_categories("*:TRACE");
 

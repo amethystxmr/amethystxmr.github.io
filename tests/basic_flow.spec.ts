@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/e2eTest";
 import {
   FROM_KEYS_TEST_ADDRESS,
   MONERO_MINING_ADDRESS,
@@ -49,12 +49,6 @@ test("basic flow", async ({ page, context }) => {
       startingHeight: "30",
     });
     expect(await wallet1.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
-  });
-
-  await test.step("Dev server has no COOP/COEP; SharedArrayBuffer unavailable", async () => {
-    await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
-      "undefined",
-    );
   });
 
   await test.step("Verify restored wallet has mined transactions", async () => {

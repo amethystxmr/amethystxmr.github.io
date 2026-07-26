@@ -1,11 +1,9 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { registerPwaServiceWorker } from "./startup/registerPwaServiceWorker";
 import { unregisterLegacyCoiServiceWorker } from "./startup/unregisterLegacyCoiServiceWorker";
 
 unregisterLegacyCoiServiceWorker();
-registerPwaServiceWorker();
 
 const rootDiv =
   document.getElementById("root") ??

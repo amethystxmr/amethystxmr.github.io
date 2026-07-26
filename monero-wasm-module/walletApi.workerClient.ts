@@ -1,11 +1,17 @@
 import * as Comlink from "comlink";
 import type { exposedApi } from "./walletApi.worker";
 import {
+  ensureHttpFetchEventChannel,
+  httpFetchEventChannelName,
+  setHttpFetchWasmMemory,
+} from "./httpFetchBridge";
+import {
   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
   FeePriority as FeePriorityConst,
   max64,
   NetworkTypes,
   type FeePriority as FeePriorityType,
+  type InitModuleOptions,
   type MoneroWasmWallet,
   type WalletNewBlockCallback,
 } from "./walletApi";
@@ -39,7 +45,13 @@ export type {
   WalletKeys,
   WalletTxHandle,
   MoneroWasmWallet,
+  WasmBuildVariant,
 } from "./walletApi";
+
+export type WorkerClientInitModuleOptions = Omit<
+  InitModuleOptions,
+  "httpFetchEventChannelName"
+>;
 
 export type RemoteApi = Comlink.Remote<typeof exposedApi>;
 
@@ -49,8 +61,21 @@ const worker = new Worker(new URL("./walletApi.worker.ts", import.meta.url), {
 });
 export const api = Comlink.wrap<typeof exposedApi>(worker);
 
-export const initModule: typeof exposedApi.initModule = async (onProgress) => {
-  await api.initModule(onProgress ? Comlink.proxy(onProgress) : null);
+export const initModule: (
+  options: WorkerClientInitModuleOptions,
+  onProgress?: Parameters<typeof exposedApi.initModule>[0],
+) => ReturnType<typeof exposedApi.initModule> = async (
+  options,
+  onProgress = null,
+) => {
+  ensureHttpFetchEventChannel();
+  await api.initModule(onProgress ? Comlink.proxy(onProgress) : null, {
+    ...options,
+    httpFetchEventChannelName,
+  });
+  if (options.variant === "threads") {
+    setHttpFetchWasmMemory(await api.getWasmMemory());
+  }
 };
 
 export async function setWalletNewBlockCallback(
@@ -61,8 +86,3 @@ export async function setWalletNewBlockCallback(
   // Avoid passing wallet into root `api.*`: Comlink emits it as RAW and clone fails on the remote Proxy internal target function.
   await wallet.set_on_new_block_callback(proxyCallback);
 }
-
-export const setHttpFetchCallback: typeof exposedApi.setHttpFetchCallback =
-  async (callback) => {
-    await api.setHttpFetchCallback(callback ? Comlink.proxy(callback) : null);
-  };

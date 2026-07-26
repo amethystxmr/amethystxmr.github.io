@@ -10,4 +10,4 @@ coverage
 monero-wasm-src
 
 # Generated wasm bindings.
-monero-wasm-module/wasm_wallet.*
+monero-wasm-module/wasm_wallet_*

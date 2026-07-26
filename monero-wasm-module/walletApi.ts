@@ -1,6 +1,3 @@
-// @ts-expect-error Generated wasm JS module has no TypeScript declarations.
-import MoneroWasmWalletModuleFactory from "./wasm_wallet.mjs";
-
 export const NetworkTypes = {
   MAINNET: 0,
   TESTNET: 1,
@@ -9,6 +6,13 @@ export const NetworkTypes = {
 } as const;
 
 export type NetworkType = (typeof NetworkTypes)[keyof typeof NetworkTypes];
+export type WasmBuildVariant = "asyncify" | "threads";
+
+export type InitModuleOptions = {
+  variant: WasmBuildVariant;
+  maxConcurrency: number;
+  httpFetchEventChannelName?: string;
+};
 
 /** Embind + Asyncify may return a plain value (sync path) or a Promise (after a yield). */
 export type MaybePromise<T> = T | Promise<T>;
@@ -27,7 +31,7 @@ export declare class MoneroWasmWallet {
   constructor(networkType: NetworkType);
   init(): MaybePromise<boolean>;
   delete(): void;
-  get_daemon_blockchain_height(): MaybePromise<bigint>;
+  get_daemon_blockchain_height(): MaybePromise<number>;
   generate(
     fileName: string,
     password: string,
@@ -110,7 +114,7 @@ export declare class MoneroWasmWallet {
     year: number,
     month: number,
     day: number,
-  ): MaybePromise<bigint>;
+  ): MaybePromise<number>;
   words_to_bytes(
     words: string,
     language: string,
@@ -338,8 +342,11 @@ interface Module {
   /** Emscripten helper when C++ exceptions surface as raw integers in JS. */
   getExceptionMessage?(exn: WasmExceptionValue): [string, string];
   decrementExceptionRefcount?(exn: WasmExceptionValue): void;
-  /** Optional Monero logging categories (`mlog_set_categories` from wasm). */
-  mlog_set_categories?(categories: string): void;
+  /** Monero logging categories (`mlog_set_categories` from wasm). */
+  mlog_set_categories(categories: string): void;
+  wasmMemory: WebAssembly.Memory;
+  set_http_base_url(baseUrl: string): void;
+  set_http_fetch_event_channel(channelName: string): void;
   FS: {
     mkdir(path: string): void;
     mount(type: IDBFS, opts: Record<string, never>, mountpoint: string): void;
@@ -386,6 +393,13 @@ export type ModuleLoadProgressCallback =
   ((progress: ModuleLoadProgress) => void) | null;
 
 type ModuleFactoryOptions = {
+  maxConcurrency?: number;
+  locateFile?: (path: string, prefix: string) => string;
+  /**
+   * URL of the threads module script used to spawn Emscripten pthread workers.
+   * With EXPORT_ES6 there is no separate `.worker.js`; pthreads reload this `.mjs`.
+   */
+  mainScriptUrlOrBlob?: string;
   monitorRunDependencies?: (left: number) => void;
   instantiateWasm?: (
     imports: WebAssembly.Imports,
@@ -396,14 +410,41 @@ type ModuleFactoryOptions = {
   ) => WebAssembly.Exports | Record<string, never>;
 };
 
+type MoneroWasmWalletModuleFactory = (
+  options: ModuleFactoryOptions,
+) => Promise<Module>;
+
 type WasmProgressReporter = (
   bytesLoaded: number,
   bytesTotal: number | null,
 ) => void;
 
-declare const __WASM_WALLET_SIZE__: number;
+declare const __WASM_WALLET_SIZES__: Record<WasmBuildVariant, number>;
 
 let module: Module;
+let loadedWasmBuildVariant: WasmBuildVariant | null = null;
+let loadedMaxConcurrency: number | null = null;
+let currentDaemonAddress: string | null = null;
+let currentHttpFetchEventChannelName: string | null = null;
+
+const wasmUrls: Record<WasmBuildVariant, string> = {
+  asyncify: new URL("./wasm_wallet_asyncify.wasm", import.meta.url).href,
+  threads: new URL("./wasm_wallet_threads.wasm", import.meta.url).href,
+};
+
+/** Static URL so Vite emits the threads `.mjs` for Emscripten pthread workers. */
+const threadsModuleUrl = new URL("./wasm_wallet_threads.mjs", import.meta.url)
+  .href;
+
+async function loadMoneroWasmWalletModuleFactory(
+  variant: WasmBuildVariant,
+): Promise<MoneroWasmWalletModuleFactory> {
+  const factoryModule =
+    variant === "threads"
+      ? await import("./wasm_wallet_threads.mjs")
+      : await import("./wasm_wallet_asyncify.mjs");
+  return factoryModule.default as MoneroWasmWalletModuleFactory;
+}
 
 function getStringProperty(value: object, property: string): string | null {
   const propertyValue = Reflect.get(value, property);
@@ -558,6 +599,14 @@ type HttpFetchState =
 
 export type { HttpFetchState };
 
+export type HttpFetchEvent = {
+  url: string;
+  reqId: string;
+  state: HttpFetchState;
+  progressLoaded: number;
+  progressTotal: number;
+};
+
 /** Daemon RPC progress from the wallet worker. When `progressTotal` is 0, the UI treats the request as indeterminate until a `progress` event with `lengthComputable`. */
 export type HttpFetchCallback = (
   url: string,
@@ -567,15 +616,9 @@ export type HttpFetchCallback = (
   progressTotal: number,
 ) => void;
 
-type GlobalHttpConfig = {
-  mapUrl: (url: string) => string;
-  onFetch: HttpFetchCallback;
-};
-
 type WalletRuntimeGlobal = typeof globalThis & {
   moneroWalletModule?: Module;
   clearFilesystem?: typeof clearFilesystem;
-  globalHttpConfig?: GlobalHttpConfig;
 };
 
 function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
@@ -583,34 +626,40 @@ function getWalletRuntimeGlobal(): WalletRuntimeGlobal {
   return runtimeGlobal;
 }
 
-function ensureGlobalHttpConfig(): GlobalHttpConfig {
-  const runtimeGlobal = getWalletRuntimeGlobal();
-  runtimeGlobal.globalHttpConfig ??= {
-    mapUrl: () => {
-      throw new Error("mapUrl not set");
-    },
-    onFetch: (...args) => {
-      console.log("onFetch", ...args);
-    },
-  };
-  return runtimeGlobal.globalHttpConfig;
+function setHttpFetchEventChannelName(channelName: string | undefined) {
+  if (!channelName) {
+    return;
+  }
+  currentHttpFetchEventChannelName = channelName;
+  module?.set_http_fetch_event_channel(channelName);
 }
 
-function getWalletWasmUrl() {
-  return new URL("wasm_wallet.wasm", import.meta.url).href;
+// The wallet module stores the daemon base URL and fetch event channel in C++,
+// so re-apply both after the module (re)loads.
+function syncHttpConfigToModule() {
+  if (!module) {
+    return;
+  }
+  if (currentDaemonAddress !== null) {
+    module.set_http_base_url(currentDaemonAddress);
+  }
+  if (currentHttpFetchEventChannelName !== null) {
+    module.set_http_fetch_event_channel(currentHttpFetchEventChannelName);
+  }
 }
 
-function getWasmProgressTotal(event: ProgressEvent) {
+function getWasmProgressTotal(event: ProgressEvent, variant: WasmBuildVariant) {
   // If the server sends a usable total, prefer the browser's progress metadata.
   // On GitHub Pages, though, the WASM response may be gzip-compressed in transit:
   // the Content-Length header then describes compressed bytes, while XHR progress
   // events report decoded bytes. When lengthComputable is false, use Vite's
   // build-time raw WASM size so the denominator matches event.loaded.
-  return event.lengthComputable ? event.total : __WASM_WALLET_SIZE__;
+  return event.lengthComputable ? event.total : __WASM_WALLET_SIZES__[variant];
 }
 
 function fetchWasmBinaryWithProgress(
   url: string,
+  variant: WasmBuildVariant,
   onProgress: WasmProgressReporter,
 ): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -619,7 +668,7 @@ function fetchWasmBinaryWithProgress(
     xhr.responseType = "arraybuffer";
 
     xhr.onprogress = (event) => {
-      const bytesTotal = getWasmProgressTotal(event);
+      const bytesTotal = getWasmProgressTotal(event, variant);
       onProgress(event.loaded, bytesTotal);
     };
 
@@ -656,6 +705,7 @@ function fetchWasmBinaryWithProgress(
 }
 
 function instantiateWalletWasmWithProgress(
+  variant: WasmBuildVariant,
   imports: WebAssembly.Imports,
   receiveInstance: (
     instance: WebAssembly.Instance,
@@ -667,7 +717,8 @@ function instantiateWalletWasmWithProgress(
 ): void {
   void (async () => {
     const binary = await fetchWasmBinaryWithProgress(
-      getWalletWasmUrl(),
+      wasmUrls[variant],
+      variant,
       reportProgress,
     );
     onDecoding();
@@ -676,15 +727,39 @@ function instantiateWalletWasmWithProgress(
   })().catch(onError);
 }
 
+function validateMaxConcurrency(maxConcurrency: number): number {
+  if (!Number.isInteger(maxConcurrency) || maxConcurrency < 1) {
+    throw new Error(`Invalid WASM max concurrency: ${String(maxConcurrency)}`);
+  }
+  return maxConcurrency;
+}
+
 export async function initModule(
   onProgress: ModuleLoadProgressCallback = null,
+  options: InitModuleOptions,
 ) {
+  const maxConcurrency = validateMaxConcurrency(options.maxConcurrency);
   if (module) {
+    if (loadedWasmBuildVariant !== options.variant) {
+      throw new Error(
+        `Wallet module already initialized as "${loadedWasmBuildVariant}"; switching to "${options.variant}" requires a reload.`,
+      );
+    }
+    if (loadedMaxConcurrency !== maxConcurrency) {
+      throw new Error(
+        `Wallet module already initialized with max concurrency ${String(loadedMaxConcurrency)}; switching to ${String(maxConcurrency)} requires a reload.`,
+      );
+    }
+    setHttpFetchEventChannelName(options.httpFetchEventChannelName);
+    syncHttpConfigToModule();
     onProgress?.({ phase: "moduleReady" });
     return;
   }
 
   onProgress?.({ phase: "preparingModule" });
+  const { variant } = options;
+  const MoneroWasmWalletModuleFactory =
+    await loadMoneroWasmWalletModuleFactory(variant);
 
   let totalRunDependencies = 0;
   let failModuleLoad!: (error: unknown) => void;
@@ -699,8 +774,21 @@ export async function initModule(
   };
 
   const moduleLoad = MoneroWasmWalletModuleFactory({
+    ...(variant === "threads"
+      ? { mainScriptUrlOrBlob: threadsModuleUrl, maxConcurrency }
+      : {}),
+    locateFile(path) {
+      if (
+        path === "wasm_wallet_asyncify.wasm" ||
+        path === "wasm_wallet_threads.wasm"
+      ) {
+        return wasmUrls[variant];
+      }
+      throw new Error(`Unexpected WASM locateFile request: ${path}`);
+    },
     instantiateWasm(imports, receiveInstance) {
       instantiateWalletWasmWithProgress(
+        variant,
         imports,
         receiveInstance,
         reportWasmProgress,
@@ -726,24 +814,34 @@ export async function initModule(
   } satisfies ModuleFactoryOptions) as Promise<Module>;
 
   module = await Promise.race([moduleLoad, moduleLoadFailed]);
+  loadedWasmBuildVariant = variant;
+  loadedMaxConcurrency = maxConcurrency;
 
   onProgress?.({ phase: "initializingWalletStorage" });
   await initFilesystem();
   getWalletRuntimeGlobal().moneroWalletModule = module;
-  ensureGlobalHttpConfig();
+  setHttpFetchEventChannelName(options.httpFetchEventChannelName);
+  syncHttpConfigToModule();
   onProgress?.({ phase: "moduleReady" });
 }
 
-export function setDaemonAddress(daemonAddress: string) {
-  ensureGlobalHttpConfig().mapUrl = (url) => daemonAddress + url;
+export function getWasmBuildVariant(): WasmBuildVariant {
+  if (!loadedWasmBuildVariant) {
+    throw new Error("Module not initialized");
+  }
+  return loadedWasmBuildVariant;
 }
 
-export function setHttpFetchCallback(callback: HttpFetchCallback | null) {
-  ensureGlobalHttpConfig().onFetch =
-    callback ??
-    ((...args) => {
-      console.log("onFetch", ...args);
-    });
+export function getWasmMemory(): WebAssembly.Memory {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.wasmMemory;
+}
+
+export function setDaemonAddress(daemonAddress: string) {
+  currentDaemonAddress = daemonAddress;
+  module?.set_http_base_url(daemonAddress);
 }
 
 export function setWalletNewBlockCallback(

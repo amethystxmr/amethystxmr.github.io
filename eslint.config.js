@@ -9,7 +9,7 @@ export default tseslint.config(
       "built-web/**",
       "node_modules/**",
       "monero-wasm-src/**",
-      "monero-wasm-module/wasm_wallet.mjs",
+      "monero-wasm-module/wasm_wallet_*",
       "monero-wasm-module/monero-wasm-wallet.mjs",
     ],
   },

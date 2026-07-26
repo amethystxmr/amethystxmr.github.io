@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures/e2eTest";
 import {
   FROM_KEYS_TEST_ADDRESS,
   FROM_KEYS_TEST_PRIVATE_SPEND_KEY,

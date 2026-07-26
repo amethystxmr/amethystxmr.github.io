@@ -1,6 +1,10 @@
 export const APP_HOST = "127.0.0.1";
 export const APP_PORT = 4173;
-export const APP_URL = `http://${APP_HOST}:${APP_PORT}`;
+/** Shared with variant matrix project `variant-no-headers-no-sw`. */
+export const E2E_ASYNCIFY_PREVIEW_PORT = APP_PORT + 1;
+/** Shared with variant matrix project `variant-headers-no-sw`. */
+export const E2E_THREADS_PREVIEW_PORT = APP_PORT + 2;
+export const APP_URL = `http://${APP_HOST}:${E2E_ASYNCIFY_PREVIEW_PORT}`;
 
 export const MONEROD_RPC_HOST = "127.0.0.1";
 export const MONEROD_RPC_PORT = 28081;

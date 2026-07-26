@@ -5,10 +5,10 @@ import {
   MoneroWasmWallet,
   MultisigAccountStatus,
   PaymentDetails,
-  setHttpFetchCallback,
   WalletAddress,
   setWalletNewBlockCallback,
 } from "../../../monero-wasm-module/walletApi.workerClient";
+import { setHttpFetchCallback } from "../../../monero-wasm-module/httpFetchBridge";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
@@ -188,29 +188,27 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
 */
 
   React.useEffect(() => {
-    void setHttpFetchCallback(
-      (url, reqId, state, progressLoaded, progressTotal) => {
-        // Used by e2e tests (page.on("console")) to assert fetch progress events.
-        console.info(
-          `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
-        );
-        if (
-          state === "end" ||
-          state === "error" ||
-          state === "timeout" ||
-          state === "abort"
-        ) {
-          setDownloadInfo(null);
-        } else if (state === "start" || state === "progress") {
-          setDownloadInfo({ url, progressLoaded, progressTotal });
-        } else {
-          state satisfies never;
-        }
-      },
-    );
+    setHttpFetchCallback((url, reqId, state, progressLoaded, progressTotal) => {
+      // Used by e2e tests (page.on("console")) to assert fetch progress events.
+      console.info(
+        `[HTTP] ${url}: ${state} (${progressLoaded}/${progressTotal}), id=${reqId}`,
+      );
+      if (
+        state === "end" ||
+        state === "error" ||
+        state === "timeout" ||
+        state === "abort"
+      ) {
+        setDownloadInfo(null);
+      } else if (state === "start" || state === "progress") {
+        setDownloadInfo({ url, progressLoaded, progressTotal });
+      } else {
+        state satisfies never;
+      }
+    });
 
     return () => {
-      void setHttpFetchCallback(null);
+      setHttpFetchCallback(null);
     };
   }, [wallet]);
 
@@ -260,7 +258,7 @@ strict balance unlocked= 1000000000n   blocks_to_unlock= 9n  time_to_unlock= 0n
       if (cancelled) {
         return;
       }
-      const daemonHeight = await wallet.get_daemon_blockchain_height();
+      const daemonHeight = BigInt(await wallet.get_daemon_blockchain_height());
       if (cancelled) {
         return;
       }
