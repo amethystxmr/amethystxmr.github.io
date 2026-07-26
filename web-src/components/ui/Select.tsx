@@ -31,16 +31,32 @@ function Root({
   disabled = false,
   className,
   children,
+  onOpenChange,
 }: React.PropsWithChildren<{
   value: string;
   onValueChange: (next: string) => void;
   disabled?: boolean;
   className?: string;
+  onOpenChange?: (open: boolean) => void;
 }>) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpenState] = React.useState(false);
   const contentId = React.useId();
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const onOpenChangeRef = React.useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+
+  const setOpen = React.useCallback<
+    React.Dispatch<React.SetStateAction<boolean>>
+  >((update) => {
+    setOpenState((prev) => {
+      const next = typeof update === "function" ? update(prev) : update;
+      if (next !== prev) {
+        onOpenChangeRef.current?.(next);
+      }
+      return next;
+    });
+  }, []);
 
   React.useEffect(() => {
     if (!open) {
@@ -59,7 +75,7 @@ function Root({
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   return (
     <SelectContext.Provider
