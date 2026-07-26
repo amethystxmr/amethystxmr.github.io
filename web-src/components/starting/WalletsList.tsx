@@ -2074,7 +2074,7 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                 <Hint>
                   <div className="space-y-2">
                     <p>
-                      In a normal browser the daemon must use HTTPS and send
+                      In a regular browser the daemon must use HTTPS and send
                       CORS headers.
                     </p>
                     <p>
