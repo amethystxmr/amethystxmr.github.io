@@ -214,12 +214,23 @@ export async function loadRemoteDaemonNodes(
         if (signal?.aborted) {
           return;
         }
+        const nodesBefore = new Set(
+          filterRemoteDaemonNodeUrls(collected.flat()),
+        );
         collected[index] = result.urls;
+        const nodesAfter = filterRemoteDaemonNodeUrls(collected.flat());
+        const addedCount = nodesAfter.filter(
+          (url) => !nodesBefore.has(url),
+        ).length;
+        console.log(
+          `Fetched ${result.urls.length} nodes from ${source.name}, added ${addedCount} nodes to the list`,
+        );
       } catch (e) {
         if (signal?.aborted) {
           return;
         }
-        console.error(`Failed to load nodes from ${source.name}:`, e);
+        console.log(`Failed to fetch from ${source.name}`);
+        console.error(e);
         failedSources.push(source.name);
       } finally {
         if (!signal?.aborted) {
