@@ -2072,10 +2072,19 @@ function OptionsView({ onBack }: { onBack: () => void }) {
                   Daemon address
                 </div>
                 <Hint>
-                  <p>
-                    For the daemon to work in the browser, it must use HTTPS and
-                    include CORS headers.
-                  </p>
+                  <div className="space-y-2">
+                    <p>
+                      In a normal browser the daemon must use HTTPS and send
+                      CORS headers.
+                    </p>
+                    <p>
+                      In Tor Browser you can also use{" "}
+                      <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11px] text-white">
+                        http://*.onion
+                      </code>{" "}
+                      daemon addresses.
+                    </p>
+                  </div>
                 </Hint>
               </div>
               {daemonTestButton}
