@@ -8,7 +8,18 @@ on:
         type: string
 
 jobs:
+  build_version:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.set.outputs.value }}
+    steps:
+      - id: set
+        # YYYYMMDDHHMMSS UTC stamp used as the standalone app/build version
+        # instead of package.json's 1.0.0.
+        run: echo "value=$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+
   native_apps:
+    needs: build_version
     strategy:
       fail-fast: false
       matrix:
@@ -45,7 +56,12 @@ jobs:
 
       - name: Build native artifact
         shell: bash
-        run: npm run native:dist:ci -- ${{ matrix.target }}
+        env:
+          BUILD_VERSION: ${{ needs.build_version.outputs.value }}
+        run: |
+          npm run native:dist:ci -- ${{ matrix.target }} \
+            -c.buildVersion="$BUILD_VERSION" \
+            -c.artifactName='${productName}-${buildVersion}-${os}-${arch}.${ext}'
 
       - name: Upload native artifacts
         uses: actions/upload-artifact@v4
