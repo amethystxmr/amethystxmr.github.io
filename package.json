@@ -2,7 +2,7 @@
   "name": "amethystxmr",
   "version": "1.0.0",
   "description": "Amethyst XMR is a web-based Monero wallet",
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "author": "",
   "type": "module",
   "main": "electron/main.cjs",
