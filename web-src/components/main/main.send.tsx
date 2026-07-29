@@ -1407,7 +1407,10 @@ export function SendTab({
                         <div className="text-xs text-white/60">
                           Total outgoing
                         </div>
-                        <div className="text-lg font-semibold text-white">
+                        <div
+                          aria-label="Send review total outgoing value"
+                          className="text-lg font-semibold text-white"
+                        >
                           {formatAtomicToXmr(summary.totalOutgoing)} XMR
                         </div>
                         {summary.totalOutgoing > 0n && price && (
@@ -1436,7 +1439,10 @@ export function SendTab({
                         </div>
                         {balanceAfterSending !== null ? (
                           <>
-                            <div className="text-sm text-white">
+                            <div
+                              aria-label="Send review balance after sending value"
+                              className="text-sm text-white"
+                            >
                               {formatAtomicToXmr(balanceAfterSending)} XMR
                             </div>
                             {price && (
@@ -1460,7 +1466,10 @@ export function SendTab({
                         </div>
                         {immediatelyUnlocked !== null ? (
                           <>
-                            <div className="text-sm text-white">
+                            <div
+                              aria-label="Send review unlocked balance after sending value"
+                              className="text-sm text-white"
+                            >
                               {formatAtomicToXmr(immediatelyUnlocked)} XMR
                             </div>
                             {price && (

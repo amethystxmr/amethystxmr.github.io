@@ -838,6 +838,10 @@ public:
             add_integrated_payment_id_to_extra(extra, info.payment_id);
         }
         std::set<uint32_t> subaddr_indices;
+        for (uint32_t i = 0; i < m_wallet.get_num_subaddresses(0); ++i)
+        {
+            subaddr_indices.insert(i);
+        }
 
         auto ptx_vector = m_wallet.create_transactions_all(
             0, info.address, info.is_subaddress, 1,
