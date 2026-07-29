@@ -200,6 +200,33 @@ export class WalletMainPage {
     await expect(this.page.getByText("Total outgoing")).toBeVisible();
   }
 
+  async reviewSendMany(
+    recipients: { address: string; amountXmr: string }[],
+  ): Promise<void> {
+    if (recipients.length === 0) {
+      throw new Error("Expected at least one recipient");
+    }
+
+    await this.openTab("send");
+    for (let i = 0; i < recipients.length; i++) {
+      if (i > 0) {
+        await this.page
+          .getByRole("button", { name: /add destination/i })
+          .click();
+      }
+      await this.page
+        .getByLabel(`Recipient ${i + 1} address`)
+        .fill(recipients[i].address);
+      await this.page
+        .getByLabel(`Recipient ${i + 1} amount`)
+        .fill(recipients[i].amountXmr);
+    }
+    await this.page
+      .getByRole("button", { name: /review transaction/i })
+      .click();
+    await expect(this.page.getByText("Total outgoing")).toBeVisible();
+  }
+
   async expectSendReviewOutgoing(amountXmr: string): Promise<void> {
     await expect(
       this.page.getByText(WalletMainPage.xmrAmountPattern(amountXmr)).first(),
@@ -326,6 +353,75 @@ export class WalletMainPage {
     await this.page.getByRole("button", { name: /confirm.*send/i }).click();
     await expect(this.page.getByText(/transaction sent/i)).toBeVisible();
     await this.page.getByRole("button", { name: /send another/i }).click();
+  }
+
+  async reviewSweepAllXmr(destinationAddress: string): Promise<void> {
+    await this.openTab("send");
+    await this.page.getByLabel("Recipient 1 address").fill(destinationAddress);
+    await this.page.getByRole("button", { name: /^All$/i }).click();
+    await this.page
+      .getByRole("button", { name: /review transaction/i })
+      .click();
+    await expect(this.page.getByText("Total outgoing")).toBeVisible();
+  }
+
+  async getSendReviewTotalOutgoingAtomic(): Promise<bigint> {
+    return await this.getReviewAtomicValue("Send review total outgoing value");
+  }
+
+  async expectSendReviewBalanceAfterSendingAtomic(
+    expectedAtomic: bigint,
+  ): Promise<void> {
+    const label = "Send review balance after sending value";
+    await expect
+      .poll(async () => await this.getReviewAtomicValue(label))
+      .toBe(expectedAtomic);
+  }
+
+  async waitForUnspentCoinAtSubaddress(
+    indexMinor: number,
+    minAmountAtomic: bigint,
+    timeoutMs = 180_000,
+  ): Promise<bigint> {
+    const startedAt = Date.now();
+    let last = 0n;
+    let lastCoinsText = "";
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        await this.clickRefreshWallet();
+        await this.openCoinsOverlay();
+        const coins = await this.getUnspentCoinsFromOpenOverlay();
+        lastCoinsText = coins
+          .map(
+            (coin) => `${coin.amount.toString()}@${coin.major}/${coin.minor}`,
+          )
+          .join(", ");
+        const matchingCoins = coins.filter(
+          (coin) => coin.major === 0 && coin.minor === indexMinor,
+        );
+        for (const coin of matchingCoins) {
+          if (coin.amount > last) {
+            last = coin.amount;
+          }
+          if (coin.amount >= minAmountAtomic) {
+            await this.closeCoinsOverlay();
+            return coin.amount;
+          }
+        }
+        await this.closeCoinsOverlay();
+      } catch {
+        // Wallet may still be syncing new mined outputs.
+        if (await this.page.getByText("Wallet transfer outputs.").isVisible()) {
+          await this.closeCoinsOverlay();
+        }
+      }
+      await this.page.waitForTimeout(1_000);
+    }
+
+    throw new Error(
+      `No unspent coin at subaddress 0/${indexMinor} reached ${minAmountAtomic} atomic units. Last value: ${last}. Last coins: ${lastCoinsText}`,
+    );
   }
 
   async waitForMultisigInProgress(
@@ -790,9 +886,11 @@ export class WalletMainPage {
   }
 
   async getLockedBalanceAtomic(): Promise<bigint | null> {
-    const text =
-      (await this.page.getByLabel("XMR locked value").first().textContent()) ??
-      "";
+    const lockedValue = this.page.getByLabel("XMR locked value");
+    if ((await lockedValue.count()) === 0) {
+      return 0n;
+    }
+    const text = (await lockedValue.first().textContent()) ?? "";
     const parsed = WalletMainPage.parseXmrTextToAtomic(text);
     return parsed;
   }
@@ -873,6 +971,84 @@ export class WalletMainPage {
 
     throw new Error(
       `Locked balance did not reach ${minBalanceAtomic} atomic units. Last value: ${last}. Last UI text: ${lastUi}`,
+    );
+  }
+
+  async waitForUnlockedBalanceAtMost(
+    maxBalanceAtomic: bigint,
+    timeoutMs = 180_000,
+  ): Promise<bigint> {
+    const startedAt = Date.now();
+    let last: bigint | null = null;
+    let lastUi = "";
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        await this.clickRefreshWallet();
+        const balance = await this.getUnlockedBalanceAtomic();
+        if (balance !== null) {
+          last = balance;
+        }
+        if (balance !== null && balance <= maxBalanceAtomic) {
+          return balance;
+        }
+      } catch {
+        // Wallet may still be refreshing, retry.
+      }
+      try {
+        lastUi = (
+          (await this.page
+            .getByLabel("XMR available value")
+            .first()
+            .textContent()) ?? ""
+        ).trim();
+      } catch {
+        // Ignore UI probe errors.
+      }
+      await this.page.waitForTimeout(1_000);
+    }
+
+    throw new Error(
+      `Unlocked balance did not fall to ${maxBalanceAtomic} atomic units. Last value: ${last ?? "null"}. Last UI text: ${lastUi}`,
+    );
+  }
+
+  async waitForLockedBalanceAtMost(
+    maxBalanceAtomic: bigint,
+    timeoutMs = 180_000,
+  ): Promise<bigint> {
+    const startedAt = Date.now();
+    let last: bigint | null = null;
+    let lastUi = "";
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        await this.clickRefreshWallet();
+        const balance = await this.getLockedBalanceAtomic();
+        if (balance !== null) {
+          last = balance;
+        }
+        if (balance !== null && balance <= maxBalanceAtomic) {
+          return balance;
+        }
+      } catch {
+        // Wallet may still be refreshing, retry.
+      }
+      try {
+        lastUi = (
+          (await this.page
+            .getByLabel("XMR locked value")
+            .first()
+            .textContent()) ?? ""
+        ).trim();
+      } catch {
+        // Ignore UI probe errors.
+      }
+      await this.page.waitForTimeout(1_000);
+    }
+
+    throw new Error(
+      `Locked balance did not fall to ${maxBalanceAtomic} atomic units. Last value: ${last ?? "null"}. Last UI text: ${lastUi}`,
     );
   }
 
@@ -964,6 +1140,45 @@ export class WalletMainPage {
     const fractionPadded = (fractionRaw + "0".repeat(12)).slice(0, 12);
     const fraction = BigInt(fractionPadded);
     return whole * WalletMainPage.ATOMIC_UNITS_PER_XMR + fraction;
+  }
+
+  private async getReviewAtomicValue(label: string): Promise<bigint> {
+    const element = this.page.getByLabel(label);
+    await expect(element).toBeVisible();
+    const text = (await element.textContent()) ?? "";
+    const parsed = WalletMainPage.parseXmrTextToAtomic(text);
+    if (parsed === null) {
+      throw new Error(`Failed to parse ${label}: ${text}`);
+    }
+    return parsed;
+  }
+
+  private async getUnspentCoinsFromOpenOverlay(): Promise<
+    { amount: bigint; major: number; minor: number }[]
+  > {
+    const cardTexts = await this.page
+      .locator('div[class*="rounded-xl"][class*="ring-1"]')
+      .filter({ hasText: "txid:" })
+      .allTextContents();
+    const coins: { amount: bigint; major: number; minor: number }[] = [];
+
+    for (const text of cardTexts) {
+      if (!/spent:\s*false/.test(text)) {
+        continue;
+      }
+      const amount = WalletMainPage.parseXmrTextToAtomic(text);
+      const subaddressMatch = text.match(/subaddr_index:\s*(\d+)\s*\/\s*(\d+)/);
+      if (amount === null || !subaddressMatch) {
+        continue;
+      }
+      coins.push({
+        amount,
+        major: Number.parseInt(subaddressMatch[1], 10),
+        minor: Number.parseInt(subaddressMatch[2], 10),
+      });
+    }
+
+    return coins;
   }
 
   private async waitForBlockingOverlayToDisappear(
