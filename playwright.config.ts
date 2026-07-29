@@ -7,6 +7,9 @@ import {
 } from "./tests/constants";
 
 const IS_HEADED = process.argv.includes("--headed");
+const USE_PREVIEW_SERVER =
+  process.env.E2E_SERVER === "preview" ||
+  process.env.npm_lifecycle_event === "test:e2e:preview";
 
 export default defineConfig({
   testDir: "./tests",
@@ -42,7 +45,9 @@ export default defineConfig({
   globalSetup: "./tests/global.setup.ts",
   globalTeardown: "./tests/global.teardown.ts",
   webServer: {
-    command: `npm run dev -- --host ${APP_HOST} --port ${APP_PORT} --strictPort`,
+    command: USE_PREVIEW_SERVER
+      ? `npm run preview -- --host ${APP_HOST} --port ${APP_PORT} --strictPort`
+      : `npm run dev -- --host ${APP_HOST} --port ${APP_PORT} --strictPort`,
     url: APP_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

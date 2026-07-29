@@ -51,7 +51,7 @@ test("basic flow", async ({ page, context }) => {
     expect(await wallet1.getPrimaryAddress()).toBe(FROM_KEYS_TEST_ADDRESS);
   });
 
-  await test.step("Dev server has no COOP/COEP; SharedArrayBuffer unavailable", async () => {
+  await test.step("App server has no COOP/COEP; SharedArrayBuffer unavailable", async () => {
     await expect(page.evaluate(() => typeof SharedArrayBuffer)).resolves.toBe(
       "undefined",
     );
