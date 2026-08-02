@@ -27,6 +27,7 @@ test("wallet name inputs reject dots in create, restore, rename, and import", as
   const validWalletName = `strict-name-${ts}`;
   const e2eTmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "strict-name-"));
   const invalidZipPath = path.join(e2eTmpDir, "invalid-dot.zip");
+  const unsafeZipPath = path.join(e2eTmpDir, "unsafe-path.zip");
 
   const initial = new InitialWalletListPage(page);
   const manage = new ManageWalletsPage(page);
@@ -66,6 +67,14 @@ test("wallet name inputs reject dots in create, restore, rename, and import", as
   ]);
   await manage.importZipFromPath(invalidZipPath);
   await alerts.dismissImportCompletedExpectingWarning(/bad\.name/i);
+
+  await writeZipWithEntries(unsafeZipPath, [
+    { name: "../evil.keys", data: new Uint8Array([1, 2, 3]) },
+  ]);
+  await manage.importZipFromPath(unsafeZipPath);
+  await alerts.dismissNoticeMatching(
+    /Unsafe archive path:[\s\S]*\.\.\/evil\.keys/i,
+  );
 });
 
 test("imports keys-only wallet archives and warns that cache is missing", async ({

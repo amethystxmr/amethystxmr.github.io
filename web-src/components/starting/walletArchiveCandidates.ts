@@ -3,13 +3,13 @@ import { validateWalletName } from "../../../monero-wasm-module/walletName";
 export type WalletArchiveEntry = {
   path: string;
   isDirectory: boolean;
-  data: Uint8Array;
+  data?: Uint8Array;
 };
 
 export type WalletArchiveCandidateFile = {
   archivePath: string;
   storageName: string;
-  data: Uint8Array;
+  data?: Uint8Array;
 };
 
 export type WalletArchiveCandidate = {
@@ -34,7 +34,7 @@ export type WalletArchivePlan = {
 type RootArchiveFile = {
   archivePath: string;
   storageName: string;
-  data: Uint8Array;
+  data?: Uint8Array;
 };
 
 const WALLET_KEYS_SUFFIX = ".keys";

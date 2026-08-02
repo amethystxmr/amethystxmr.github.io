@@ -22,6 +22,10 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+function getArchivePath(zipEntry: JSZip.JSZipObject): string {
+  return zipEntry.unsafeOriginalName ?? zipEntry.name;
+}
+
 async function buildZipBlob(files: WalletFileData[]): Promise<Blob> {
   const zip = new JSZip();
   const names = new Set<string>();
@@ -49,19 +53,54 @@ export async function readWalletArchive(
   file: File,
 ): Promise<WalletArchiveEntry[]> {
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
-  const entries: WalletArchiveEntry[] = [];
+  const zipEntries = Object.values(zip.files);
+  const entries: WalletArchiveEntry[] = zipEntries.map((zipEntry) => ({
+    path: getArchivePath(zipEntry),
+    isDirectory: zipEntry.dir,
+  }));
 
-  for (const zipEntry of Object.values(zip.files)) {
-    entries.push({
-      path: zipEntry.name,
+  const metadataPlan = planWalletArchiveImport(entries);
+  if (metadataPlan.errors.length > 0) {
+    return entries;
+  }
+
+  const walletArchivePaths = new Set(
+    metadataPlan.candidates.flatMap((candidate) =>
+      candidate.files.map((candidateFile) => candidateFile.archivePath),
+    ),
+  );
+  if (walletArchivePaths.size === 0) {
+    return entries;
+  }
+
+  const entriesWithData: WalletArchiveEntry[] = [];
+
+  for (const zipEntry of zipEntries) {
+    const entry: WalletArchiveEntry = {
+      path: getArchivePath(zipEntry),
       isDirectory: zipEntry.dir,
-      data: zipEntry.dir
-        ? new Uint8Array()
-        : await zipEntry.async("uint8array"),
+    };
+
+    if (entry.isDirectory || !walletArchivePaths.has(entry.path)) {
+      entriesWithData.push(entry);
+      continue;
+    }
+
+    entriesWithData.push({
+      ...entry,
+      data: await zipEntry.async("uint8array"),
     });
   }
 
-  return entries;
+  return entriesWithData;
+}
+
+function getCandidateFileData(file: WalletArchiveCandidate["files"][number]) {
+  if (file.data === undefined) {
+    throw new Error(`Archive file "${file.archivePath}" was not read`);
+  }
+
+  return file.data;
 }
 
 export async function importWalletArchiveEntries(
@@ -107,7 +146,7 @@ export async function importWalletArchiveEntries(
         candidate.walletName,
         candidate.files.map((file) => ({
           name: file.storageName,
-          data: file.data,
+          data: getCandidateFileData(file),
         })),
       );
       summary.imported.push(candidate.walletName);
