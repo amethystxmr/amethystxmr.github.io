@@ -93,4 +93,14 @@ test.describe("wallet archive candidates", () => {
       "Unsafe archive path: dir\\evil.keys",
     ]);
   });
+
+  test("rejects duplicate flat archive entries", () => {
+    const plan = planWalletArchiveImport([
+      file("alice.keys", 1),
+      file("alice.keys", 2),
+    ]);
+
+    expect(plan.candidates).toEqual([]);
+    expect(plan.errors).toEqual(["Duplicate archive file: alice.keys"]);
+  });
 });

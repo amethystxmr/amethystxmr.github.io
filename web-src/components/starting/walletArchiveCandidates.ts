@@ -92,6 +92,7 @@ export function planWalletArchiveImport(
 
   const rootFiles = new Map<string, RootArchiveFile>();
   const seenStorageNames = new Set<string>();
+  const duplicateStorageNames = new Set<string>();
   const invalidStorageNames = new Set<string>();
 
   for (const entry of entries) {
@@ -117,7 +118,12 @@ export function planWalletArchiveImport(
 
     const storageName = segments[0];
     if (seenStorageNames.has(storageName)) {
+      duplicateStorageNames.add(storageName);
+      rootFiles.delete(storageName);
       plan.errors.push(`Duplicate archive file: ${storageName}`);
+      continue;
+    }
+    if (duplicateStorageNames.has(storageName)) {
       continue;
     }
     seenStorageNames.add(storageName);
