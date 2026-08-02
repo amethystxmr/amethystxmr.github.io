@@ -2285,10 +2285,10 @@ function ManageWalletsView({
   const doExportWallet = React.useCallback(
     async (walletName: string) => {
       try {
-        const blob = await withFsLock(async () => {
-          const files = await walletApi.getWalletFilesData(walletName);
-          return await buildWalletZip(files);
+        const files = await withFsLock(async () => {
+          return await walletApi.getWalletFilesData(walletName);
         });
+        const blob = await buildWalletZip(files);
         downloadBlob(blob, `${walletName}.zip`);
       } catch (e) {
         console.error("Failed to export wallet:", e);
@@ -2300,10 +2300,10 @@ function ManageWalletsView({
 
   const doExportAllWallets = React.useCallback(async () => {
     try {
-      const blob = await withFsLock(async () => {
-        const files = await walletApi.getAllWalletFilesData();
-        return await buildWalletsZip(files);
+      const files = await withFsLock(async () => {
+        return await walletApi.getAllWalletFilesData();
       });
+      const blob = await buildWalletsZip(files);
       downloadBlob(blob, "amethystxmr-wallets.zip");
     } catch (e) {
       console.error("Failed to export all wallets:", e);
