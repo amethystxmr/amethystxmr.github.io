@@ -115,7 +115,6 @@ export function planWalletArchiveImport(
   const seenStorageNames = new Set<string>();
   const duplicateStorageNames = new Set<string>();
   const invalidStorageNames = new Set<string>();
-  const ignoredStorageNames = new Set<string>();
 
   for (const entry of entries) {
     const archivePath =
@@ -178,8 +177,10 @@ export function planWalletArchiveImport(
         rootFiles.has(`${companionWalletName}${WALLET_KEYS_SUFFIX}`);
 
       if (!isCompanionFile && rawWalletName.includes(".")) {
-        ignoredStorageNames.add(file.storageName);
-        plan.unusedFiles.push(file.archivePath);
+        invalidStorageNames.add(file.storageName);
+        plan.errors.push(
+          `Invalid wallet name in archive file "${file.archivePath}": ${formatValidationError(error)}`,
+        );
         continue;
       }
 
@@ -198,10 +199,7 @@ export function planWalletArchiveImport(
   for (const walletName of walletNames.sort((a, b) => a.localeCompare(b))) {
     const candidateFiles: WalletArchiveCandidateFile[] = [];
     for (const file of rootFiles.values()) {
-      if (
-        invalidStorageNames.has(file.storageName) ||
-        ignoredStorageNames.has(file.storageName)
-      ) {
+      if (invalidStorageNames.has(file.storageName)) {
         continue;
       }
 
@@ -238,8 +236,7 @@ export function planWalletArchiveImport(
   for (const file of rootFiles.values()) {
     if (
       !assignedFiles.has(file.storageName) &&
-      !invalidStorageNames.has(file.storageName) &&
-      !ignoredStorageNames.has(file.storageName)
+      !invalidStorageNames.has(file.storageName)
     ) {
       plan.unusedFiles.push(file.archivePath);
     }

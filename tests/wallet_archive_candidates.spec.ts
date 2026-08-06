@@ -57,7 +57,7 @@ test.describe("wallet archive candidates", () => {
     ]);
   });
 
-  test("reports unused dotted keys and nested files", () => {
+  test("rejects dotted wallet keys and reports unused nested files", () => {
     const plan = planWalletArchiveImport([
       directory("nested/"),
       file("nested/nested.keys"),
@@ -65,14 +65,12 @@ test.describe("wallet archive candidates", () => {
       file("notes.txt"),
     ]);
 
-    expect(plan.errors).toEqual([]);
+    expect(plan.errors).toEqual([
+      'Invalid wallet name in archive file "a.b.keys": Wallet name cannot contain dots',
+    ]);
     expect(plan.candidates).toEqual([]);
     expect(plan.invalidWalletNames).toEqual([]);
-    expect(plan.unusedFiles).toEqual([
-      "a.b.keys",
-      "nested/nested.keys",
-      "notes.txt",
-    ]);
+    expect(plan.unusedFiles).toEqual(["nested/nested.keys", "notes.txt"]);
   });
 
   test("keeps flat __MACOSX wallet files while ignoring archive metadata", () => {
@@ -94,7 +92,7 @@ test.describe("wallet archive candidates", () => {
     ]);
   });
 
-  test("ignores unknown dotted keys files instead of treating them as companions", () => {
+  test("rejects unknown dotted keys files instead of treating them as companions", () => {
     const plan = planWalletArchiveImport([
       file("alice", 1),
       file("alice.keys", 2),
@@ -102,9 +100,11 @@ test.describe("wallet archive candidates", () => {
       file("alice.v1.keys", 4),
     ]);
 
-    expect(plan.errors).toEqual([]);
+    expect(plan.errors).toEqual([
+      'Invalid wallet name in archive file "alice.v1.keys": Wallet name cannot contain dots',
+    ]);
     expect(plan.invalidWalletNames).toEqual([]);
-    expect(plan.unusedFiles).toEqual(["alice.v1.keys"]);
+    expect(plan.unusedFiles).toEqual([]);
     expect(plan.candidates).toHaveLength(1);
     expect(plan.candidates[0].walletName).toBe("alice");
     expect(plan.candidates[0].files.map((file) => file.storageName)).toEqual([

@@ -167,7 +167,9 @@ test("import summary reports invalid names and unused nested files", async ({
     { name: "bad.name.keys", data: new Uint8Array([1, 2, 3]) },
   ]);
   await manage.importZipFromPath(invalidZipPath);
-  await alerts.dismissImportCompletedExpectingWarning(/bad\.name\.keys/i);
+  await alerts.dismissNoticeMatching(
+    /Failed to import wallets:[\s\S]*bad\.name\.keys[\s\S]*cannot contain dots/i,
+  );
 });
 
 test("rename moves all flat companion files to the new wallet prefix", async ({
