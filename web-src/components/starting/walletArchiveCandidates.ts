@@ -38,6 +38,7 @@ type RootArchiveFile = {
 };
 
 const WALLET_KEYS_SUFFIX = ".keys";
+const KNOWN_WALLET_KEYS_COMPANION_SUFFIXES = [".background.keys"] as const;
 
 function formatValidationError(error: unknown): string {
   return error instanceof Error ? error.message : "Invalid wallet name";
@@ -79,6 +80,26 @@ function makeCandidateFile(
   return null;
 }
 
+function getKnownWalletKeysCompanionWalletName(
+  storageName: string,
+): string | null {
+  for (const suffix of KNOWN_WALLET_KEYS_COMPANION_SUFFIXES) {
+    if (!storageName.endsWith(suffix)) {
+      continue;
+    }
+
+    const walletName = storageName.slice(0, -suffix.length);
+    try {
+      validateWalletName(walletName);
+      return walletName;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 export function planWalletArchiveImport(
   entries: WalletArchiveEntry[],
 ): WalletArchivePlan {
@@ -105,7 +126,10 @@ export function planWalletArchiveImport(
       plan.errors.push(`Unsafe archive path: ${entry.path}`);
       continue;
     }
-    if (segments[0] === "__MACOSX") {
+    if (
+      segments[0] === "__MACOSX" &&
+      (entry.isDirectory || segments.length > 1)
+    ) {
       continue;
     }
     if (entry.isDirectory) {
@@ -145,11 +169,12 @@ export function planWalletArchiveImport(
       validateWalletName(rawWalletName);
       walletNames.push(rawWalletName);
     } catch (error) {
-      const companionWalletName = rawWalletName.split(".")[0] || rawWalletName;
+      const companionWalletName = getKnownWalletKeysCompanionWalletName(
+        file.storageName,
+      );
       const isCompanionFile =
-        companionWalletName.length > 0 &&
-        rootFiles.has(`${companionWalletName}${WALLET_KEYS_SUFFIX}`) &&
-        file.storageName.startsWith(`${companionWalletName}.`);
+        companionWalletName !== null &&
+        rootFiles.has(`${companionWalletName}${WALLET_KEYS_SUFFIX}`);
 
       if (!isCompanionFile) {
         invalidStorageNames.add(file.storageName);
@@ -166,6 +191,10 @@ export function planWalletArchiveImport(
   for (const walletName of walletNames.sort((a, b) => a.localeCompare(b))) {
     const candidateFiles: WalletArchiveCandidateFile[] = [];
     for (const file of rootFiles.values()) {
+      if (invalidStorageNames.has(file.storageName)) {
+        continue;
+      }
+
       const candidateFile = makeCandidateFile(file, walletName);
       if (!candidateFile) {
         continue;

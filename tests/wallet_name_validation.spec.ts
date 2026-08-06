@@ -22,6 +22,7 @@ test.describe("wallet name validation", () => {
       "a.b",
       "a.keys",
       ".hidden",
+      "C:alice",
       "dir/name",
       "dir\\name",
       "bad\u0000name",

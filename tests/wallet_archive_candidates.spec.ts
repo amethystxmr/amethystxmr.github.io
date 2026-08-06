@@ -77,6 +77,51 @@ test.describe("wallet archive candidates", () => {
     expect(plan.unusedFiles).toEqual(["nested/nested.keys", "notes.txt"]);
   });
 
+  test("keeps flat __MACOSX wallet files while ignoring archive metadata", () => {
+    const plan = planWalletArchiveImport([
+      directory("__MACOSX/"),
+      file("__MACOSX/._ignored"),
+      file("__MACOSX", 1),
+      file("__MACOSX.keys", 2),
+    ]);
+
+    expect(plan.errors).toEqual([]);
+    expect(plan.invalidWalletNames).toEqual([]);
+    expect(plan.unusedFiles).toEqual([]);
+    expect(plan.candidates).toHaveLength(1);
+    expect(plan.candidates[0].walletName).toBe("__MACOSX");
+    expect(plan.candidates[0].files.map((file) => file.storageName)).toEqual([
+      "__MACOSX",
+      "__MACOSX.keys",
+    ]);
+  });
+
+  test("treats unknown dotted keys files as invalid instead of companions", () => {
+    const plan = planWalletArchiveImport([
+      file("alice", 1),
+      file("alice.keys", 2),
+      file("alice.future-cache", 3),
+      file("alice.v1.keys", 4),
+    ]);
+
+    expect(plan.errors).toEqual([]);
+    expect(plan.invalidWalletNames).toEqual([
+      {
+        archivePath: "alice.v1.keys",
+        walletName: "alice.v1",
+        reason: "Wallet name cannot contain dots",
+      },
+    ]);
+    expect(plan.unusedFiles).toEqual([]);
+    expect(plan.candidates).toHaveLength(1);
+    expect(plan.candidates[0].walletName).toBe("alice");
+    expect(plan.candidates[0].files.map((file) => file.storageName)).toEqual([
+      "alice",
+      "alice.future-cache",
+      "alice.keys",
+    ]);
+  });
+
   test("rejects unsafe archive paths", () => {
     const plan = planWalletArchiveImport([
       file("../evil.keys"),

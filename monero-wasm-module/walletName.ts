@@ -13,6 +13,9 @@ export function validateWalletName(walletName: string): void {
   if (walletName.includes("/") || walletName.includes("\\")) {
     throw new Error("Wallet name cannot contain path separators");
   }
+  if (walletName.includes(":")) {
+    throw new Error("Wallet name cannot contain colons");
+  }
   if (walletName === "." || walletName === "..") {
     throw new Error("Wallet name cannot be . or ..");
   }
