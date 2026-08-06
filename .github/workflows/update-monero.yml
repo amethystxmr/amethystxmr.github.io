@@ -23,8 +23,6 @@ jobs:
       - name: Update submodule to latest Monero release
         id: update
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -61,11 +59,13 @@ jobs:
           echo "target_sha=${target_sha}" >> "${GITHUB_OUTPUT}"
           echo "target_sha_short=${target_sha:0:12}" >> "${GITHUB_OUTPUT}"
 
+          github_token="${{ secrets.GITHUB_TOKEN }}"
+
           # If an update PR is already open from the same branch and already
           # points to this exact Monero commit, do nothing.
           existing_pr_number="$(
             curl -fsSL \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Authorization: Bearer ${github_token}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:${UPDATE_BRANCH}" \
             | jq -r '.[0].number // empty'

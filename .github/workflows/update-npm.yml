@@ -28,8 +28,6 @@ jobs:
       - name: Apply non-breaking npm audit fixes
         id: update
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -39,10 +37,19 @@ jobs:
 
           summarize_audit() {
             # npm audit exits non-zero when vulnerabilities remain; keep parsing JSON.
-            { npm audit --json 2>/dev/null || true; } | jq -r '
+            local audit_json
+            audit_json="$(npm audit --json 2>/dev/null || true)"
+
+            if ! jq -e 'type == "object" and (.error? | not) and (.metadata.vulnerabilities | type == "object")' >/dev/null <<< "${audit_json}"; then
+              echo "npm audit did not return vulnerability metadata." >&2
+              jq -r '.error.summary? // .error.detail? // empty' <<< "${audit_json}" >&2 || true
+              return 1
+            fi
+
+            jq -r '
               (.metadata.vulnerabilities // {}) as $v
               | "total=\(($v.total // 0)) info=\(($v.info // 0)) low=\(($v.low // 0)) moderate=\(($v.moderate // 0)) high=\(($v.high // 0)) critical=\(($v.critical // 0))"
-            '
+            ' <<< "${audit_json}"
           }
 
           before_summary="$(summarize_audit)"
@@ -63,11 +70,13 @@ jobs:
           new_lock_hash="$(sha256sum package-lock.json | awk '{print $1}')"
           echo "new_lock_hash=${new_lock_hash}" >> "${GITHUB_OUTPUT}"
 
+          github_token="${{ secrets.GITHUB_TOKEN }}"
+
           # If an update PR is already open from the same branch and already
           # has this exact lockfile, do nothing.
           existing_pr_number="$(
             curl -fsSL \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Authorization: Bearer ${github_token}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls?state=open&head=${GITHUB_REPOSITORY_OWNER}:${UPDATE_BRANCH}" \
             | jq -r '.[0].number // empty'
