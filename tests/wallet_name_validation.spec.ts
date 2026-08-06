@@ -6,8 +6,8 @@ import {
 } from "../monero-wasm-module/walletName";
 
 test.describe("wallet name validation", () => {
-  test("allows simple flat wallet names and trims user input", () => {
-    expect(validateWalletName(" wallet name-1_2 ")).toBe("wallet name-1_2");
+  test("allows simple flat wallet names", () => {
+    expect(() => validateWalletName("wallet name-1_2")).not.toThrow();
     expect(isWalletNameAllowed("wallet-name")).toBe(true);
   });
 
@@ -15,6 +15,8 @@ test.describe("wallet name validation", () => {
     for (const walletName of [
       "",
       "   ",
+      " wallet",
+      "wallet ",
       ".",
       "..",
       "a.b",

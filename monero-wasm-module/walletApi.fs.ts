@@ -25,11 +25,13 @@ export type WalletFileData = {
 };
 
 export function getWalletFilePath(walletName: string): string {
-  return validateWalletName(walletName);
+  validateWalletName(walletName);
+  return walletName;
 }
 
 export function getWalletKeysPath(walletName: string): string {
-  return `${validateWalletName(walletName)}${WALLET_KEYS_SUFFIX}`;
+  validateWalletName(walletName);
+  return `${walletName}${WALLET_KEYS_SUFFIX}`;
 }
 
 function listRootNames(fs: EmscriptenFs): string[] {
@@ -74,8 +76,8 @@ function tryStoredWalletNameFromKeysFile(fileName: string): string | null {
 
   const walletName = fileName.slice(0, -WALLET_KEYS_SUFFIX.length);
   try {
-    const validated = validateWalletName(walletName);
-    return validated === walletName ? validated : null;
+    validateWalletName(walletName);
+    return walletName;
   } catch {
     return null;
   }
@@ -127,20 +129,20 @@ function listOwnedWalletFileNames(
   fs: EmscriptenFs,
   walletName: string,
 ): string[] {
-  const validatedWalletName = validateWalletName(walletName);
+  validateWalletName(walletName);
   const walletAnchorNames = listWalletAnchorNames(fs);
   const ownedNames: string[] = [];
 
   for (const name of listRootNames(fs)) {
     if (
       isRootFile(fs, name) &&
-      isOwnedWalletFileName(validatedWalletName, name, walletAnchorNames)
+      isOwnedWalletFileName(walletName, name, walletAnchorNames)
     ) {
       ownedNames.push(name);
     }
   }
 
-  return sortWalletFileNames(validatedWalletName, ownedNames);
+  return sortWalletFileNames(walletName, ownedNames);
 }
 
 function sortWalletFileNames(walletName: string, names: string[]): string[] {
@@ -206,14 +208,14 @@ export function walletStoragePathExists(
   fs: EmscriptenFs,
   walletName: string,
 ): boolean {
-  const validatedWalletName = validateWalletName(walletName);
+  validateWalletName(walletName);
   const walletAnchorNames = listWalletAnchorNames(fs);
 
   for (const name of listRootNames(fs)) {
     if (
-      isOwnedWalletFileName(validatedWalletName, name, walletAnchorNames) ||
+      isOwnedWalletFileName(walletName, name, walletAnchorNames) ||
       KNOWN_WALLET_COMPANION_SUFFIXES.some(
-        (suffix) => name === `${validatedWalletName}${suffix}`,
+        (suffix) => name === `${walletName}${suffix}`,
       )
     ) {
       return true;
@@ -227,15 +229,15 @@ export function assertWalletNameAvailable(
   fs: EmscriptenFs,
   walletName: string,
 ): void {
-  const validatedWalletName = validateWalletName(walletName);
-  if (walletStoragePathExists(fs, validatedWalletName)) {
-    throw new Error(`Wallet with name ${validatedWalletName} already exists`);
+  validateWalletName(walletName);
+  if (walletStoragePathExists(fs, walletName)) {
+    throw new Error(`Wallet with name ${walletName} already exists`);
   }
 }
 
 export function deleteWalletFiles(fs: EmscriptenFs, walletName: string): void {
-  const validatedWalletName = validateWalletName(walletName);
-  for (const name of listOwnedWalletFileNames(fs, validatedWalletName)) {
+  validateWalletName(walletName);
+  for (const name of listOwnedWalletFileNames(fs, walletName)) {
     fs.unlink(name);
   }
 }
@@ -245,29 +247,29 @@ export function renameWallet(
   oldName: string,
   newName: string,
 ): void {
-  const validatedOldName = validateWalletName(oldName);
-  const validatedNewName = validateWalletName(newName);
+  validateWalletName(oldName);
+  validateWalletName(newName);
 
-  if (validatedOldName === validatedNewName) {
+  if (oldName === newName) {
     return;
   }
-  if (!pathExists(fs, `${validatedOldName}${WALLET_KEYS_SUFFIX}`)) {
-    throw new Error(`Wallet with name ${validatedOldName} does not exist`);
+  if (!pathExists(fs, `${oldName}${WALLET_KEYS_SUFFIX}`)) {
+    throw new Error(`Wallet with name ${oldName} does not exist`);
   }
 
-  const sourceNames = listOwnedWalletFileNames(fs, validatedOldName);
+  const sourceNames = listOwnedWalletFileNames(fs, oldName);
   if (sourceNames.length === 0) {
-    throw new Error(`Wallet with name ${validatedOldName} does not exist`);
+    throw new Error(`Wallet with name ${oldName} does not exist`);
   }
-  if (walletStoragePathExists(fs, validatedNewName)) {
+  if (walletStoragePathExists(fs, newName)) {
     throw new Error("Wallet with the new name already exists");
   }
 
   const renamePlan = sourceNames.map((sourceName) => {
     const destinationName =
-      sourceName === validatedOldName
-        ? validatedNewName
-        : `${validatedNewName}${sourceName.slice(validatedOldName.length)}`;
+      sourceName === oldName
+        ? newName
+        : `${newName}${sourceName.slice(oldName.length)}`;
     return { sourceName, destinationName };
   });
 
@@ -291,13 +293,13 @@ export function getWalletFilesData(
   fs: EmscriptenFs,
   walletName: string,
 ): WalletFileData[] {
-  const validatedWalletName = validateWalletName(walletName);
-  const keysName = `${validatedWalletName}${WALLET_KEYS_SUFFIX}`;
+  validateWalletName(walletName);
+  const keysName = `${walletName}${WALLET_KEYS_SUFFIX}`;
   if (!isRootFile(fs, keysName)) {
     throw new Error(`Wallet keys file "${keysName}" does not exist`);
   }
 
-  return listOwnedWalletFileNames(fs, validatedWalletName).map((name) => ({
+  return listOwnedWalletFileNames(fs, walletName).map((name) => ({
     name,
     data: fs.readFile(name),
   }));
@@ -320,12 +322,12 @@ export function saveWalletFilesData(
   walletName: string,
   files: WalletFileData[],
 ): void {
-  const validatedWalletName = validateWalletName(walletName);
-  const keysName = `${validatedWalletName}${WALLET_KEYS_SUFFIX}`;
+  validateWalletName(walletName);
+  const keysName = `${walletName}${WALLET_KEYS_SUFFIX}`;
   const filesByName = new Map<string, Uint8Array>();
 
   for (const file of files) {
-    const storageName = validateStorageFileName(validatedWalletName, file.name);
+    const storageName = validateStorageFileName(walletName, file.name);
     if (filesByName.has(storageName)) {
       throw new Error(
         `Wallet archive contains duplicate file "${storageName}"`,
@@ -337,8 +339,8 @@ export function saveWalletFilesData(
   if (!filesByName.has(keysName)) {
     throw new Error(`Wallet archive is missing required file "${keysName}"`);
   }
-  if (walletStoragePathExists(fs, validatedWalletName)) {
-    throw new Error(`Wallet with name ${validatedWalletName} already exists`);
+  if (walletStoragePathExists(fs, walletName)) {
+    throw new Error(`Wallet with name ${walletName} already exists`);
   }
   for (const name of filesByName.keys()) {
     if (pathExists(fs, name)) {

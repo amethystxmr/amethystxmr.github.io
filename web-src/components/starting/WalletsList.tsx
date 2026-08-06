@@ -828,7 +828,8 @@ function RestoreView({
   ) => {
     let walletName: string;
     try {
-      walletName = validateWalletName(fileName);
+      validateWalletName(fileName);
+      walletName = fileName;
     } catch (error) {
       void alert(getErrorMessage(error));
       return;
@@ -893,7 +894,8 @@ function RestoreView({
   ) => {
     let walletName: string;
     try {
-      walletName = validateWalletName(fileName);
+      validateWalletName(fileName);
+      walletName = fileName;
     } catch (error) {
       void alert(getErrorMessage(error));
       return;
@@ -1345,7 +1347,8 @@ function CreateNewWalletView({
 
     let walletName: string;
     try {
-      walletName = validateWalletName(fileName);
+      validateWalletName(fileName);
+      walletName = fileName;
     } catch (error) {
       void alert(getErrorMessage(error));
       return;
@@ -2336,7 +2339,8 @@ function ManageWalletsView({
     const oldName = renameState.oldWalletName;
     let newName: string;
     try {
-      newName = validateWalletName(renameState.newWalletName);
+      validateWalletName(renameState.newWalletName);
+      newName = renameState.newWalletName;
     } catch (error) {
       await alert(getErrorMessage(error));
       return;
@@ -2517,8 +2521,8 @@ function ManageWalletsView({
               e.preventDefault();
               if (
                 renameState.type !== "renaming" &&
-                renameState.newWalletName.trim() !== "" &&
-                renameState.newWalletName.trim() !== renameState.oldWalletName
+                renameState.newWalletName !== "" &&
+                renameState.newWalletName !== renameState.oldWalletName
               ) {
                 void doRenameWallet();
               }
@@ -2560,8 +2564,8 @@ function ManageWalletsView({
                 variant="primary"
                 disabled={
                   renameState.type === "renaming" ||
-                  renameState.newWalletName.trim() === "" ||
-                  renameState.newWalletName.trim() === renameState.oldWalletName
+                  renameState.newWalletName === "" ||
+                  renameState.newWalletName === renameState.oldWalletName
                 }
               >
                 {renameState.type === "renaming"

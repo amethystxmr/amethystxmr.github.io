@@ -142,11 +142,8 @@ export function planWalletArchiveImport(
 
     const rawWalletName = file.storageName.slice(0, -WALLET_KEYS_SUFFIX.length);
     try {
-      const walletName = validateWalletName(rawWalletName);
-      if (walletName !== rawWalletName) {
-        throw new Error("Wallet name must not need trimming in archive files");
-      }
-      walletNames.push(walletName);
+      validateWalletName(rawWalletName);
+      walletNames.push(rawWalletName);
     } catch (error) {
       const companionWalletName = rawWalletName.split(".")[0] || rawWalletName;
       const isCompanionFile =
