@@ -9,6 +9,7 @@ import {
   WalletAddress,
   setWalletNewBlockCallback,
 } from "../../../monero-wasm-module/walletApi.workerClient";
+import { getWalletDisplayName } from "../../../monero-wasm-module/walletName";
 import { ProgressBar } from "../ui";
 import { SectionPanel, SurfaceCard } from "../ui";
 import { useXmrPrice } from "./useXmrPrice";
@@ -155,7 +156,7 @@ export function WalletMain({
     const appName = "AmethystXMR";
     const defaultTitle = "Amethyst XMR";
     const walletName = walletFileName
-      ? walletFileName.split(/[\\/]/).pop() || walletFileName
+      ? getWalletDisplayName(walletFileName)
       : null;
 
     document.title =

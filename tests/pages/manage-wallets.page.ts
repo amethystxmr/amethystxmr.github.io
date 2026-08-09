@@ -1,10 +1,4 @@
-import {
-  expect,
-  test,
-  type Download,
-  type Locator,
-  type Page,
-} from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 export class ManageWalletsPage {
   constructor(private readonly page: Page) {
@@ -74,6 +68,13 @@ export class ManageWalletsPage {
     await renameForm.getByRole("button", { name: /rename wallet/i }).click();
   }
 
+  async cancelRenameDialog(): Promise<void> {
+    const renameForm = this.page
+      .locator("form")
+      .filter({ hasText: /Enter new name for/i });
+    await renameForm.getByRole("button", { name: /^✖ Cancel$/ }).click();
+  }
+
   async exportWalletToPath(
     walletName: string,
     absolutePath: string,
@@ -82,7 +83,14 @@ export class ManageWalletsPage {
     await this.walletCard(walletName)
       .getByRole("button", { name: "⬇︎ Export" })
       .click();
-    const download: Download = await downloadPromise;
+    const download = await downloadPromise;
+    await download.saveAs(absolutePath);
+  }
+
+  async exportAllWalletsToPath(absolutePath: string): Promise<void> {
+    const downloadPromise = this.page.waitForEvent("download");
+    await this.page.getByRole("button", { name: "⬇︎ Export all" }).click();
+    const download = await downloadPromise;
     await download.saveAs(absolutePath);
   }
 

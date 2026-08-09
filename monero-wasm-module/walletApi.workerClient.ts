@@ -24,6 +24,7 @@ export type FeePriority = FeePriorityType;
 export type {
   DecodedPolyseed,
   EncodablePolyseed,
+  FsEntry,
   GeneratePolyseedStorageOptions,
   KeyImagesImportResult,
   MaybePromise,
@@ -36,6 +37,7 @@ export type {
   TransferInfoItem,
   TransferItem,
   WalletAddress,
+  WalletFileData,
   WalletKeys,
   WalletTxHandle,
   MoneroWasmWallet,
