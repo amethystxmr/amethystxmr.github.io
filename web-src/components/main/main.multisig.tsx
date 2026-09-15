@@ -4,6 +4,7 @@ import {
   PaymentDetails,
   MoneroWasmWallet,
 } from "../../../monero-wasm-module/walletApi.workerClient";
+import { getWalletDisplayName } from "../../../monero-wasm-module/walletName";
 
 import {
   Button,
@@ -661,7 +662,7 @@ function MultisigReady({
         return [dataLocal, fileNameLocal, heightLocal] as const;
       });
 
-      const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
+      const walletName = getWalletDisplayName(walletFile);
       const dataForBlob = new Uint8Array(data.length);
       dataForBlob.set(data);
       await exportOverlay({

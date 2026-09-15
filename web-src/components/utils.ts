@@ -202,9 +202,21 @@ export async function withFsLock<T>(fn: () => Promise<T>): Promise<T> {
   }
   try {
     await walletApi.loadFilesystem();
-    const result = await fn();
-    await walletApi.saveFilesystem();
-    return result;
+    try {
+      const result = await fn();
+      await walletApi.saveFilesystem();
+      return result;
+    } catch (error) {
+      try {
+        await walletApi.loadFilesystem();
+      } catch (rollbackError) {
+        console.error(
+          "Failed to reload filesystem after error:",
+          rollbackError,
+        );
+      }
+      throw error;
+    }
   } finally {
     releaseFsLock();
   }
