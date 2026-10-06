@@ -50,3 +50,5 @@ Vite reads the gitignored wallet engine at `monero-wasm-module/wasm_wallet.wasm`
 Node.js 24.21.0, matching CI, is installed at `/usr/local/bin/node`. Prefix project commands with `export PATH="/usr/local/bin:$PATH"` so that binary is selected. `monerod` for end-to-end tests is `/usr/local/bin/monerod`. Playwright Chromium is installed with `npx playwright install --with-deps chromium`.
 
 The dev server listens on port 5173: `npm run dev -- --host 0.0.0.0 --port 5173`. Playwright uses port 4173, so `npm run test:e2e` can run while that server is up. Canonical checks are `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm run build`, and `npm run test:e2e`.
+
+`tests/http_fetch_progress.spec.ts` expects an intermediate XHR progress event (`0 < loaded < total`) while `/getblocks.bin` downloads. On a fast loopback that body can arrive in one progress callback (`loaded == total`), so this spec can fail after the wallet has already synced. The other Playwright specs cover create, restore, send, and multisig against local `monerod`.
