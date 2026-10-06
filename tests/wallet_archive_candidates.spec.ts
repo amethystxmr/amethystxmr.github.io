@@ -44,6 +44,10 @@ test.describe("wallet archive candidates", () => {
       "alice.background.keys",
       "alice.keys",
     ]);
+    expect(plan.candidates[1].files.map((file) => file.storageName)).toEqual([
+      "bob",
+      "bob.keys",
+    ]);
   });
 
   test("supports keys-only wallets with a warning", () => {
