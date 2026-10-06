@@ -1,38 +1,19 @@
 import type { EmscriptenFs } from "./emscriptenFs";
-import { validateWalletName } from "./walletName";
+import { getWalletModuleFs } from "./walletApi";
+import {
+  isWalletOwnedFileName,
+  validateWalletName,
+  walletKeysFileName,
+  walletNameFromKeysFile,
+} from "./walletName";
 
 const DATA_ROOT = ".";
-const WALLET_KEYS_SUFFIX = ".keys";
 const ROOT_SPECIAL_NAMES = new Set([".", ".."]);
-
-export const KNOWN_WALLET_COMPANION_SUFFIXES = [
-  ".address.txt",
-  ".mms",
-  ".background",
-  ".background.keys",
-  ".background.address.txt",
-] as const;
-
-export type FsEntry = {
-  name: string;
-  type: "file" | "directory" | "other";
-  size?: number;
-};
 
 export type WalletFileData = {
   name: string;
   data: Uint8Array;
 };
-
-export function getWalletFilePath(walletName: string): string {
-  validateWalletName(walletName);
-  return walletName;
-}
-
-export function getWalletKeysPath(walletName: string): string {
-  validateWalletName(walletName);
-  return `${walletName}${WALLET_KEYS_SUFFIX}`;
-}
 
 function listRootNames(fs: EmscriptenFs): string[] {
   return fs
@@ -41,20 +22,9 @@ function listRootNames(fs: EmscriptenFs): string[] {
     .sort((a, b) => a.localeCompare(b));
 }
 
-function getRootEntryType(fs: EmscriptenFs, name: string): FsEntry["type"] {
-  const stat = fs.stat(name);
-  if (fs.isFile(stat.mode)) {
-    return "file";
-  }
-  if (fs.isDir(stat.mode)) {
-    return "directory";
-  }
-  return "other";
-}
-
 function isRootFile(fs: EmscriptenFs, name: string): boolean {
   try {
-    return getRootEntryType(fs, name) === "file";
+    return fs.isFile(fs.stat(name).mode);
   } catch {
     return false;
   }
@@ -69,27 +39,13 @@ function pathExists(fs: EmscriptenFs, name: string): boolean {
   }
 }
 
-function tryStoredWalletNameFromKeysFile(fileName: string): string | null {
-  if (!fileName.endsWith(WALLET_KEYS_SUFFIX)) {
-    return null;
-  }
-
-  const walletName = fileName.slice(0, -WALLET_KEYS_SUFFIX.length);
-  try {
-    validateWalletName(walletName);
-    return walletName;
-  } catch {
-    return null;
-  }
-}
-
 function listWalletAnchorNames(fs: EmscriptenFs): Set<string> {
   const walletNames = new Set<string>();
   for (const name of listRootNames(fs)) {
     if (!isRootFile(fs, name)) {
       continue;
     }
-    const walletName = tryStoredWalletNameFromKeysFile(name);
+    const walletName = walletNameFromKeysFile(name);
     if (walletName) {
       walletNames.add(walletName);
     }
@@ -97,31 +53,20 @@ function listWalletAnchorNames(fs: EmscriptenFs): Set<string> {
   return walletNames;
 }
 
-function isRelatedWalletPathName(walletName: string, name: string): boolean {
-  return name === walletName || name.startsWith(`${walletName}.`);
-}
-
-function isAnotherWalletAnchor(
+/** `wallet` or `wallet.*`, excluding another wallet's `.keys` file. */
+function isOwnedWalletEntry(
   walletName: string,
   name: string,
   walletAnchorNames: Set<string>,
 ): boolean {
-  const otherWalletName = tryStoredWalletNameFromKeysFile(name);
+  if (!isWalletOwnedFileName(walletName, name)) {
+    return false;
+  }
+  const otherWalletName = walletNameFromKeysFile(name);
   return (
-    otherWalletName !== null &&
-    otherWalletName !== walletName &&
-    walletAnchorNames.has(otherWalletName)
-  );
-}
-
-function isOwnedWalletFileName(
-  walletName: string,
-  name: string,
-  walletAnchorNames: Set<string>,
-): boolean {
-  return (
-    isRelatedWalletPathName(walletName, name) &&
-    !isAnotherWalletAnchor(walletName, name, walletAnchorNames)
+    otherWalletName === null ||
+    otherWalletName === walletName ||
+    !walletAnchorNames.has(otherWalletName)
   );
 }
 
@@ -131,29 +76,21 @@ function listOwnedWalletFileNames(
 ): string[] {
   validateWalletName(walletName);
   const walletAnchorNames = listWalletAnchorNames(fs);
-  const ownedNames: string[] = [];
-
-  for (const name of listRootNames(fs)) {
-    if (
+  const ownedNames = listRootNames(fs).filter(
+    (name) =>
       isRootFile(fs, name) &&
-      isOwnedWalletFileName(walletName, name, walletAnchorNames)
-    ) {
-      ownedNames.push(name);
-    }
-  }
-
+      isOwnedWalletEntry(walletName, name, walletAnchorNames),
+  );
   return sortWalletFileNames(walletName, ownedNames);
 }
 
 function sortWalletFileNames(walletName: string, names: string[]): string[] {
-  const keysName = `${walletName}${WALLET_KEYS_SUFFIX}`;
+  const keysName = walletKeysFileName(walletName);
   return [...names].sort((a, b) => {
-    const aRank = a === walletName ? 0 : a === keysName ? 1 : 2;
-    const bRank = b === walletName ? 0 : b === keysName ? 1 : 2;
-    if (aRank !== bRank) {
-      return aRank - bRank;
-    }
-    return a.localeCompare(b);
+    const rank = (name: string) =>
+      name === walletName ? 0 : name === keysName ? 1 : 2;
+    const rankDiff = rank(a) - rank(b);
+    return rankDiff === 0 ? a.localeCompare(b) : rankDiff;
   });
 }
 
@@ -176,84 +113,51 @@ function validateStorageFileName(
   ) {
     throw new Error(`Wallet file "${storageName}" is not a safe root file`);
   }
-  if (!isRelatedWalletPathName(walletName, storageName)) {
+  if (!isWalletOwnedFileName(walletName, storageName)) {
     throw new Error(
       `Wallet file "${storageName}" does not belong to wallet "${walletName}"`,
     );
   }
-
   return storageName;
 }
 
-export function listFilesystemEntries(fs: EmscriptenFs): FsEntry[] {
-  return listRootNames(fs).map((name) => {
-    const stat = fs.stat(name);
-    return {
-      name,
-      type: fs.isFile(stat.mode)
-        ? "file"
-        : fs.isDir(stat.mode)
-          ? "directory"
-          : "other",
-      size: stat.size,
-    };
-  });
+export function listWalletNames(): string[] {
+  return [...listWalletAnchorNames(getWalletModuleFs())].sort((a, b) =>
+    a.localeCompare(b),
+  );
 }
 
-export function listWalletNames(fs: EmscriptenFs): string[] {
-  return [...listWalletAnchorNames(fs)].sort((a, b) => a.localeCompare(b));
-}
-
-export function walletStoragePathExists(
-  fs: EmscriptenFs,
-  walletName: string,
-): boolean {
+export function walletStoragePathExists(walletName: string): boolean {
   validateWalletName(walletName);
+  const fs = getWalletModuleFs();
   const walletAnchorNames = listWalletAnchorNames(fs);
-
-  for (const name of listRootNames(fs)) {
-    if (
-      isOwnedWalletFileName(walletName, name, walletAnchorNames) ||
-      KNOWN_WALLET_COMPANION_SUFFIXES.some(
-        (suffix) => name === `${walletName}${suffix}`,
-      )
-    ) {
-      return true;
-    }
-  }
-
-  return false;
+  return listRootNames(fs).some((name) =>
+    isOwnedWalletEntry(walletName, name, walletAnchorNames),
+  );
 }
 
-export function assertWalletNameAvailable(
-  fs: EmscriptenFs,
-  walletName: string,
-): void {
-  validateWalletName(walletName);
-  if (walletStoragePathExists(fs, walletName)) {
+export function assertWalletNameAvailable(walletName: string): void {
+  if (walletStoragePathExists(walletName)) {
     throw new Error(`Wallet with name ${walletName} already exists`);
   }
 }
 
-export function deleteWalletFiles(fs: EmscriptenFs, walletName: string): void {
-  validateWalletName(walletName);
+export function deleteWalletFiles(walletName: string): void {
+  const fs = getWalletModuleFs();
   for (const name of listOwnedWalletFileNames(fs, walletName)) {
     fs.unlink(name);
   }
 }
 
-export function renameWallet(
-  fs: EmscriptenFs,
-  oldName: string,
-  newName: string,
-): void {
+export function renameWallet(oldName: string, newName: string): void {
   validateWalletName(oldName);
   validateWalletName(newName);
-
   if (oldName === newName) {
     return;
   }
-  if (!pathExists(fs, `${oldName}${WALLET_KEYS_SUFFIX}`)) {
+
+  const fs = getWalletModuleFs();
+  if (!pathExists(fs, walletKeysFileName(oldName))) {
     throw new Error(`Wallet with name ${oldName} does not exist`);
   }
 
@@ -261,17 +165,17 @@ export function renameWallet(
   if (sourceNames.length === 0) {
     throw new Error(`Wallet with name ${oldName} does not exist`);
   }
-  if (walletStoragePathExists(fs, newName)) {
+  if (walletStoragePathExists(newName)) {
     throw new Error("Wallet with the new name already exists");
   }
 
-  const renamePlan = sourceNames.map((sourceName) => {
-    const destinationName =
+  const renamePlan = sourceNames.map((sourceName) => ({
+    sourceName,
+    destinationName:
       sourceName === oldName
         ? newName
-        : `${newName}${sourceName.slice(oldName.length)}`;
-    return { sourceName, destinationName };
-  });
+        : `${newName}${sourceName.slice(oldName.length)}`,
+  }));
 
   const destinationNames = new Set<string>();
   for (const { destinationName } of renamePlan) {
@@ -289,12 +193,10 @@ export function renameWallet(
   }
 }
 
-export function getWalletFilesData(
-  fs: EmscriptenFs,
-  walletName: string,
-): WalletFileData[] {
+export function getWalletFilesData(walletName: string): WalletFileData[] {
   validateWalletName(walletName);
-  const keysName = `${walletName}${WALLET_KEYS_SUFFIX}`;
+  const fs = getWalletModuleFs();
+  const keysName = walletKeysFileName(walletName);
   if (!isRootFile(fs, keysName)) {
     throw new Error(`Wallet keys file "${keysName}" does not exist`);
   }
@@ -305,25 +207,20 @@ export function getWalletFilesData(
   }));
 }
 
-export function getAllWalletFilesData(fs: EmscriptenFs): WalletFileData[] {
-  const filesByName = new Map<string, WalletFileData>();
-  for (const walletName of listWalletNames(fs)) {
-    for (const file of getWalletFilesData(fs, walletName)) {
-      if (!filesByName.has(file.name)) {
-        filesByName.set(file.name, file);
-      }
-    }
-  }
-  return [...filesByName.values()].sort((a, b) => a.name.localeCompare(b.name));
+export function getAllWalletFilesData(): WalletFileData[] {
+  const files = listWalletNames().flatMap((walletName) =>
+    getWalletFilesData(walletName),
+  );
+  files.sort((a, b) => a.name.localeCompare(b.name));
+  return files;
 }
 
 export function saveWalletFilesData(
-  fs: EmscriptenFs,
   walletName: string,
   files: WalletFileData[],
 ): void {
   validateWalletName(walletName);
-  const keysName = `${walletName}${WALLET_KEYS_SUFFIX}`;
+  const fs = getWalletModuleFs();
   const filesByName = new Map<string, Uint8Array>();
 
   for (const file of files) {
@@ -336,10 +233,11 @@ export function saveWalletFilesData(
     filesByName.set(storageName, file.data);
   }
 
+  const keysName = walletKeysFileName(walletName);
   if (!filesByName.has(keysName)) {
     throw new Error(`Wallet archive is missing required file "${keysName}"`);
   }
-  if (walletStoragePathExists(fs, walletName)) {
+  if (walletStoragePathExists(walletName)) {
     throw new Error(`Wallet with name ${walletName} already exists`);
   }
   for (const name of filesByName.keys()) {
@@ -348,7 +246,7 @@ export function saveWalletFilesData(
     }
   }
 
-  for (const [name, data] of filesByName.entries()) {
+  for (const [name, data] of filesByName) {
     fs.writeFile(name, data);
   }
 }

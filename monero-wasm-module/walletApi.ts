@@ -1,28 +1,8 @@
 // @ts-expect-error Generated wasm JS module has no TypeScript declarations.
 import MoneroWasmWalletModuleFactory from "./wasm_wallet.mjs";
 import type { EmscriptenFs } from "./emscriptenFs";
-import {
-  assertWalletNameAvailable as assertWalletNameAvailableForFs,
-  deleteWalletFiles as deleteWalletFilesForFs,
-  getAllWalletFilesData as getAllWalletFilesDataForFs,
-  getWalletFilePath as getWalletFilePathForFs,
-  getWalletFilesData as getWalletFilesDataForFs,
-  getWalletKeysPath as getWalletKeysPathForFs,
-  listFilesystemEntries as listFilesystemEntriesForFs,
-  listWalletNames as listWalletNamesForFs,
-  renameWallet as renameWalletForFs,
-  saveWalletFilesData as saveWalletFilesDataForFs,
-  walletStoragePathExists as walletStoragePathExistsForFs,
-  type FsEntry,
-  type WalletFileData,
-} from "./walletApi.fs";
 
-export {
-  getWalletDisplayName,
-  isWalletNameAllowed,
-  validateWalletName,
-} from "./walletName";
-export type { FsEntry, WalletFileData } from "./walletApi.fs";
+export type { WalletFileData } from "./walletApi.fs";
 
 export const NetworkTypes = {
   MAINNET: 0,
@@ -421,7 +401,7 @@ declare const __WASM_WALLET_SIZE__: number;
 
 let module: Module;
 
-function getFs(): EmscriptenFs {
+export function getWalletModuleFs(): EmscriptenFs {
   if (!module) {
     throw new Error("Module not initialized");
   }
@@ -866,38 +846,6 @@ export async function clearFilesystem() {
 
 getWalletRuntimeGlobal().clearFilesystem = clearFilesystem;
 
-export function getWalletFilePath(walletName: string): string {
-  return getWalletFilePathForFs(walletName);
-}
-
-export function getWalletKeysPath(walletName: string): string {
-  return getWalletKeysPathForFs(walletName);
-}
-
-export function listWalletNames(): string[] {
-  return listWalletNamesForFs(getFs());
-}
-
-export function listFilesystemEntries(): FsEntry[] {
-  return listFilesystemEntriesForFs(getFs());
-}
-
-export function walletStoragePathExists(walletName: string): boolean {
-  return walletStoragePathExistsForFs(getFs(), walletName);
-}
-
-export function assertWalletNameAvailable(walletName: string): void {
-  assertWalletNameAvailableForFs(getFs(), walletName);
-}
-
-export function isWalletFileExists(walletName: string): boolean {
-  return walletStoragePathExists(walletName);
-}
-
-export function deleteWalletFiles(walletName: string): void {
-  deleteWalletFilesForFs(getFs(), walletName);
-}
-
 export async function createWallet(
   networkType: NetworkType = NetworkTypes.MAINNET,
 ) {
@@ -916,43 +864,15 @@ export async function createWallet(
 }
 
 export function readFile(path: string): Uint8Array {
-  if (!module) {
-    throw new Error("Module not initialized");
-  }
-  return module.FS.readFile(path);
+  return getWalletModuleFs().readFile(path);
 }
 
 export function writeFile(path: string, data: Uint8Array): void {
-  if (!module) {
-    throw new Error("Module not initialized");
-  }
-  module.FS.writeFile(path, data);
+  getWalletModuleFs().writeFile(path, data);
 }
 
 export function unlinkFile(path: string): void {
-  if (!module) {
-    throw new Error("Module not initialized");
-  }
-  module.FS.unlink(path);
-}
-
-export function renameWallet(oldName: string, newName: string): void {
-  renameWalletForFs(getFs(), oldName, newName);
-}
-
-export function getWalletFilesData(walletName: string): WalletFileData[] {
-  return getWalletFilesDataForFs(getFs(), walletName);
-}
-
-export function getAllWalletFilesData(): WalletFileData[] {
-  return getAllWalletFilesDataForFs(getFs());
-}
-
-export function saveWalletFilesData(
-  walletName: string,
-  files: WalletFileData[],
-): void {
-  saveWalletFilesDataForFs(getFs(), walletName, files);
+  getWalletModuleFs().unlink(path);
 }
 
 export const max64 = (1n << 64n) - 1n;

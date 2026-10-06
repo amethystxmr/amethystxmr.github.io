@@ -38,6 +38,43 @@ export function isWalletNameAllowed(walletName: string): boolean {
   }
 }
 
+export const WALLET_KEYS_SUFFIX = ".keys";
+
+/** Keys files that belong to a wallet but are not a second wallet, such as `alice.background.keys`. */
+const WALLET_KEYS_COMPANION_SUFFIXES = [".background.keys"] as const;
+
+export function walletKeysFileName(walletName: string): string {
+  return `${walletName}${WALLET_KEYS_SUFFIX}`;
+}
+
+export function walletNameFromKeysFile(fileName: string): string | null {
+  if (!fileName.endsWith(WALLET_KEYS_SUFFIX)) {
+    return null;
+  }
+  const walletName = fileName.slice(0, -WALLET_KEYS_SUFFIX.length);
+  return isWalletNameAllowed(walletName) ? walletName : null;
+}
+
+export function walletNameFromKeysCompanionFile(
+  fileName: string,
+): string | null {
+  for (const suffix of WALLET_KEYS_COMPANION_SUFFIXES) {
+    if (!fileName.endsWith(suffix)) {
+      continue;
+    }
+    const walletName = fileName.slice(0, -suffix.length);
+    return isWalletNameAllowed(walletName) ? walletName : null;
+  }
+  return null;
+}
+
+export function isWalletOwnedFileName(
+  walletName: string,
+  fileName: string,
+): boolean {
+  return fileName === walletName || fileName.startsWith(`${walletName}.`);
+}
+
 export function getWalletDisplayName(walletFilePath: string): string {
   const normalizedPath = walletFilePath.replace(/\\/g, "/");
   const basename =
@@ -46,5 +83,7 @@ export function getWalletDisplayName(walletFilePath: string): string {
       .filter((segment) => segment.length > 0)
       .pop() || walletFilePath;
 
-  return basename.endsWith(".keys") ? basename.slice(0, -5) : basename;
+  return basename.endsWith(WALLET_KEYS_SUFFIX)
+    ? basename.slice(0, -WALLET_KEYS_SUFFIX.length)
+    : basename;
 }

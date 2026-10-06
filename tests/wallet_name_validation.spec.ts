@@ -2,7 +2,11 @@ import { expect, test } from "@playwright/test";
 import {
   getWalletDisplayName,
   isWalletNameAllowed,
+  isWalletOwnedFileName,
   validateWalletName,
+  walletKeysFileName,
+  walletNameFromKeysCompanionFile,
+  walletNameFromKeysFile,
 } from "../monero-wasm-module/walletName";
 
 test.describe("wallet name validation", () => {
@@ -30,6 +34,18 @@ test.describe("wallet name validation", () => {
       expect(() => validateWalletName(walletName), walletName).toThrow();
       expect(isWalletNameAllowed(walletName), walletName).toBe(false);
     }
+  });
+
+  test("maps keys files and companion files back to a wallet", () => {
+    expect(walletKeysFileName("alice")).toBe("alice.keys");
+    expect(walletNameFromKeysFile("alice.keys")).toBe("alice");
+    expect(walletNameFromKeysFile("alice.background.keys")).toBeNull();
+    expect(walletNameFromKeysCompanionFile("alice.background.keys")).toBe(
+      "alice",
+    );
+    expect(isWalletOwnedFileName("alice", "alice")).toBe(true);
+    expect(isWalletOwnedFileName("alice", "alice.address.txt")).toBe(true);
+    expect(isWalletOwnedFileName("alice", "bob.keys")).toBe(false);
   });
 
   test("extracts display names from wallet paths", () => {

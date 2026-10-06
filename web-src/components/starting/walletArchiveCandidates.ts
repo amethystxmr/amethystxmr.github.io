@@ -1,4 +1,10 @@
-import { validateWalletName } from "../../../monero-wasm-module/walletName";
+import {
+  WALLET_KEYS_SUFFIX,
+  isWalletOwnedFileName,
+  validateWalletName,
+  walletKeysFileName,
+  walletNameFromKeysCompanionFile,
+} from "../../../monero-wasm-module/walletName";
 
 export type WalletArchiveEntry = {
   path: string;
@@ -31,14 +37,7 @@ export type WalletArchivePlan = {
   errors: string[];
 };
 
-type RootArchiveFile = {
-  archivePath: string;
-  storageName: string;
-  data?: Uint8Array;
-};
-
-const WALLET_KEYS_SUFFIX = ".keys";
-const KNOWN_WALLET_KEYS_COMPANION_SUFFIXES = [".background.keys"] as const;
+type RootArchiveFile = WalletArchiveCandidateFile;
 
 function formatValidationError(error: unknown): string {
   return error instanceof Error ? error.message : "Invalid wallet name";
@@ -67,60 +66,32 @@ function validateArchivePath(rawPath: string): string[] | null {
   return segments;
 }
 
-function makeCandidateFile(
-  file: RootArchiveFile,
-  walletName: string,
-): WalletArchiveCandidateFile | null {
-  if (file.storageName === walletName) {
-    return file;
-  }
-  if (file.storageName.startsWith(`${walletName}.`)) {
-    return file;
-  }
-  return null;
-}
-
-function getKnownWalletKeysCompanionWalletName(
-  storageName: string,
-): string | null {
-  for (const suffix of KNOWN_WALLET_KEYS_COMPANION_SUFFIXES) {
-    if (!storageName.endsWith(suffix)) {
-      continue;
-    }
-
-    const walletName = storageName.slice(0, -suffix.length);
-    try {
-      validateWalletName(walletName);
-      return walletName;
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
-}
-
-export function planWalletArchiveImport(
-  entries: WalletArchiveEntry[],
-): WalletArchivePlan {
-  const plan: WalletArchivePlan = {
+function emptyPlan(): WalletArchivePlan {
+  return {
     candidates: [],
     invalidWalletNames: [],
     unusedFiles: [],
     warnings: [],
     errors: [],
   };
+}
 
+function archivePathOf(entry: WalletArchiveEntry): string {
+  return entry.isDirectory && entry.path.endsWith("/")
+    ? entry.path.slice(0, -1)
+    : entry.path;
+}
+
+function collectRootFiles(
+  entries: WalletArchiveEntry[],
+  plan: WalletArchivePlan,
+): Map<string, RootArchiveFile> {
   const rootFiles = new Map<string, RootArchiveFile>();
   const seenStorageNames = new Set<string>();
   const duplicateStorageNames = new Set<string>();
-  const invalidStorageNames = new Set<string>();
 
   for (const entry of entries) {
-    const archivePath =
-      entry.isDirectory && entry.path.endsWith("/")
-        ? entry.path.slice(0, -1)
-        : entry.path;
+    const archivePath = archivePathOf(entry);
     const segments = validateArchivePath(archivePath);
     if (!segments) {
       plan.errors.push(`Unsafe archive path: ${entry.path}`);
@@ -158,7 +129,48 @@ export function planWalletArchiveImport(
     });
   }
 
+  return rootFiles;
+}
+
+function recordInvalidKeysFile(
+  file: RootArchiveFile,
+  rawWalletName: string,
+  error: unknown,
+  rootFiles: Map<string, RootArchiveFile>,
+  invalidStorageNames: Set<string>,
+  plan: WalletArchivePlan,
+): void {
+  const companionWalletName = walletNameFromKeysCompanionFile(file.storageName);
+  const isCompanionFile =
+    companionWalletName !== null &&
+    rootFiles.has(walletKeysFileName(companionWalletName));
+  if (isCompanionFile) {
+    return;
+  }
+
+  invalidStorageNames.add(file.storageName);
+  const reason = formatValidationError(error);
+  if (rawWalletName.includes(".")) {
+    plan.errors.push(
+      `Invalid wallet name in archive file "${file.archivePath}": ${reason}`,
+    );
+    return;
+  }
+
+  plan.invalidWalletNames.push({
+    archivePath: file.archivePath,
+    walletName: rawWalletName,
+    reason,
+  });
+}
+
+function collectWalletNames(
+  rootFiles: Map<string, RootArchiveFile>,
+  plan: WalletArchivePlan,
+): { walletNames: string[]; invalidStorageNames: Set<string> } {
   const walletNames: string[] = [];
+  const invalidStorageNames = new Set<string>();
+
   for (const file of rootFiles.values()) {
     if (!file.storageName.endsWith(WALLET_KEYS_SUFFIX)) {
       continue;
@@ -169,42 +181,36 @@ export function planWalletArchiveImport(
       validateWalletName(rawWalletName);
       walletNames.push(rawWalletName);
     } catch (error) {
-      const companionWalletName = getKnownWalletKeysCompanionWalletName(
-        file.storageName,
+      recordInvalidKeysFile(
+        file,
+        rawWalletName,
+        error,
+        rootFiles,
+        invalidStorageNames,
+        plan,
       );
-      const isCompanionFile =
-        companionWalletName !== null &&
-        rootFiles.has(`${companionWalletName}${WALLET_KEYS_SUFFIX}`);
-
-      if (!isCompanionFile && rawWalletName.includes(".")) {
-        invalidStorageNames.add(file.storageName);
-        plan.errors.push(
-          `Invalid wallet name in archive file "${file.archivePath}": ${formatValidationError(error)}`,
-        );
-        continue;
-      }
-
-      if (!isCompanionFile) {
-        invalidStorageNames.add(file.storageName);
-        plan.invalidWalletNames.push({
-          archivePath: file.archivePath,
-          walletName: rawWalletName,
-          reason: formatValidationError(error),
-        });
-      }
     }
   }
 
+  walletNames.sort((a, b) => a.localeCompare(b));
+  return { walletNames, invalidStorageNames };
+}
+
+function assignWalletFiles(
+  rootFiles: Map<string, RootArchiveFile>,
+  walletNames: string[],
+  invalidStorageNames: Set<string>,
+  plan: WalletArchivePlan,
+): void {
   const assignedFiles = new Map<string, string>();
-  for (const walletName of walletNames.sort((a, b) => a.localeCompare(b))) {
+
+  for (const walletName of walletNames) {
     const candidateFiles: WalletArchiveCandidateFile[] = [];
     for (const file of rootFiles.values()) {
-      if (invalidStorageNames.has(file.storageName)) {
-        continue;
-      }
-
-      const candidateFile = makeCandidateFile(file, walletName);
-      if (!candidateFile) {
+      if (
+        invalidStorageNames.has(file.storageName) ||
+        !isWalletOwnedFileName(walletName, file.storageName)
+      ) {
         continue;
       }
 
@@ -216,7 +222,7 @@ export function planWalletArchiveImport(
         continue;
       }
       assignedFiles.set(file.storageName, walletName);
-      candidateFiles.push(candidateFile);
+      candidateFiles.push(file);
     }
 
     if (!candidateFiles.some((file) => file.storageName === walletName)) {
@@ -225,12 +231,8 @@ export function planWalletArchiveImport(
       );
     }
 
-    plan.candidates.push({
-      walletName,
-      files: candidateFiles.sort((a, b) =>
-        a.storageName.localeCompare(b.storageName),
-      ),
-    });
+    candidateFiles.sort((a, b) => a.storageName.localeCompare(b.storageName));
+    plan.candidates.push({ walletName, files: candidateFiles });
   }
 
   for (const file of rootFiles.values()) {
@@ -241,6 +243,18 @@ export function planWalletArchiveImport(
       plan.unusedFiles.push(file.archivePath);
     }
   }
+}
+
+export function planWalletArchiveImport(
+  entries: WalletArchiveEntry[],
+): WalletArchivePlan {
+  const plan = emptyPlan();
+  const rootFiles = collectRootFiles(entries, plan);
+  const { walletNames, invalidStorageNames } = collectWalletNames(
+    rootFiles,
+    plan,
+  );
+  assignWalletFiles(rootFiles, walletNames, invalidStorageNames, plan);
 
   plan.unusedFiles.sort((a, b) => a.localeCompare(b));
   plan.errors.sort((a, b) => a.localeCompare(b));

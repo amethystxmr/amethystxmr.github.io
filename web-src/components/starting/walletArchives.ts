@@ -26,7 +26,7 @@ function getArchivePath(zipEntry: JSZip.JSZipObject): string {
   return zipEntry.unsafeOriginalName ?? zipEntry.name;
 }
 
-async function buildZipBlob(files: WalletFileData[]): Promise<Blob> {
+export async function buildWalletZip(files: WalletFileData[]): Promise<Blob> {
   const zip = new JSZip();
   const names = new Set<string>();
 
@@ -38,15 +38,7 @@ async function buildZipBlob(files: WalletFileData[]): Promise<Blob> {
     zip.file(file.name, file.data);
   }
 
-  return await zip.generateAsync({ type: "blob" });
-}
-
-export async function buildWalletZip(files: WalletFileData[]): Promise<Blob> {
-  return await buildZipBlob(files);
-}
-
-export async function buildWalletsZip(files: WalletFileData[]): Promise<Blob> {
-  return await buildZipBlob(files);
+  return zip.generateAsync({ type: "blob" });
 }
 
 export async function readWalletArchive(
@@ -74,22 +66,15 @@ export async function readWalletArchive(
   }
 
   const entriesWithData: WalletArchiveEntry[] = [];
-
   for (const zipEntry of zipEntries) {
     const entry: WalletArchiveEntry = {
       path: getArchivePath(zipEntry),
       isDirectory: zipEntry.dir,
     };
-
-    if (entry.isDirectory || !walletArchivePaths.has(entry.path)) {
-      entriesWithData.push(entry);
-      continue;
+    if (!entry.isDirectory && walletArchivePaths.has(entry.path)) {
+      entry.data = await zipEntry.async("uint8array");
     }
-
-    entriesWithData.push({
-      ...entry,
-      data: await zipEntry.async("uint8array"),
-    });
+    entriesWithData.push(entry);
   }
 
   return entriesWithData;

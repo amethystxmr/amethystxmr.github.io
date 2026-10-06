@@ -1,5 +1,6 @@
 import * as Comlink from "comlink";
 import * as walletApi from "./walletApi";
+import * as walletFilesystem from "./walletApi.fs";
 
 /** Like `T`, but every method property returns a Promise of the original return. */
 export type SequentialMethods<T extends object> = {
@@ -57,6 +58,7 @@ async function createWallet(networkType?: walletApi.NetworkType) {
 }
 export const exposedApi = {
   ...walletApi,
+  ...walletFilesystem,
   createWallet,
 };
 

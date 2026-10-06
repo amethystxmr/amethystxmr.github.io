@@ -52,7 +52,6 @@ import {
   validateWalletName,
 } from "../../../monero-wasm-module/walletName";
 import {
-  buildWalletsZip,
   buildWalletZip,
   formatImportSummary,
   importWalletArchiveEntries,
@@ -204,6 +203,19 @@ function getWalletNameFromHash(): string | null {
   } catch {
     return firstSegment;
   }
+}
+
+function rememberOpenedWallet(openedWallet: OpenedWallet): void {
+  void (async () => {
+    try {
+      const walletFile = await openedWallet.wallet.get_wallet_file();
+      const walletName = getWalletDisplayName(walletFile);
+      options.setValue("lastWalletName", walletName);
+      setWalletHash(walletName);
+    } catch (e) {
+      console.error("Failed to read opened wallet file name:", e);
+    }
+  })();
 }
 
 function setWalletHash(walletName: string | null): void {
@@ -413,39 +425,10 @@ export function WalletsList() {
     });
   }, [view]);
 
-  const handleRestoreDone = React.useCallback(
+  const handleWalletCreated = React.useCallback(
     (openedWallet: OpenedWallet | null) => {
       if (openedWallet) {
-        void (async () => {
-          try {
-            const walletFile = await openedWallet.wallet.get_wallet_file();
-            const walletName = getWalletDisplayName(walletFile);
-            options.setValue("lastWalletName", walletName);
-            setWalletHash(walletName);
-          } catch (e) {
-            console.error("Failed to read opened wallet file name:", e);
-          }
-        })();
-        setView({ type: "opened", openedWallet });
-      } else {
-        backToList();
-      }
-    },
-    [backToList],
-  );
-  const handleCreateDone = React.useCallback(
-    (openedWallet: OpenedWallet | null) => {
-      if (openedWallet) {
-        void (async () => {
-          try {
-            const walletFile = await openedWallet.wallet.get_wallet_file();
-            const walletName = getWalletDisplayName(walletFile);
-            options.setValue("lastWalletName", walletName);
-            setWalletHash(walletName);
-          } catch (e) {
-            console.error("Failed to read opened wallet file name:", e);
-          }
-        })();
+        rememberOpenedWallet(openedWallet);
         setView({ type: "opened", openedWallet });
       } else {
         backToList();
@@ -456,16 +439,7 @@ export function WalletsList() {
   const handleOpenDone = React.useCallback(
     (openedWallet: OpenedWallet | null) => {
       if (openedWallet) {
-        void (async () => {
-          try {
-            const walletFile = await openedWallet.wallet.get_wallet_file();
-            const walletName = getWalletDisplayName(walletFile);
-            options.setValue("lastWalletName", walletName);
-            setWalletHash(walletName);
-          } catch (e) {
-            console.error("Failed to read opened wallet file name:", e);
-          }
-        })();
+        rememberOpenedWallet(openedWallet);
         setView({ type: "opened", openedWallet });
       } else {
         options.setValue("lastWalletName", null);
@@ -554,12 +528,15 @@ export function WalletsList() {
     );
   } else if (view.type === "restore") {
     return (
-      <RestoreView onDone={handleRestoreDone} walletNames={view.walletNames} />
+      <RestoreView
+        onDone={handleWalletCreated}
+        walletNames={view.walletNames}
+      />
     );
   } else if (view.type === "create-new-wallet") {
     return (
       <CreateNewWalletView
-        onDone={handleCreateDone}
+        onDone={handleWalletCreated}
         walletNames={view.walletNames}
       />
     );
@@ -823,15 +800,21 @@ function RestoreView({
   const [confirmUseDaemonHeight, setConfirmUseDaemonHeight] =
     React.useState(false);
 
+  const readWalletName = (): string | null => {
+    try {
+      validateWalletName(fileName);
+      return fileName;
+    } catch (error) {
+      void alert(getErrorMessage(error));
+      return null;
+    }
+  };
+
   const doRestore = (
     seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
   ) => {
-    let walletName: string;
-    try {
-      validateWalletName(fileName);
-      walletName = fileName;
-    } catch (error) {
-      void alert(getErrorMessage(error));
+    const walletName = readWalletName();
+    if (!walletName) {
       return;
     }
     if (walletNames.includes(walletName)) {
@@ -892,12 +875,8 @@ function RestoreView({
   const runRestore = (
     seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
   ) => {
-    let walletName: string;
-    try {
-      validateWalletName(fileName);
-      walletName = fileName;
-    } catch (error) {
-      void alert(getErrorMessage(error));
+    const walletName = readWalletName();
+    if (!walletName) {
       return;
     }
 
@@ -2306,7 +2285,7 @@ function ManageWalletsView({
       const files = await withFsLock(async () => {
         return await walletApi.getAllWalletFilesData();
       });
-      const blob = await buildWalletsZip(files);
+      const blob = await buildWalletZip(files);
       downloadBlob(blob, "amethystxmr-wallets.zip");
     } catch (e) {
       console.error("Failed to export all wallets:", e);

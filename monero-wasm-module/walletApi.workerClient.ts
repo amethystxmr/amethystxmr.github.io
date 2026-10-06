@@ -24,7 +24,6 @@ export type FeePriority = FeePriorityType;
 export type {
   DecodedPolyseed,
   EncodablePolyseed,
-  FsEntry,
   GeneratePolyseedStorageOptions,
   KeyImagesImportResult,
   MaybePromise,
