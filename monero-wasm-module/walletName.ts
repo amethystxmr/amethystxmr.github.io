@@ -36,10 +36,10 @@ export function isWalletNameAllowed(walletName: string): boolean {
 }
 
 export function validateWalletName(walletName: string): void {
-  if (isWalletNameAllowed(walletName)) {
-    return;
+  const error = walletNameError(walletName);
+  if (error !== null) {
+    throw new Error(error);
   }
-  throw new Error(walletNameError(walletName) ?? "Invalid wallet name");
 }
 
 export const WALLET_KEYS_SUFFIX = ".keys";
