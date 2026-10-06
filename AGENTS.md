@@ -42,3 +42,11 @@ Also flag:
 - leakage of sensitive wallet data, seeds, keys, or raw secrets through logs, UI, storage, or error messages
 - newly introduced blocking or obviously unsafe logic in user-facing flows when surrounding code expects async or non-blocking behavior
 - broken imports, exports, renamed symbols, or impossible control flow introduced by the pull request
+
+## Cursor Cloud specific instructions
+
+Vite reads the gitignored wallet engine at `monero-wasm-module/wasm_wallet.wasm` when it loads config. `npm run dev`, `npm run build`, and Playwright all need `monero-wasm-module/wasm_wallet.*`. Cloud Agent install copies those files from the successful GitHub Actions artifact `monero-wasm-module-Release` (the `Build` run for `HEAD` when that artifact exists, otherwise the latest successful `master` run). A copy is also kept at `/opt/amethyst-wasm` for the next boot. Rebuild from source with `monero-wasm-src/init.sh` and `monero-wasm-src/build.sh` when the C++ wallet changes.
+
+Node.js 24.21.0, matching CI, is installed at `/usr/local/bin/node`. Prefix project commands with `export PATH="/usr/local/bin:$PATH"` so that binary is selected. `monerod` for end-to-end tests is `/usr/local/bin/monerod`. Playwright Chromium is installed with `npx playwright install --with-deps chromium`.
+
+The dev server listens on port 5173: `npm run dev -- --host 0.0.0.0 --port 5173`. Playwright uses port 4173, so `npm run test:e2e` can run while that server is up. Canonical checks are `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm run build`, and `npm run test:e2e`.
