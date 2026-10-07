@@ -79,6 +79,47 @@ export function isWalletOwnedFileName(
   return fileName === walletName || fileName.startsWith(`${walletName}.`);
 }
 
+/** A root file owned by `walletName`, and not another wallet's `.keys` file. */
+export function isWalletStorageFileOwned(
+  walletName: string,
+  fileName: string,
+  walletAnchorNames: ReadonlySet<string>,
+): boolean {
+  if (!isWalletOwnedFileName(walletName, fileName)) {
+    return false;
+  }
+  const otherWalletName = walletNameFromKeysFile(fileName);
+  return (
+    otherWalletName === null ||
+    otherWalletName === walletName ||
+    !walletAnchorNames.has(otherWalletName)
+  );
+}
+
+/** Root files that are not part of any wallet this app will list. */
+export function leftoverWalletFileNames(
+  rootFileNames: readonly string[],
+): string[] {
+  const walletAnchorNames = new Set<string>();
+  for (const name of rootFileNames) {
+    const walletName = walletNameFromKeysFile(name);
+    if (walletName) {
+      walletAnchorNames.add(walletName);
+    }
+  }
+
+  const ownedNames = new Set<string>();
+  for (const walletName of walletAnchorNames) {
+    for (const name of rootFileNames) {
+      if (isWalletStorageFileOwned(walletName, name, walletAnchorNames)) {
+        ownedNames.add(name);
+      }
+    }
+  }
+
+  return rootFileNames.filter((name) => !ownedNames.has(name));
+}
+
 export function getWalletDisplayName(walletFilePath: string): string {
   const normalizedPath = walletFilePath.replace(/\\/g, "/");
   const basename =

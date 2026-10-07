@@ -2,6 +2,8 @@ import type { EmscriptenFs } from "./emscriptenFs";
 import { getWalletModuleFs } from "./walletApi";
 import {
   isWalletOwnedFileName,
+  isWalletStorageFileOwned,
+  leftoverWalletFileNames,
   validateWalletName,
   walletKeysFileName,
   walletNameFromKeysFile,
@@ -53,23 +55,6 @@ function listWalletAnchorNames(fs: EmscriptenFs): Set<string> {
   return walletNames;
 }
 
-/** `wallet` or `wallet.*`, excluding another wallet's `.keys` file. */
-function isOwnedWalletEntry(
-  walletName: string,
-  name: string,
-  walletAnchorNames: Set<string>,
-): boolean {
-  if (!isWalletOwnedFileName(walletName, name)) {
-    return false;
-  }
-  const otherWalletName = walletNameFromKeysFile(name);
-  return (
-    otherWalletName === null ||
-    otherWalletName === walletName ||
-    !walletAnchorNames.has(otherWalletName)
-  );
-}
-
 function listOwnedWalletFileNames(
   fs: EmscriptenFs,
   walletName: string,
@@ -79,7 +64,7 @@ function listOwnedWalletFileNames(
   const ownedNames = listRootNames(fs).filter(
     (name) =>
       isRootFile(fs, name) &&
-      isOwnedWalletEntry(walletName, name, walletAnchorNames),
+      isWalletStorageFileOwned(walletName, name, walletAnchorNames),
   );
   return sortWalletFileNames(walletName, ownedNames);
 }
@@ -132,7 +117,7 @@ export function walletStoragePathExists(walletName: string): boolean {
   const fs = getWalletModuleFs();
   const walletAnchorNames = listWalletAnchorNames(fs);
   return listRootNames(fs).some((name) =>
-    isOwnedWalletEntry(walletName, name, walletAnchorNames),
+    isWalletStorageFileOwned(walletName, name, walletAnchorNames),
   );
 }
 
@@ -213,6 +198,22 @@ export function getAllWalletFilesData(): WalletFileData[] {
   );
   files.sort((a, b) => a.name.localeCompare(b.name));
   return files;
+}
+
+function listRootFileNames(fs: EmscriptenFs): string[] {
+  return listRootNames(fs).filter((name) => isRootFile(fs, name));
+}
+
+export function listLeftoverWalletFileNames(): string[] {
+  return leftoverWalletFileNames(listRootFileNames(getWalletModuleFs()));
+}
+
+export function getRawWalletStorageFilesData(): WalletFileData[] {
+  const fs = getWalletModuleFs();
+  return listRootFileNames(fs).map((name) => ({
+    name,
+    data: fs.readFile(name),
+  }));
 }
 
 export function saveWalletFilesData(

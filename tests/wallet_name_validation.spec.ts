@@ -4,6 +4,7 @@ import {
   isWalletNameAllowed,
   isWalletOwnedFileName,
   validateWalletName,
+  leftoverWalletFileNames,
   walletKeysFileName,
   walletNameFromKeysCompanionFile,
   walletNameFromKeysFile,
@@ -46,6 +47,34 @@ test.describe("wallet name validation", () => {
     expect(isWalletOwnedFileName("alice", "alice")).toBe(true);
     expect(isWalletOwnedFileName("alice", "alice.address.txt")).toBe(true);
     expect(isWalletOwnedFileName("alice", "bob.keys")).toBe(false);
+  });
+
+  test("finds stored files that are not part of a listed wallet", () => {
+    expect(
+      leftoverWalletFileNames([
+        "alice",
+        "alice.address.txt",
+        "alice.background.keys",
+        "alice.keys",
+      ]),
+    ).toEqual([]);
+
+    expect(
+      leftoverWalletFileNames([
+        "alice",
+        "alice.keys",
+        "alice.v1",
+        "alice.v1.keys",
+      ]),
+    ).toEqual([]);
+
+    expect(
+      leftoverWalletFileNames(["alice.v1", "alice.v1.keys", "notes.txt"]),
+    ).toEqual(["alice.v1", "alice.v1.keys", "notes.txt"]);
+
+    expect(leftoverWalletFileNames(["alice.background.keys"])).toEqual([
+      "alice.background.keys",
+    ]);
   });
 
   test("extracts display names from wallet paths", () => {

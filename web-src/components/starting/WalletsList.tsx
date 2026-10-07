@@ -612,6 +612,8 @@ export function WalletsList() {
             )}
           </div>
 
+          <RawWalletFilesDownload walletNames={view.walletNames} />
+
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 lg:shrink-0">
             <Button
               onClick={async () => {
@@ -2200,6 +2202,68 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   );
 }
 
+function RawWalletFilesDownload({ walletNames }: { walletNames: string[] }) {
+  const alert = useAlert();
+  const [leftoverFileNames, setLeftoverFileNames] = React.useState<string[]>(
+    [],
+  );
+  const walletNamesKey = walletNames.join("\0");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const names = await withFsLock(async () => {
+          return await walletApi.listLeftoverWalletFileNames();
+        });
+        if (!cancelled) {
+          setLeftoverFileNames(names);
+        }
+      } catch (e) {
+        console.error("Failed to list leftover wallet files:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [walletNamesKey]);
+
+  const doExportRawStorage = React.useCallback(async () => {
+    try {
+      const files = await withFsLock(async () => {
+        return await walletApi.getRawWalletStorageFilesData();
+      });
+      const blob = await buildWalletZip(files);
+      downloadBlob(blob, "amethystxmr-raw-wallet-files.zip");
+    } catch (e) {
+      console.error("Failed to download raw wallet files:", e);
+      await alert(`Failed to download raw wallet files: ${getErrorMessage(e)}`);
+    }
+  }, [alert]);
+
+  if (leftoverFileNames.length === 0) {
+    return null;
+  }
+
+  return (
+    <SurfaceCard className="space-y-3">
+      <p className="text-sm text-white/75">
+        Some files in this browser are not shown as wallets. This download
+        contains every wallet file stored here.
+      </p>
+      <Button
+        className="w-full"
+        variant="soft"
+        onClick={() => {
+          void doExportRawStorage();
+        }}
+      >
+        ⬇︎ Download raw files
+      </Button>
+    </SurfaceCard>
+  );
+}
+
 function ManageWalletsView({
   onBack,
   onReloadWalletNames,
@@ -2437,6 +2501,8 @@ function ManageWalletsView({
           }
         }}
       />
+
+      <RawWalletFilesDownload walletNames={walletNames} />
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <Button className="w-full" variant="soft" onClick={onBack}>
