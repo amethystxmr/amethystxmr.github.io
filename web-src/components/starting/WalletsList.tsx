@@ -1,5 +1,4 @@
 import * as React from "react";
-import JSZip from "jszip";
 import { QRCodeSVG } from "qrcode.react";
 import {
   Button,
@@ -48,11 +47,33 @@ import {
   splitAddressBy6,
   withFsLock,
 } from "../utils";
+import {
+  getWalletDisplayName,
+  validateWalletName,
+} from "../../../monero-wasm-module/walletName";
+import {
+  buildWalletZip,
+  formatImportSummary,
+  importWalletArchiveEntries,
+  readWalletArchive,
+} from "./walletArchives";
 
 type OpenedWallet = {
   wallet: MoneroWasmWallet;
   releaseWalletOpenLock: () => void;
 };
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function unexpectedKeysAlertMessage(fileNames: string[]): string {
+  const files = fileNames.map((name) => `- ${name}`).join("\n");
+  if (fileNames.length === 1) {
+    return `Wallet had incorrect characters in the name. It is not visible now, but it is available in Export all.\n\n${files}`;
+  }
+  return `Wallets had incorrect characters in the name. They are not visible now, but they are available in Export all.\n\n${files}`;
+}
 
 const DAEMON_CUSTOM_OPTION = "__custom__";
 const DAEMON_REMOTE_NODES_STATUS_OPTION = "__monero_fail_status__";
@@ -190,6 +211,19 @@ function getWalletNameFromHash(): string | null {
   } catch {
     return firstSegment;
   }
+}
+
+function rememberOpenedWallet(openedWallet: OpenedWallet): void {
+  void (async () => {
+    try {
+      const walletFile = await openedWallet.wallet.get_wallet_file();
+      const walletName = getWalletDisplayName(walletFile);
+      options.setValue("lastWalletName", walletName);
+      setWalletHash(walletName);
+    } catch (e) {
+      console.error("Failed to read opened wallet file name:", e);
+    }
+  })();
 }
 
 function setWalletHash(walletName: string | null): void {
@@ -369,22 +403,32 @@ export function WalletsList() {
     (async () => {
       const daemonAddress = options.getValue("daemonAddress");
       await walletApi.setDaemonAddress(daemonAddress);
-      const walletNames = await withFsLock(async () =>
-        walletApi.listWalletNames(),
-      );
+      const loaded = await withFsLock(async () => {
+        return {
+          walletNames: await walletApi.listWalletNames(),
+          unexpectedKeysFileNames:
+            await walletApi.listUnexpectedKeysFileNames(),
+        };
+      });
+      if (cancelled) {
+        return;
+      }
+      if (view.doAutoOpen && loaded.unexpectedKeysFileNames.length > 0) {
+        await alert(unexpectedKeysAlertMessage(loaded.unexpectedKeysFileNames));
+      }
       if (cancelled) {
         return;
       }
       setView({
         type: "list",
-        walletNames,
+        walletNames: loaded.walletNames,
         doAutoOpen: view.doAutoOpen,
       });
     })();
     return () => {
       cancelled = true;
     };
-  }, [view]);
+  }, [alert, view]);
 
   const onReloadWalletNames = React.useCallback(async () => {
     if (view.type !== "manage-wallets") {
@@ -399,37 +443,10 @@ export function WalletsList() {
     });
   }, [view]);
 
-  const handleRestoreDone = React.useCallback(
+  const handleWalletCreated = React.useCallback(
     (openedWallet: OpenedWallet | null) => {
       if (openedWallet) {
-        void (async () => {
-          try {
-            const walletFile = await openedWallet.wallet.get_wallet_file();
-            options.setValue("lastWalletName", walletFile);
-            setWalletHash(walletFile);
-          } catch (e) {
-            console.error("Failed to read opened wallet file name:", e);
-          }
-        })();
-        setView({ type: "opened", openedWallet });
-      } else {
-        backToList();
-      }
-    },
-    [backToList],
-  );
-  const handleCreateDone = React.useCallback(
-    (openedWallet: OpenedWallet | null) => {
-      if (openedWallet) {
-        void (async () => {
-          try {
-            const walletFile = await openedWallet.wallet.get_wallet_file();
-            options.setValue("lastWalletName", walletFile);
-            setWalletHash(walletFile);
-          } catch (e) {
-            console.error("Failed to read opened wallet file name:", e);
-          }
-        })();
+        rememberOpenedWallet(openedWallet);
         setView({ type: "opened", openedWallet });
       } else {
         backToList();
@@ -440,15 +457,7 @@ export function WalletsList() {
   const handleOpenDone = React.useCallback(
     (openedWallet: OpenedWallet | null) => {
       if (openedWallet) {
-        void (async () => {
-          try {
-            const walletFile = await openedWallet.wallet.get_wallet_file();
-            options.setValue("lastWalletName", walletFile);
-            setWalletHash(walletFile);
-          } catch (e) {
-            console.error("Failed to read opened wallet file name:", e);
-          }
-        })();
+        rememberOpenedWallet(openedWallet);
         setView({ type: "opened", openedWallet });
       } else {
         options.setValue("lastWalletName", null);
@@ -537,12 +546,15 @@ export function WalletsList() {
     );
   } else if (view.type === "restore") {
     return (
-      <RestoreView onDone={handleRestoreDone} walletNames={view.walletNames} />
+      <RestoreView
+        onDone={handleWalletCreated}
+        walletNames={view.walletNames}
+      />
     );
   } else if (view.type === "create-new-wallet") {
     return (
       <CreateNewWalletView
-        onDone={handleCreateDone}
+        onDone={handleWalletCreated}
         walletNames={view.walletNames}
       />
     );
@@ -617,6 +629,8 @@ export function WalletsList() {
               </div>
             )}
           </div>
+
+          <RawWalletFilesDownload walletNames={view.walletNames} />
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-4 lg:shrink-0">
             <Button
@@ -806,15 +820,25 @@ function RestoreView({
   const [confirmUseDaemonHeight, setConfirmUseDaemonHeight] =
     React.useState(false);
 
+  const readWalletName = (): string | null => {
+    try {
+      validateWalletName(fileName);
+      return fileName;
+    } catch (error) {
+      void alert(getErrorMessage(error));
+      return null;
+    }
+  };
+
   const doRestore = (
     seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
   ) => {
-    if (!fileName) {
-      void alert("Please enter wallet name");
+    const walletName = readWalletName();
+    if (!walletName) {
       return;
     }
-    if (walletNames.includes(fileName)) {
-      void alert(`Wallet with name ${fileName} already exists`);
+    if (walletNames.includes(walletName)) {
+      void alert(`Wallet with name ${walletName} already exists`);
       return;
     }
     if (password !== passwordConfirm) {
@@ -871,14 +895,19 @@ function RestoreView({
   const runRestore = (
     seedType: "monero-25" | "cake-16" | "multisig" | "from-keys",
   ) => {
+    const walletName = readWalletName();
+    if (!walletName) {
+      return;
+    }
+
     setRestoring(true);
     let wallet: MoneroWasmWallet | undefined;
     let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
-      releaseWalletOpenLock = await acquireWalletOpenLock(fileName);
+      releaseWalletOpenLock = await acquireWalletOpenLock(walletName);
       if (!releaseWalletOpenLock) {
         throw new Error(
-          `Wallet "${fileName}" is currently open in another tab`,
+          `Wallet "${walletName}" is currently open in another tab`,
         );
       }
 
@@ -936,10 +965,11 @@ function RestoreView({
         if (!wallet) {
           throw new Error("Wallet was unexpectedly undefined");
         }
+        await walletApi.assertWalletNameAvailable(walletName);
         if (seedType === "multisig") {
           const normalizedMultisigSeedHex = multisigSeedHex.replace(/\s+/g, "");
           await wallet.generate_multisig_restore(
-            fileName,
+            walletName,
             password,
             normalizedMultisigSeedHex,
             false,
@@ -954,7 +984,7 @@ function RestoreView({
           if (spendKeyRaw.length > 0) {
             const spendKey = parseSecretKeyHex(spendKeyRaw, "Secret spend key");
             await wallet.generate_from_keys(
-              fileName,
+              walletName,
               password,
               normalizedAddress,
               viewKey,
@@ -963,7 +993,7 @@ function RestoreView({
             );
           } else {
             await wallet.generate_view_only_from_keys(
-              fileName,
+              walletName,
               password,
               normalizedAddress,
               viewKey,
@@ -981,13 +1011,13 @@ function RestoreView({
           if (!secret32 || secret32.length !== 32) {
             throw new Error("Invalid seed phrase provided");
           }
-          await wallet.generate(fileName, password, secret32, true, false);
+          await wallet.generate(walletName, password, secret32, true, false);
         }
         await wallet.set_explicit_refresh_from_block_height(true);
         await wallet.set_refresh_from_block_height(
           restoreHeight ?? (await wallet.get_daemon_blockchain_height()),
         );
-        await wallet.rewrite(fileName, password);
+        await wallet.rewrite(walletName, password);
         await wallet.store();
       });
       await persistNavigatorStorage();
@@ -1314,8 +1344,12 @@ function CreateNewWalletView({
     }
     const { fileName, password, passwordConfirm } = state;
 
-    if (!fileName) {
-      void alert("Please enter wallet name");
+    let walletName: string;
+    try {
+      validateWalletName(fileName);
+      walletName = fileName;
+    } catch (error) {
+      void alert(getErrorMessage(error));
       return;
     }
 
@@ -1324,28 +1358,33 @@ function CreateNewWalletView({
       return;
     }
 
-    setState({ type: "creating-wallet", fileName, password, passwordConfirm });
+    setState({
+      type: "creating-wallet",
+      fileName: walletName,
+      password,
+      passwordConfirm,
+    });
 
     let wallet: MoneroWasmWallet | undefined;
     let releaseWalletOpenLock: (() => void) | null = null;
     (async () => {
-      releaseWalletOpenLock = await acquireWalletOpenLock(fileName, {
+      releaseWalletOpenLock = await acquireWalletOpenLock(walletName, {
         ifAvailable: true,
       });
       if (!releaseWalletOpenLock) {
         throw new Error(
-          `Wallet "${fileName}" is currently open in another tab`,
+          `Wallet "${walletName}" is currently open in another tab`,
         );
       }
 
-      if (walletNames.includes(fileName)) {
+      if (walletNames.includes(walletName)) {
         const release = releaseWalletOpenLock;
         releaseWalletOpenLock = null;
         release();
-        void alert(`Wallet with name ${fileName} already exists`);
+        void alert(`Wallet with name ${walletName} already exists`);
         setState({
           type: "entering-data",
-          fileName,
+          fileName: walletName,
           password,
           passwordConfirm,
         });
@@ -1353,11 +1392,12 @@ function CreateNewWalletView({
       }
 
       const seed = await withFsLock(async () => {
+        await walletApi.assertWalletNameAvailable(walletName);
         wallet = await createWalletUsingCurrentOptions();
         await wallet.init();
 
         const generatedSecret32 = await wallet.generate(
-          fileName,
+          walletName,
           password,
           new Uint8Array(32).fill(0),
           false,
@@ -1397,14 +1437,17 @@ function CreateNewWalletView({
       });
     })().catch((e) => {
       console.error("Error creating wallet:", e);
-      void alert(
-        `Error creating wallet: ${(e as Error).message || "Unknown error"}`,
-      );
+      void alert(`Error creating wallet: ${getErrorMessage(e)}`);
       if (wallet) {
         void closeWallet(wallet);
       }
       releaseWalletOpenLock?.();
-      setState({ type: "entering-data", fileName, password, passwordConfirm });
+      setState({
+        type: "entering-data",
+        fileName: walletName,
+        password,
+        passwordConfirm,
+      });
     });
   };
 
@@ -2177,6 +2220,68 @@ function OptionsView({ onBack }: { onBack: () => void }) {
   );
 }
 
+function RawWalletFilesDownload({ walletNames }: { walletNames: string[] }) {
+  const alert = useAlert();
+  const [leftoverFileNames, setLeftoverFileNames] = React.useState<string[]>(
+    [],
+  );
+  const walletNamesKey = walletNames.join("\0");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const names = await withFsLock(async () => {
+          return await walletApi.listLeftoverWalletFileNames();
+        });
+        if (!cancelled) {
+          setLeftoverFileNames(names);
+        }
+      } catch (e) {
+        console.error("Failed to list leftover wallet files:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [walletNamesKey]);
+
+  const doExportRawStorage = React.useCallback(async () => {
+    try {
+      const files = await withFsLock(async () => {
+        return await walletApi.getRawWalletStorageFilesData();
+      });
+      const blob = await buildWalletZip(files);
+      downloadBlob(blob, "amethystxmr-raw-wallet-files.zip");
+    } catch (e) {
+      console.error("Failed to download raw wallet files:", e);
+      await alert(`Failed to download raw wallet files: ${getErrorMessage(e)}`);
+    }
+  }, [alert]);
+
+  if (leftoverFileNames.length === 0) {
+    return null;
+  }
+
+  return (
+    <SurfaceCard className="space-y-3">
+      <p className="text-sm text-white/75">
+        Some files in this browser are not shown as wallets. This download
+        contains every wallet file stored here.
+      </p>
+      <Button
+        className="w-full"
+        variant="soft"
+        onClick={() => {
+          void doExportRawStorage();
+        }}
+      >
+        ⬇︎ Download raw files
+      </Button>
+    </SurfaceCard>
+  );
+}
+
 function ManageWalletsView({
   onBack,
   onReloadWalletNames,
@@ -2244,146 +2349,45 @@ function ManageWalletsView({
   const doExportWallet = React.useCallback(
     async (walletName: string) => {
       try {
-        await withFsLock(async () => {
-          const files = await walletApi.getWalletFilesData(walletName);
-          const zip = new JSZip();
-          for (const file of files) {
-            zip.file(file.name, file.data);
-          }
-          const blob = await zip.generateAsync({ type: "blob" });
-          downloadBlob(blob, `${walletName}.zip`);
+        const files = await withFsLock(async () => {
+          return await walletApi.getWalletFilesData(walletName);
         });
+        const blob = await buildWalletZip(files);
+        downloadBlob(blob, `${walletName}.zip`);
       } catch (e) {
         console.error("Failed to export wallet:", e);
-        await alert(
-          `Failed to export wallet: ${(e as Error).message || "Unknown error"}`,
-        );
+        await alert(`Failed to export wallet: ${getErrorMessage(e)}`);
       }
     },
     [alert],
   );
 
+  const doExportAllWallets = React.useCallback(async () => {
+    try {
+      const files = await withFsLock(async () => {
+        return await walletApi.getAllWalletFilesData();
+      });
+      const blob = await buildWalletZip(files);
+      downloadBlob(blob, "amethystxmr-wallets.zip");
+    } catch (e) {
+      console.error("Failed to export all wallets:", e);
+      await alert(`Failed to export all wallets: ${getErrorMessage(e)}`);
+    }
+  }, [alert]);
+
   const doImportFromZip = React.useCallback(
     async (file: File) => {
       try {
+        const archiveEntries = await readWalletArchive(file);
         const importSummary = await withFsLock(async () => {
-          const zip = await JSZip.loadAsync(await file.arrayBuffer());
-          const imported: string[] = [];
-          const skippedExisting: string[] = [];
-
-          const filesByBaseName = new Map<
-            string,
-            {
-              isDirectory: boolean;
-              async: (type: "uint8array") => Promise<Uint8Array>;
-            }
-          >();
-
-          for (const zipEntry of Object.values(zip.files)) {
-            const baseName = zipEntry.name.split("/").pop() || "";
-            if (!baseName) {
-              continue;
-            }
-            filesByBaseName.set(baseName, {
-              isDirectory: zipEntry.dir,
-              async: (type) => zipEntry.async(type),
-            });
-          }
-
-          for (const [keyFileName, keysEntry] of filesByBaseName.entries()) {
-            if (keysEntry.isDirectory || !keyFileName.endsWith(".keys")) {
-              continue;
-            }
-            const walletName = keyFileName.slice(0, -5);
-            if (!walletName) {
-              continue;
-            }
-            if (await walletApi.isWalletFileExists(walletName)) {
-              skippedExisting.push(walletName);
-              continue;
-            }
-
-            const keysFileData = await keysEntry.async("uint8array");
-
-            const walletEntry = filesByBaseName.get(walletName);
-            const walletFileData =
-              walletEntry && !walletEntry.isDirectory
-                ? await walletEntry.async("uint8array")
-                : null;
-
-            const otherFiles: { name: string; data: Uint8Array }[] = [];
-            if (walletFileData) {
-              otherFiles.push({
-                name: walletName,
-                data: walletFileData,
-              });
-            }
-            for (const [
-              otherBaseName,
-              otherEntry,
-            ] of filesByBaseName.entries()) {
-              if (
-                otherEntry.isDirectory ||
-                otherBaseName === keyFileName ||
-                otherBaseName === walletName
-              ) {
-                continue;
-              }
-              if (!otherBaseName.startsWith(walletName + ".")) {
-                continue;
-              }
-              const otherFileData = await otherEntry.async("uint8array");
-              otherFiles.push({
-                name: otherBaseName,
-                data: otherFileData,
-              });
-            }
-
-            try {
-              await walletApi.saveWalletFilesData(
-                walletName,
-                keysFileData,
-                otherFiles,
-              );
-              imported.push(walletName);
-            } catch (e) {
-              console.error("Failed to save wallet files:", e);
-              skippedExisting.push(walletName);
-            }
-          }
-
-          return { imported, skippedExisting };
+          return await importWalletArchiveEntries(archiveEntries);
         });
 
-        const formatWalletSection = (
-          title: string,
-          wallets: string[],
-          emptyText: string,
-        ) => {
-          if (wallets.length === 0) {
-            return `${title} (0):\n${emptyText}`;
-          }
-          return `${title} (${wallets.length}):\n${wallets
-            .map((name) => `- ${name}`)
-            .join("\n")}`;
-        };
-        const importedText = formatWalletSection(
-          "Imported",
-          importSummary.imported,
-          "No wallets were imported.",
-        );
-        const skippedText = formatWalletSection(
-          "Skipped (already exists)",
-          importSummary.skippedExisting,
-          "No wallets were skipped.",
-        );
         await onReloadWalletNames();
-        await alert(`Import completed.\n\n${importedText}\n\n${skippedText}`);
+        await alert(formatImportSummary(importSummary));
       } catch (e) {
         console.error("Failed to import wallets:", e);
-        await alert(
-          `Failed to import wallets: ${(e as Error).message || "Unknown error"}`,
-        );
+        await alert(`Failed to import wallets: ${getErrorMessage(e)}`);
       }
     },
     [alert, onReloadWalletNames],
@@ -2394,9 +2398,12 @@ function ManageWalletsView({
       return;
     }
     const oldName = renameState.oldWalletName;
-    const newName = renameState.newWalletName.trim();
-    if (!newName) {
-      await alert("Wallet name cannot be empty.");
+    let newName: string;
+    try {
+      validateWalletName(renameState.newWalletName);
+      newName = renameState.newWalletName;
+    } catch (error) {
+      await alert(getErrorMessage(error));
       return;
     }
     if (newName === oldName) {
@@ -2428,9 +2435,7 @@ function ManageWalletsView({
       setRenameState({ type: "idle" });
     } catch (e) {
       console.error("Failed to rename wallet:", e);
-      await alert(
-        `Failed to rename wallet: ${(e as Error).message || "Unknown error"}`,
-      );
+      await alert(`Failed to rename wallet: ${getErrorMessage(e)}`);
       setRenameState({ type: "idle" });
     } finally {
       releaseWalletOpenLock?.();
@@ -2515,7 +2520,9 @@ function ManageWalletsView({
         }}
       />
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <RawWalletFilesDownload walletNames={walletNames} />
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <Button className="w-full" variant="soft" onClick={onBack}>
           ← Back
         </Button>
@@ -2526,6 +2533,14 @@ function ManageWalletsView({
           }}
         >
           ⬆︎ Import
+        </Button>
+        <Button
+          className="w-full"
+          onClick={() => {
+            void doExportAllWallets();
+          }}
+        >
+          ⬇︎ Export all
         </Button>
       </div>
 
@@ -2569,8 +2584,8 @@ function ManageWalletsView({
               e.preventDefault();
               if (
                 renameState.type !== "renaming" &&
-                renameState.newWalletName.trim() !== "" &&
-                renameState.newWalletName.trim() !== renameState.oldWalletName
+                renameState.newWalletName !== "" &&
+                renameState.newWalletName !== renameState.oldWalletName
               ) {
                 void doRenameWallet();
               }
@@ -2612,8 +2627,8 @@ function ManageWalletsView({
                 variant="primary"
                 disabled={
                   renameState.type === "renaming" ||
-                  renameState.newWalletName.trim() === "" ||
-                  renameState.newWalletName.trim() === renameState.oldWalletName
+                  renameState.newWalletName === "" ||
+                  renameState.newWalletName === renameState.oldWalletName
                 }
               >
                 {renameState.type === "renaming"

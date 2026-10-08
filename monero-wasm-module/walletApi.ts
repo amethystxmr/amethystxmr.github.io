@@ -1,5 +1,8 @@
 // @ts-expect-error Generated wasm JS module has no TypeScript declarations.
 import MoneroWasmWalletModuleFactory from "./wasm_wallet.mjs";
+import type { EmscriptenFs } from "./emscriptenFs";
+
+export type { WalletFileData } from "./walletApi.fs";
 
 export const NetworkTypes = {
   MAINNET: 0,
@@ -345,15 +348,8 @@ interface Module {
     mount(type: IDBFS, opts: Record<string, never>, mountpoint: string): void;
     syncfs(populate: boolean, callback: (err: unknown) => void): void;
     chdir(path: string): void;
-    readdir(path: string): string[];
-    stat(path: string): { mode: number };
-    isDir(mode: number): boolean;
     rmdir(path: string): void;
-    unlink(path: string): void;
-    rename(oldPath: string, newPath: string): void;
-    readFile(path: string): Uint8Array;
-    writeFile(path: string, data: Uint8Array): void;
-  };
+  } & EmscriptenFs;
   IDBFS: IDBFS;
   MoneroWasmWallet: typeof MoneroWasmWallet;
   get_monero_version_full(): string;
@@ -404,6 +400,13 @@ type WasmProgressReporter = (
 declare const __WASM_WALLET_SIZE__: number;
 
 let module: Module;
+
+export function getWalletModuleFs(): EmscriptenFs {
+  if (!module) {
+    throw new Error("Module not initialized");
+  }
+  return module.FS;
+}
 
 function getStringProperty(value: object, property: string): string | null {
   const propertyValue = Reflect.get(value, property);
@@ -843,25 +846,6 @@ export async function clearFilesystem() {
 
 getWalletRuntimeGlobal().clearFilesystem = clearFilesystem;
 
-export function listWalletNames() {
-  return module.FS.readdir(".")
-    .filter((name) => name.endsWith(".keys"))
-    .map((name) => name.slice(0, -5));
-}
-
-export function deleteWalletFiles(walletName: string) {
-  const names = new Set(module.FS.readdir("."));
-  for (const name of names) {
-    if (
-      name === walletName ||
-      name === `${walletName}.keys` ||
-      name.startsWith(walletName + ".")
-    ) {
-      module.FS.unlink(name);
-    }
-  }
-}
-
 export async function createWallet(
   networkType: NetworkType = NetworkTypes.MAINNET,
 ) {
@@ -880,83 +864,15 @@ export async function createWallet(
 }
 
 export function readFile(path: string): Uint8Array {
-  if (!module) {
-    throw new Error("Module not initialized");
-  }
-  return module.FS.readFile(path);
+  return getWalletModuleFs().readFile(path);
 }
 
 export function writeFile(path: string, data: Uint8Array): void {
-  if (!module) {
-    throw new Error("Module not initialized");
-  }
-  module.FS.writeFile(path, data);
+  getWalletModuleFs().writeFile(path, data);
 }
 
 export function unlinkFile(path: string): void {
-  if (!module) {
-    throw new Error("Module not initialized");
-  }
-  module.FS.unlink(path);
-}
-
-export function isWalletFileExists(walletName: string) {
-  const names = new Set(module.FS.readdir("."));
-  return names.has(walletName) || names.has(`${walletName}.keys`);
-}
-
-export function renameWallet(oldName: string, newName: string) {
-  const names = new Set(module.FS.readdir("."));
-  for (const existingCheck of [newName, `${newName}.keys`]) {
-    if (names.has(existingCheck)) {
-      throw new Error("Wallet with the new name already exists");
-    }
-  }
-
-  for (const candidate of [oldName, `${oldName}.keys`]) {
-    if (names.has(candidate)) {
-      const newCandidate = candidate.replace(oldName, newName);
-      module.FS.rename(candidate, newCandidate);
-    }
-  }
-}
-
-export function getWalletFilesData(walletName: string) {
-  const keysName = `${walletName}.keys`;
-  const keysFileData = module.FS.readFile(keysName);
-  const outFiles = [{ name: keysName, data: keysFileData }];
-
-  for (const name of module.FS.readdir(".")) {
-    if (
-      name === walletName ||
-      (name.startsWith(walletName + ".") && name !== keysName)
-    ) {
-      const data = module.FS.readFile(name);
-      outFiles.push({ name, data });
-    }
-  }
-  return outFiles;
-}
-
-export function saveWalletFilesData(
-  walletName: string,
-  keysFileData: Uint8Array,
-  otherFilesData: { name: string; data: Uint8Array }[],
-) {
-  const keysName = `${walletName}.keys`;
-  if (module.FS.readdir(".").includes(keysName)) {
-    throw new Error(`File ${keysName} already exists`);
-  }
-  for (const { name } of otherFilesData) {
-    if (module.FS.readdir(".").includes(name)) {
-      throw new Error(`File ${name} already exists`);
-    }
-  }
-
-  module.FS.writeFile(keysName, keysFileData);
-  for (const { name, data } of otherFilesData) {
-    module.FS.writeFile(name, data);
-  }
+  getWalletModuleFs().unlink(path);
 }
 
 export const max64 = (1n << 64n) - 1n;

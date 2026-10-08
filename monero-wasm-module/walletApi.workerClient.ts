@@ -36,6 +36,7 @@ export type {
   TransferInfoItem,
   TransferItem,
   WalletAddress,
+  WalletFileData,
   WalletKeys,
   WalletTxHandle,
   MoneroWasmWallet,

@@ -8,6 +8,7 @@ import {
   WalletKeys,
   api,
 } from "../../../monero-wasm-module/walletApi.workerClient";
+import { getWalletDisplayName } from "../../../monero-wasm-module/walletName";
 
 import { options } from "../options";
 import {
@@ -376,7 +377,7 @@ export function OtherTab({
           }
         });
 
-        const walletName = walletFile.split(/[\\/]/).pop() || walletFile;
+        const walletName = getWalletDisplayName(walletFile);
         if (isUnmountedRef.current) {
           return;
         }

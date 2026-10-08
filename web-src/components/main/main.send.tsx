@@ -34,6 +34,7 @@ import {
   type FeePriority as FeePriorityValue,
   type WalletTxHandle,
 } from "../../../monero-wasm-module/walletApi.workerClient";
+import { getWalletDisplayName } from "../../../monero-wasm-module/walletName";
 
 type SendState =
   | { type: "entering" }
@@ -449,7 +450,7 @@ export function SendTab({
         const data = await wallet.save_multisig_tx_pending_tx(txHandle);
         const dataCopy = new Uint8Array(data.length);
         dataCopy.set(data);
-        const walletName = await wallet.get_wallet_file();
+        const walletName = getWalletDisplayName(await wallet.get_wallet_file());
         await multisigExportOverlay({
           data: dataCopy,
           header: "Partially signed transaction",
