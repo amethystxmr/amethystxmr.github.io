@@ -4,6 +4,8 @@ import {
   isWalletOwnedFileName,
   isWalletStorageFileOwned,
   leftoverWalletFileNames,
+  unexpectedKeysExportFileNames,
+  unexpectedKeysFileNames,
   validateWalletName,
   walletKeysFileName,
   walletNameFromKeysFile,
@@ -193,11 +195,28 @@ export function getWalletFilesData(walletName: string): WalletFileData[] {
 }
 
 export function getAllWalletFilesData(): WalletFileData[] {
+  const fs = getWalletModuleFs();
+  const rootFileNames = listRootFileNames(fs);
   const files = listWalletNames().flatMap((walletName) =>
     getWalletFilesData(walletName),
   );
+  const included = new Set(files.map((file) => file.name));
+  for (const name of unexpectedKeysExportFileNames(rootFileNames)) {
+    if (included.has(name)) {
+      continue;
+    }
+    included.add(name);
+    files.push({
+      name,
+      data: fs.readFile(name),
+    });
+  }
   files.sort((a, b) => a.name.localeCompare(b.name));
   return files;
+}
+
+export function listUnexpectedKeysFileNames(): string[] {
+  return unexpectedKeysFileNames(listRootFileNames(getWalletModuleFs()));
 }
 
 function listRootFileNames(fs: EmscriptenFs): string[] {

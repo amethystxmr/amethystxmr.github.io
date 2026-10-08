@@ -5,6 +5,8 @@ import {
   isWalletOwnedFileName,
   validateWalletName,
   leftoverWalletFileNames,
+  unexpectedKeysExportFileNames,
+  unexpectedKeysFileNames,
   walletKeysFileName,
   walletNameFromKeysCompanionFile,
   walletNameFromKeysFile,
@@ -75,6 +77,23 @@ test.describe("wallet name validation", () => {
     expect(leftoverWalletFileNames(["alice.background.keys"])).toEqual([
       "alice.background.keys",
     ]);
+  });
+
+  test("finds keys files whose names this app will not list", () => {
+    expect(
+      unexpectedKeysFileNames([
+        "alice",
+        "alice.background.keys",
+        "alice.keys",
+        "alice.v1",
+        "alice.v1.keys",
+        "notes.txt",
+      ]),
+    ).toEqual(["alice.v1.keys"]);
+    expect(
+      unexpectedKeysExportFileNames(["alice.v1", "alice.v1.keys", "notes.txt"]),
+    ).toEqual(["alice.v1.keys", "alice.v1"]);
+    expect(unexpectedKeysFileNames(["alice.background.keys"])).toEqual([]);
   });
 
   test("extracts display names from wallet paths", () => {

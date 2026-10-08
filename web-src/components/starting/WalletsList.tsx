@@ -67,6 +67,14 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+function unexpectedKeysAlertMessage(fileNames: string[]): string {
+  const files = fileNames.map((name) => `- ${name}`).join("\n");
+  if (fileNames.length === 1) {
+    return `Wallet had incorrect characters in the name. It is not visible now, but it is available in Export all.\n\n${files}`;
+  }
+  return `Wallets had incorrect characters in the name. They are not visible now, but they are available in Export all.\n\n${files}`;
+}
+
 const DAEMON_CUSTOM_OPTION = "__custom__";
 const DAEMON_REMOTE_NODES_STATUS_OPTION = "__monero_fail_status__";
 const PROJECT_GITHUB_URL =
@@ -395,22 +403,32 @@ export function WalletsList() {
     (async () => {
       const daemonAddress = options.getValue("daemonAddress");
       await walletApi.setDaemonAddress(daemonAddress);
-      const walletNames = await withFsLock(async () =>
-        walletApi.listWalletNames(),
-      );
+      const loaded = await withFsLock(async () => {
+        return {
+          walletNames: await walletApi.listWalletNames(),
+          unexpectedKeysFileNames:
+            await walletApi.listUnexpectedKeysFileNames(),
+        };
+      });
+      if (cancelled) {
+        return;
+      }
+      if (view.doAutoOpen && loaded.unexpectedKeysFileNames.length > 0) {
+        await alert(unexpectedKeysAlertMessage(loaded.unexpectedKeysFileNames));
+      }
       if (cancelled) {
         return;
       }
       setView({
         type: "list",
-        walletNames,
+        walletNames: loaded.walletNames,
         doAutoOpen: view.doAutoOpen,
       });
     })();
     return () => {
       cancelled = true;
     };
-  }, [view]);
+  }, [alert, view]);
 
   const onReloadWalletNames = React.useCallback(async () => {
     if (view.type !== "manage-wallets") {

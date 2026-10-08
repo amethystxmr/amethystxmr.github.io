@@ -96,6 +96,40 @@ export function isWalletStorageFileOwned(
   );
 }
 
+/**
+ * `.keys` files that are not a listed wallet and not a companion such as
+ * `alice.background.keys`.
+ */
+export function unexpectedKeysFileNames(
+  rootFileNames: readonly string[],
+): string[] {
+  return rootFileNames.filter((name) => {
+    if (!name.endsWith(WALLET_KEYS_SUFFIX)) {
+      return false;
+    }
+    if (walletNameFromKeysFile(name) !== null) {
+      return false;
+    }
+    return walletNameFromKeysCompanionFile(name) === null;
+  });
+}
+
+/** Unexpected keys files, plus the matching cache file when it is present. */
+export function unexpectedKeysExportFileNames(
+  rootFileNames: readonly string[],
+): string[] {
+  const present = new Set(rootFileNames);
+  const names: string[] = [];
+  for (const keysName of unexpectedKeysFileNames(rootFileNames)) {
+    names.push(keysName);
+    const cacheName = keysName.slice(0, -WALLET_KEYS_SUFFIX.length);
+    if (present.has(cacheName)) {
+      names.push(cacheName);
+    }
+  }
+  return names;
+}
+
 /** Root files that are not part of any wallet this app will list. */
 export function leftoverWalletFileNames(
   rootFileNames: readonly string[],
